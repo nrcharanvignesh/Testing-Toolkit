@@ -1,0 +1,11 @@
+{
+  "framework": "nextjs",
+  "headers": [
+    {
+      "source": "/agent/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    }
+  ]
+}

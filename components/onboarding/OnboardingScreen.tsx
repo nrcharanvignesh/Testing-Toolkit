@@ -1,0 +1,148 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { useAgent } from "@/lib/agent-context";
+
+function getOS(): "windows" | "mac" | "linux" {
+  if (typeof navigator === "undefined") return "windows";
+  const ua = navigator.userAgent.toLowerCase();
+  if (ua.includes("mac")) return "mac";
+  if (ua.includes("linux")) return "linux";
+  return "windows";
+}
+
+const INSTALLER_MAP = {
+  windows: { file: "install-agent.cmd", label: "Windows" },
+  mac: { file: "install-agent.sh", label: "macOS" },
+  linux: { file: "install-agent.sh", label: "Linux" },
+} as const;
+
+export function OnboardingScreen() {
+  const { status } = useAgent();
+  const [os, setOS] = useState<"windows" | "mac" | "linux">("windows");
+  const [downloaded, setDownloaded] = useState(false);
+
+  useEffect(() => {
+    setOS(getOS());
+  }, []);
+
+  const installer = INSTALLER_MAP[os];
+
+  function handleDownload() {
+    // Trigger download of the installer script from Vercel static assets
+    const link = document.createElement("a");
+    link.href = `/agent/${installer.file}`;
+    link.download = installer.file;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setDownloaded(true);
+  }
+
+  return (
+    <div className="flex h-screen flex-col items-center justify-center bg-background px-6">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="flex max-w-lg flex-col items-center gap-8 text-center"
+      >
+        {/* Logo / Hero */}
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+            <svg
+              className="h-8 w-8 text-primary"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23.693L5 14.5m14.8.8 1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0 1 12 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"
+              />
+            </svg>
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight">Testing Toolkit</h1>
+          <p className="text-muted-foreground">
+            AI-powered test case generation for Azure DevOps
+          </p>
+        </div>
+
+        {/* Action area */}
+        {!downloaded ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="flex flex-col items-center gap-4"
+          >
+            <p className="text-sm text-muted-foreground">
+              To get started, install the local compute agent on your machine.
+            </p>
+            <button
+              onClick={handleDownload}
+              className="inline-flex h-12 items-center gap-2 rounded-xl bg-primary px-8 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98]"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"
+                />
+              </svg>
+              Download for {installer.label}
+            </button>
+            <p className="text-xs text-muted-foreground/60">
+              One file. Double-click to install. No admin rights needed.
+            </p>
+          </motion.div>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col items-center gap-4"
+          >
+            <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/30 px-6 py-4">
+              <motion.div
+                animate={{ y: [0, 4, 0] }}
+                transition={{ repeat: Infinity, duration: 1.5 }}
+              >
+                <svg
+                  className="h-5 w-5 text-primary"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={2}
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="m19.5 4.5-15 15m0 0h11.25m-11.25 0V8.25"
+                  />
+                </svg>
+              </motion.div>
+              <p className="text-sm">
+                Run the downloaded file to complete setup
+              </p>
+            </div>
+
+            {/* Polling indicator */}
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <div className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+              Waiting for agent to connect...
+            </div>
+          </motion.div>
+        )}
+      </motion.div>
+    </div>
+  );
+}
