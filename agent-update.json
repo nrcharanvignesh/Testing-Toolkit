@@ -1,7 +1,7 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.2",
   "ref": "project-deployment",
-  "generatedAt": "2026-06-27T20:11:08.551Z",
+  "generatedAt": "2026-06-27T20:20:19.777Z",
   "files": [
     {
       "path": "ado/__init__.py",
@@ -46,7 +46,7 @@
     {
       "path": "agent/requirements-agent.txt",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/requirements-agent.txt?ref=project-deployment",
-      "hash": "a3f6d99f2a488e839a46d813a13157923118e0a94f06780e1ca1fb5a1d463e1c"
+      "hash": "7934f9d2cefe0d73169b8455da10605f517c285a6b6371f0130e830e995aabe4"
     },
     {
       "path": "agent/routes/__init__.py",
@@ -86,12 +86,12 @@
     {
       "path": "agent/updater.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/updater.py?ref=project-deployment",
-      "hash": "6e7da9e5a4642413aeb1221e5676b1ef679a7938c593eef5050c44429f9db419"
+      "hash": "63717c9a94b3cd5abbad2bed4143c9f10ddbad4ca68ece4cef3055c371bd6fa0"
     },
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=project-deployment",
-      "hash": "ae40cfbcf0e83c450e0a1304e74d5bfc84293b6bc23a7548e163412207a49885"
+      "hash": "eeac4e2779eb320f7489afcb6ed37702d3eee47e438b2ec9c1094ca93c64b14a"
     },
     {
       "path": "core/__init__.py",
@@ -302,6 +302,15 @@
       "path": "tools/visio_convert.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/tools/visio_convert.py?ref=project-deployment",
       "hash": "ea45c8d8f0092291c402afff7e277415efe3f829fb80dd45b266765f9664e53c"
+    }
+  ],
+  "requirements": {
+    "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/requirements.txt?ref=project-deployment"
+  },
+  "extraWheels": [
+    {
+      "name": "python_multipart-0.0.32-py3-none-any.whl",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/extra-wheels/python_multipart-0.0.32-py3-none-any.whl?ref=project-deployment"
     }
   ]
 }
