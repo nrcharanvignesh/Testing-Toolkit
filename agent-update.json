@@ -1,7 +1,7 @@
 {
-  "version": "1.0.3",
+  "version": "1.1.0",
   "ref": "project-deployment",
-  "generatedAt": "2026-06-27T20:29:15.111Z",
+  "generatedAt": "2026-06-27T21:21:30.374Z",
   "files": [
     {
       "path": "ado/__init__.py",
@@ -39,6 +39,11 @@
       "hash": "5a19cc4e923e4b066810ab7347b0fc46a907ca9a599263cdfd58ada885e94ed9"
     },
     {
+      "path": "agent/jobs.py",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/jobs.py?ref=project-deployment",
+      "hash": "366cfa6c2bc2e5b66b45c72f76dadaca2eb85cb66aff6f5c0539c1401278841a"
+    },
+    {
       "path": "agent/model_loader.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/model_loader.py?ref=project-deployment",
       "hash": "c5227521d5474e1afdef0a6e758e50e326653241be514dad7760dd31e78b38b8"
@@ -56,12 +61,27 @@
     {
       "path": "agent/routes/ado.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/ado.py?ref=project-deployment",
-      "hash": "03997d65a1979e0a159941a23ab7805ca13f561f2f90ed12cd6e0da0d792085e"
+      "hash": "8f20a14d0b045501ba283c22f846fc0cc2a989b10f7e12efd29da37e755be5e2"
+    },
+    {
+      "path": "agent/routes/defects.py",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/defects.py?ref=project-deployment",
+      "hash": "5ad40eb7b3d6d670083d4db45ea7619840a2a03f84feaa74751ca2ad059ff6e2"
+    },
+    {
+      "path": "agent/routes/generate.py",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/generate.py?ref=project-deployment",
+      "hash": "1abbaf40ab98800483b2273f2ffc39ec75a26302f6700144c7129bc9c74668ad"
     },
     {
       "path": "agent/routes/health.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/health.py?ref=project-deployment",
       "hash": "19049961af62692ab052b080e23bb434c9c5f937f279cad63b30155979e9a82a"
+    },
+    {
+      "path": "agent/routes/jobs.py",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/jobs.py?ref=project-deployment",
+      "hash": "fb1120ea9b96db67e04606596e4f6e726d6cb087258287683cad8138197944a9"
     },
     {
       "path": "agent/routes/kb.py",
@@ -81,17 +101,17 @@
     {
       "path": "agent/server.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/server.py?ref=project-deployment",
-      "hash": "660c262dafd9b12b596418b6aab8071e39d6ee35588e279b5f396173609c1dc4"
+      "hash": "a5301a5e39786d164fddb4b4aeac16793ed2b22c73729b3eb71b01e632b76aec"
     },
     {
       "path": "agent/updater.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/updater.py?ref=project-deployment",
-      "hash": "63717c9a94b3cd5abbad2bed4143c9f10ddbad4ca68ece4cef3055c371bd6fa0"
+      "hash": "a2a5280ec1cca33cee1f99c3c855ecd834c0e0c01c31efe9356dd5e418f9b59a"
     },
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=project-deployment",
-      "hash": "daf81df10190209ff515bf6d851de50a9e8d4826aa2cb89962867d8564ee0548"
+      "hash": "642c50add83b6e8cf72b0ba99aa03deee6840489494a69768a7ad717e8f819fc"
     },
     {
       "path": "core/__init__.py",
