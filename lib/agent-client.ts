@@ -146,6 +146,13 @@ export interface KbStatus {
   n_documents?: number;
 }
 
+// Per-phase test-script template status (backend kb._template_payload).
+export interface TemplateStatus {
+  has: boolean;
+  name: string;
+  describe: string;
+}
+
 export interface ArtifactFile {
   name: string;
   path: string;
