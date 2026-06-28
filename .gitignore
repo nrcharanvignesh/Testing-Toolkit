@@ -51,3 +51,7 @@ Desktop_App_Without_EmbeddedPython.zip
 /src/
 
 .agentvenv/
+playwright-report/
+test-results/
+/blob-report/
+.playwright/
