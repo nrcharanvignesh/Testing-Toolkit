@@ -27,6 +27,13 @@ export interface UiPreferences {
   sizes: Record<SizeKey, number>;
   /** true once the user has finished (or skipped) the guided tour. */
   tourCompleted: boolean;
+  /**
+   * Set by the Reinstall flow before the agent restarts. Survives the page
+   * reload so that, once the freshly-reinstalled agent reconnects, the app
+   * automatically re-indexes every knowledge base. Cleared when reindexing
+   * finishes. (A reinstall keeps settings, fetched models and these prefs.)
+   */
+  pendingReindex: boolean;
 }
 
 const KEY = "tt.ui.prefs.v2";
@@ -37,6 +44,7 @@ const DEFAULTS: UiPreferences = {
   panels: { nav: false, detail: false, log: false },
   sizes: { navWidth: 224, detailWidth: 440, logHeight: 180 },
   tourCompleted: false,
+  pendingReindex: false,
 };
 
 let cache: UiPreferences = DEFAULTS;
@@ -53,6 +61,7 @@ function load(): UiPreferences {
       panels: { ...DEFAULTS.panels, ...(parsed.panels ?? {}) },
       sizes: { ...DEFAULTS.sizes, ...(parsed.sizes ?? {}) },
       tourCompleted: !!parsed.tourCompleted,
+      pendingReindex: !!parsed.pendingReindex,
     };
   } catch {
     return DEFAULTS;
@@ -115,6 +124,18 @@ export function setSizePref(key: SizeKey, px: number, write = true) {
   persist({ ...cache, sizes: { ...cache.sizes, [key]: px } }, write);
 }
 
+/** Non-hook setter for the guided-tour completion flag (always persisted). */
+export function setTourCompletedPref(value: boolean) {
+  ensureLoaded();
+  persist({ ...cache, tourCompleted: value });
+}
+
+/** Non-hook setter for the pending-reindex flag (always persisted). */
+export function setPendingReindexPref(value: boolean) {
+  ensureLoaded();
+  persist({ ...cache, pendingReindex: value });
+}
+
 export function usePreferences() {
   const prefs = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
@@ -132,9 +153,19 @@ export function usePreferences() {
   }, []);
 
   const setTourCompleted = useCallback((value: boolean) => {
-    ensureLoaded();
-    persist({ ...cache, tourCompleted: value });
+    setTourCompletedPref(value);
   }, []);
 
-  return { prefs, setPanel, togglePanel, setSize, setTourCompleted };
+  const setPendingReindex = useCallback((value: boolean) => {
+    setPendingReindexPref(value);
+  }, []);
+
+  return {
+    prefs,
+    setPanel,
+    togglePanel,
+    setSize,
+    setTourCompleted,
+    setPendingReindex,
+  };
 }

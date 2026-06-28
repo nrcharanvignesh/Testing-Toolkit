@@ -823,6 +823,30 @@ export const agent = {
   async applyUpdate(): Promise<UpdateApplyResult> {
     return agentFetch<UpdateApplyResult>("/update/apply", { method: "POST" });
   },
+
+  /**
+   * Full reinstall of the local agent (distinct from applyUpdate / refresh).
+   * Re-downloads and reinstalls the agent from scratch, then restarts it. The
+   * workspace — settings, fetched-model cache, KB files and these UI prefs —
+   * lives outside the install dir and is preserved; the vector indexes are
+   * rebuilt afterwards by the app (pendingReindex). Falls back to /update/apply
+   * on agents that don't yet expose a dedicated reinstall route.
+   */
+  async reinstall(): Promise<UpdateApplyResult> {
+    try {
+      return await agentFetch<UpdateApplyResult>("/update/reinstall", {
+        method: "POST",
+      });
+    } catch (e) {
+      // Older agents have no dedicated reinstall route — fall back to apply.
+      if ((e as Error).message?.includes("Agent 404")) {
+        return agentFetch<UpdateApplyResult>("/update/apply", {
+          method: "POST",
+        });
+      }
+      throw e;
+    }
+  },
 };
 
 export interface ModelInfo {

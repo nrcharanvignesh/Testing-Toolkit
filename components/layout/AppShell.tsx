@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useAgent } from "@/lib/agent-context";
 import { useAppState } from "@/lib/app-state";
+import { getPreferences, setPendingReindexPref } from "@/lib/preferences";
 import { ActivityBar } from "./ActivityBar";
 import { NavPanel } from "./NavPanel";
 import { StatusBar } from "./StatusBar";
@@ -13,8 +14,10 @@ import { DialogHost } from "@/components/dialogs/DialogHost";
 
 export function AppShell() {
   const { status } = useAgent();
-  const { navVisible, logVisible, settings, reloadProjects } = useAppState();
+  const { navVisible, logVisible, settings, reloadProjects, reindexAllKbs } =
+    useAppState();
   const bootstrapped = useRef(false);
+  const reindexed = useRef(false);
 
   // Bootstrap: once connected & configured, load the project list (desktop
   // main.py _bootstrap -> reload_projects).
@@ -28,6 +31,21 @@ export function AppShell() {
       reloadProjects();
     }
   }, [status, settings?.configured, reloadProjects]);
+
+  // After a reinstall the agent restarts and the app reloads with a persisted
+  // pendingReindex flag — rebuild every KB vector index once we're back online.
+  useEffect(() => {
+    if (
+      status === "connected" &&
+      settings?.configured &&
+      !reindexed.current &&
+      getPreferences().pendingReindex
+    ) {
+      reindexed.current = true;
+      setPendingReindexPref(false);
+      void reindexAllKbs();
+    }
+  }, [status, settings?.configured, reindexAllKbs]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">

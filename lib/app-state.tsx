@@ -23,7 +23,11 @@ import {
   type BoardView,
   type SettingsResponse,
 } from "./agent-client";
-import { getPreferences, setPanelPref } from "./preferences";
+import {
+  getPreferences,
+  setPanelPref,
+  setPendingReindexPref,
+} from "./preferences";
 
 export type KbState = "none" | "indexing" | "ready" | "error";
 export type DialogId =
@@ -88,6 +92,8 @@ interface AppStateValue {
   // kb
   kbState: KbState;
   kbMessage: string;
+  /** Re-index every project's KB sequentially (used after a reinstall). */
+  reindexAllKbs: () => Promise<void>;
 
   // nav
   navVisible: boolean;
@@ -327,6 +333,48 @@ export function AppStateProvider({
     [pushLog]
   );
 
+  const reindexAllKbs = useCallback(async () => {
+    setLogVisible(true);
+    pushLog("INFO", "Reinstall: re-indexing all knowledge bases...");
+    let names: string[] = [];
+    try {
+      names = await agent.listProjects();
+    } catch (e) {
+      pushLog("ERROR", `Reindex aborted — could not list projects: ${(e as Error).message}`);
+      return;
+    }
+    let done = 0;
+    let indexed = 0;
+    for (const project of names) {
+      done += 1;
+      const label = displayName(project);
+      try {
+        const status = await agent.kbStatus(project);
+        if (!status.documents || status.documents.length === 0) continue;
+        setKbState("indexing");
+        setKbMessage(`Reindexing ${done}/${names.length}: ${label}`);
+        pushLog("INFO", `[${done}/${names.length}] Indexing KB for ${label}...`);
+        const res = await agent.kbIndex(project, {
+          onLog: (line) => pushLog(agentLogLevel(line), line),
+        });
+        indexed += 1;
+        pushLog(
+          "SUCCESS",
+          `${label}: ${res.n_documents} docs, ${res.n_chunks} chunks indexed.`
+        );
+      } catch (e) {
+        pushLog("ERROR", `KB reindex failed for ${label}: ${(e as Error).message}`);
+      }
+    }
+    setKbState(indexed > 0 ? "ready" : "none");
+    setKbMessage(
+      indexed > 0
+        ? `Reindex complete (${indexed} project KB${indexed === 1 ? "" : "s"})`
+        : "KB: no files to index"
+    );
+    pushLog("SUCCESS", `Reindex complete — ${indexed} knowledge base(s) rebuilt.`);
+  }, [displayName, pushLog, setLogVisible]);
+
   const selectProject = useCallback(
     (full: string) => {
       if (!full) return;
@@ -382,6 +430,7 @@ export function AppStateProvider({
       setLogVisible,
       kbState,
       kbMessage,
+      reindexAllKbs,
       navVisible,
       setNavVisible,
       dialog,
@@ -414,6 +463,7 @@ export function AppStateProvider({
       logVisible,
       kbState,
       kbMessage,
+      reindexAllKbs,
       navVisible,
       dialog,
       openDialog,
