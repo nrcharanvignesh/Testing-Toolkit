@@ -357,9 +357,11 @@ export function AppStateProvider({
         setKbState("indexing");
         setKbMessage(`Reindexing ${done}/${names.length}: ${label}`);
         pushLog("INFO", `[${done}/${names.length}] Indexing KB for ${label}...`);
-        const res = await agent.kbIndex(project, {
-          onLog: (line) => pushLog(agentLogLevel(line), line),
-        });
+        const res = await agent.kbIndex(
+          project,
+          { onLog: (line) => pushLog(agentLogLevel(line), line) },
+          true // post-reinstall reindex: always do a full rebuild
+        );
         indexed += 1;
         pushLog(
           "SUCCESS",

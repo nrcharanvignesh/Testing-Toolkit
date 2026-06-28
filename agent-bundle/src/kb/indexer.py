@@ -254,6 +254,7 @@ def build_index_resumable(
     on_sub_progress: SubProgressFn | None = None,
     llm_client: "Any | None" = None,
     llm_model: str = "",
+    force: bool = False,
 ) -> KbIndex:
     """Build (or refresh) the project KB index incrementally and resumably.
 
@@ -299,8 +300,19 @@ def build_index_resumable(
              f"'{sheet.name}' (cleaner extraction).")
     total = len(files)
 
-    # Already up to date: nothing to do.
-    if _index_is_current(index_path, files):
+    # Forced full rebuild: drop the stored index + any resume checkpoint so the
+    # whole KB is re-extracted and re-chunked from scratch (used by the explicit
+    # "Rebuild KB index" action and the post-reinstall reindex-all flow).
+    if force:
+        _log("[INFO] Forced rebuild: discarding cached index and checkpoint.")
+        for stale in (index_path, partial):
+            try:
+                stale.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    # Already up to date: nothing to do (skipped entirely on a forced rebuild).
+    if not force and _index_is_current(index_path, files):
         try:
             partial.unlink(missing_ok=True)
         except OSError:

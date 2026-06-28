@@ -96,9 +96,13 @@ async def rerank(req: RerankRequest) -> dict:
 
 class IndexRequest(BaseModel):
     project: str
+    # When True, ignore the "index is current" shortcut and rebuild the whole
+    # KB from scratch (full re-extraction + BM25 + dense). Used by the explicit
+    # "Rebuild KB index" button and the post-reinstall reindex-all flow.
+    force: bool = False
 
 
-def _run_kb_index(job: "Job", project: str) -> None:
+def _run_kb_index(job: "Job", project: str, force: bool = False) -> None:
     """Worker body mirroring MainWindow._kick_kb_index in the desktop app:
     build/refresh the resumable KB index while streaming per-file progress and
     log lines into the Job so the browser can render the same
@@ -149,6 +153,8 @@ def _run_kb_index(job: "Job", project: str) -> None:
         ctx_model = ""
 
     try:
+        if force:
+            job.log("[INFO] Full rebuild requested; ignoring cached index.")
         job.log(f"[INFO] KB indexing started for '{project}'.")
         result = ps.index_project_resumable(
             project,
@@ -158,6 +164,7 @@ def _run_kb_index(job: "Job", project: str) -> None:
             enable_dense=True,
             llm_client=ctx_client,
             llm_model=ctx_model,
+            force=force,
         )
         docs = int(getattr(result, "n_docs", 0) or 0)
         chunks = len(getattr(result, "chunks", []) or [])
@@ -192,7 +199,9 @@ async def index_project(req: IndexRequest) -> dict:
 
     job = JOBS.create("kb_index")
     job.log("[INFO] Starting KB indexing...")
-    asyncio.create_task(asyncio.to_thread(_run_kb_index, job, req.project))
+    asyncio.create_task(
+        asyncio.to_thread(_run_kb_index, job, req.project, req.force)
+    )
     return {"job_id": job.id}
 
 

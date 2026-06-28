@@ -151,7 +151,9 @@ function DocumentsSection({
       return v < 60 ? `${v}s` : `${Math.floor(v / 60)}m ${String(v % 60).padStart(2, "0")}s`;
     };
     try {
-      const r = await agent.kbIndex(project, {
+      const r = await agent.kbIndex(
+        project,
+        {
         onProgress: (p) => {
           const { current: done, total, stage } = p;
           if (!total || total <= 0) {
@@ -170,7 +172,9 @@ function DocumentsSection({
             `${done}/${total}${name} | ${fmt(elapsed)} / ${fmt(remaining)} - ${pct}%`
           );
         },
-      });
+        },
+        true // explicit "Rebuild KB index": always do a full rebuild
+      );
       setIndexProgress("");
       pushLog("SUCCESS", `Indexed ${r.n_documents} doc(s), ${r.n_chunks} chunk(s).`);
       refresh();

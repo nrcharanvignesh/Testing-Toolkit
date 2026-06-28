@@ -483,13 +483,15 @@ export const agent = {
 
   async kbIndex(
     project: string,
-    handlers: JobHandlers = {}
+    handlers: JobHandlers = {},
+    force = false
   ): Promise<{ n_chunks: number; n_documents: number; has_dense?: boolean }> {
     // Background job mirroring the desktop _kick_kb_index worker: returns a job
     // id we poll for live per-file progress + logs, then read the final result.
+    // force=true does a whole rebuild (ignores the "index is current" shortcut).
     const { job_id } = await agentFetch<{ job_id: string }>("/kb/index", {
       method: "POST",
-      body: JSON.stringify({ project }),
+      body: JSON.stringify({ project, force }),
     });
     const snap = await pollJob(job_id, handlers);
     if (snap.state === "error") {

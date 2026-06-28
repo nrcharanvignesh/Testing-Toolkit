@@ -179,6 +179,7 @@ def index_project_resumable(
     on_sub_progress: "Any | None" = None,
     llm_client: "Any | None" = None,
     llm_model: str = "",
+    force: bool = False,
 ) -> KbIndex:
     """Build/refresh this project's KB index incrementally and resumably
     (see kb_indexer), then build the hybrid retrieval index (BM25 always;
@@ -204,14 +205,14 @@ def index_project_resumable(
     index = build_index_resumable(
         p.kb_dir, p.index_path, on_progress=on_progress, on_log=on_log,
         should_stop=should_stop, on_sub_progress=on_sub_progress,
-        llm_client=llm_client, llm_model=llm_model,
+        llm_client=llm_client, llm_model=llm_model, force=force,
     )
     if should_stop is not None and should_stop():
         return index
     try:
         _build_hybrid_from_index(p, index, on_log=on_log,
                                  should_stop=should_stop,
-                                 enable_dense=enable_dense)
+                                 enable_dense=enable_dense, force=force)
     except Exception as e:  # noqa: BLE001 - hybrid build never blocks
         if on_log is not None:
             try:
@@ -224,6 +225,7 @@ def index_project_resumable(
 def _build_hybrid_from_index(
     p: ProjectPaths, index: KbIndex, on_log: "Any | None" = None,
     should_stop: "Any | None" = None, enable_dense: bool = True,
+    force: bool = False,
 ) -> None:
     """Convert KB chunks to the hybrid index. Lexical (BM25) is always built.
     A local dense embedder is constructed ONLY when enable_dense is True (it
@@ -254,11 +256,13 @@ def _build_hybrid_from_index(
             want_dense = False
     # Skip rebuilding when the hybrid index already reflects this chunk set
     # (cheap manifest-only check); avoids redundant CPU on every reselect.
+    # A forced rebuild bypasses this shortcut entirely.
     try:
         from kb.retrieval import hybrid_index_is_current
 
-        if hybrid_index_is_current(p.hybrid_dir, len(chunks),
-                                   index.built_at, want_dense=want_dense):
+        if not force and hybrid_index_is_current(p.hybrid_dir, len(chunks),
+                                                  index.built_at,
+                                                  want_dense=want_dense):
             if on_log is not None:
                 try:
                     on_log("[INFO] Hybrid index already current; reused.")

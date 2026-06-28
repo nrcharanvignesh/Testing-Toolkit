@@ -23,8 +23,8 @@ def preload_models() -> None:
 def _load() -> None:
     global _embedder, _reranker
     try:
-        from kb.embeddings import get_embedder
-        _embedder = get_embedder()
+        from kb.embeddings import get_text_embedder
+        _embedder = get_text_embedder()
     except Exception:
         _embedder = None
     try:

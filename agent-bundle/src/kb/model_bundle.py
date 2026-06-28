@@ -27,6 +27,7 @@ ASCII only. No third-party imports (pure stdlib), fully type-hinted.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -38,26 +39,80 @@ MODELS_DIRNAME: str = "models"
 _HF_CACHE_PREFIX: str = "models--"
 
 
-def _base_dir() -> Path:
-    """Project root in source runs, or the PyInstaller unpack dir when frozen."""
+def _looks_populated(root: Path) -> bool:
+    """True if `root` is a directory containing at least one HF snapshot folder
+    (models--<org>--<name>)."""
+    try:
+        if not root.is_dir():
+            return False
+        for child in root.iterdir():
+            if child.is_dir() and child.name.startswith(_HF_CACHE_PREFIX):
+                return True
+    except OSError:
+        return False
+    return False
+
+
+def _candidate_dirs() -> list[Path]:
+    """All locations that might hold the bundled model cache, most explicit
+    first.
+
+    The installer copies models to ``<install>/agent/models`` and exports that
+    path as ``TT_MODELS_DIR`` while launching the agent from
+    ``<install>/agent/src``. Source layouts keep ``models`` next to ``src`` (so
+    one level above this package), and PyInstaller unpacks it under _MEIPASS.
+    We must check ALL of these - historically only ``src/models`` was checked,
+    which never matches the real install layout, so dense embeddings silently
+    fell back to a blocked online download. Order matters: the explicit env var
+    wins, then the real install/source layouts, then the legacy path.
+    """
+    cands: list[Path] = []
+
+    # 1) Explicit override set by the installer (authoritative).
+    env_dir = (os.environ.get("TT_MODELS_DIR") or "").strip()
+    if env_dir:
+        cands.append(Path(env_dir).expanduser())
+
+    # 2) PyInstaller one-file unpack dir.
     meipass: Optional[str] = getattr(sys, "_MEIPASS", None)
     if meipass:
-        return Path(meipass)
-    return Path(__file__).resolve().parent.parent
+        cands.append(Path(meipass) / MODELS_DIRNAME)
+
+    # 3) Real install / source layouts, relative to this file:
+    #    .../<root>/src/kb/model_bundle.py
+    #    -> parent.parent       == <root>/src        (legacy, rarely correct)
+    #    -> parent.parent.parent== <root>            == AGENT_DIR/models  (install)
+    here = Path(__file__).resolve()
+    src_dir = here.parent.parent          # <root>/src
+    root_dir = src_dir.parent             # <root>  (e.g. AGENT_DIR)
+    cands.append(root_dir / MODELS_DIRNAME)   # AGENT_DIR/models (install layout)
+    cands.append(src_dir / MODELS_DIRNAME)    # src/models (legacy fallback)
+
+    # 4) Install dir hint, if provided without an explicit models path.
+    install_dir = (os.environ.get("TT_INSTALL_DIR") or "").strip()
+    if install_dir:
+        cands.append(Path(install_dir).expanduser() / "agent" / MODELS_DIRNAME)
+
+    # De-duplicate while preserving order.
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for c in cands:
+        key = str(c)
+        if key not in seen:
+            seen.add(key)
+            unique.append(c)
+    return unique
 
 
 def bundled_models_dir() -> Optional[str]:
     """Absolute path to the local model cache if it exists and looks populated.
 
-    Returns the directory path (str) when it contains at least one Hugging
-    Face snapshot folder, else None so callers fall back to the default
+    Returns the first candidate directory (str) that contains at least one
+    Hugging Face snapshot folder, else None so callers fall back to the default
     online download path and degrade gracefully to lexical retrieval.
     """
-    root: Path = _base_dir() / MODELS_DIRNAME
-    if not root.is_dir():
-        return None
-    for child in root.iterdir():
-        if child.is_dir() and child.name.startswith(_HF_CACHE_PREFIX):
+    for root in _candidate_dirs():
+        if _looks_populated(root):
             return str(root)
     return None
 
