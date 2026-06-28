@@ -62,10 +62,50 @@ function Field({
   return (
     <div className="grid grid-cols-[140px_1fr] items-center gap-3">
       <label className="text-right text-sm text-[#bfc4cc]">
-        {label}
-        {required && <span className="text-[#e53e3e]"> *</span>}
+        {label}:{required && <span className="text-[#e53e3e]"> *</span>}
       </label>
       {children}
+    </div>
+  );
+}
+
+/**
+ * Masked secret field with an Edit button (desktop T02). Shows dots for a saved
+ * value; clicking Edit clears it and enables typing a new value.
+ */
+function MaskedField({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  const hasSaved = value === MASK;
+  const [editing, setEditing] = useState(!hasSaved);
+  return (
+    <div className="flex gap-2">
+      <input
+        type="password"
+        className="tt-input flex-1"
+        placeholder={placeholder}
+        value={editing ? value : MASK}
+        disabled={!editing}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {!editing && (
+        <button
+          type="button"
+          className="tt-btn-ghost shrink-0 !px-3 !py-1.5 text-xs"
+          onClick={() => {
+            setEditing(true);
+            onChange("");
+          }}
+        >
+          Edit
+        </button>
+      )}
     </div>
   );
 }
@@ -120,12 +160,10 @@ export function ConnectionFields({
     <div className="flex flex-col gap-3">
       <SectionHeader>LLM</SectionHeader>
       <Field label="API Key">
-        <input
-          type="password"
-          className="tt-input"
-          placeholder="sk-ant-..."
+        <MaskedField
           value={values.api_key}
-          onChange={(e) => set("api_key", e.target.value)}
+          placeholder="sk-ant-..."
+          onChange={(v) => set("api_key", v)}
         />
       </Field>
       <Field label="Base URL">
@@ -184,12 +222,10 @@ export function ConnectionFields({
 
       <SectionHeader>Azure DevOps</SectionHeader>
       <Field label="PAT" required>
-        <input
-          type="password"
-          className="tt-input"
-          placeholder="Personal Access Token (required)"
+        <MaskedField
           value={values.pat}
-          onChange={(e) => set("pat", e.target.value)}
+          placeholder="Personal Access Token (required)"
+          onChange={(v) => set("pat", v)}
         />
       </Field>
       <Field label="Organization" required>
@@ -201,9 +237,10 @@ export function ConnectionFields({
           onChange={(e) => set("organization", e.target.value)}
         />
       </Field>
+      <p className="pl-[152px] text-xs text-[#e53e3e]">* required</p>
 
       <SectionHeader>Display</SectionHeader>
-      <Field label="Strip prefix">
+      <Field label="Strip project prefix">
         <input
           type="text"
           className="tt-input"

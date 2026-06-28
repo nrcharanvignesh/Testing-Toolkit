@@ -96,9 +96,13 @@ export function BoardGrid() {
     setSelected(next);
   };
 
+  // Desktop header includes the full board name (with " / Stories"), e.g.
+  // "Abbott - Abbott 2026 Enhancements / Stories Work Items" (H01).
   const headerLabel =
     currentProject && currentBoard
-      ? `${displayName(currentProject)} - ${currentBoard.team_name} Work Items`
+      ? `${displayName(currentProject)} - ${
+          currentBoard.name || currentBoard.team_name
+        } Work Items`
       : currentProject
         ? `${displayName(currentProject)} Work Items`
         : "Work Items";
@@ -243,7 +247,7 @@ function LaneGroup({
 }) {
   return (
     <>
-      <tr className="bg-[#0d1017]">
+      <tr className="tt-group-row">
         <td className="px-2 py-1.5">
           <input
             type="checkbox"
@@ -256,9 +260,11 @@ function LaneGroup({
           />
         </td>
         <td colSpan={6} className="px-2 py-1.5">
-          <span className="tt-lane inline-block text-xs">
-            {lane} ({laneRows.length})
-          </span>
+          <span className="tt-group-tri">▼</span>
+          <span className="text-sm font-semibold text-[#cfd4dc]">
+            {lane}
+          </span>{" "}
+          <span className="text-xs text-[#8a8f99]">({laneRows.length})</span>
         </td>
       </tr>
       {laneRows.map((r) => {
@@ -268,8 +274,8 @@ function LaneGroup({
           <tr
             key={r.wi_id}
             onClick={() => onActivate(r.wi_id)}
-            className={`cursor-pointer border-b border-[#1e2128] transition-colors hover:bg-[#1a1d26] ${
-              isActive ? "bg-[#0d2d5e]" : ""
+            className={`cursor-pointer border-b border-[#1e2128] transition-colors ${
+              isActive ? "tt-row-selected" : "hover:bg-[#1a1d26]"
             }`}
           >
             <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
@@ -284,30 +290,24 @@ function LaneGroup({
               {r.wi_id}
             </td>
             <td
-              className="max-w-0 truncate px-2 py-1.5"
-              style={{ color: tc ?? "#edf0f5" }}
+              className="max-w-0 truncate px-2 py-1.5 text-[#edf0f5]"
               title={r.title}
             >
               {r.title}
             </td>
-            <td className="px-2 py-1.5 text-xs" style={{ color: tc ?? "#bfc4cc" }}>
+            <td className="px-2 py-1.5 text-sm" style={{ color: tc ?? "#bfc4cc" }}>
               {r.wi_type}
             </td>
-            <td className="px-2 py-1.5">
-              <span
-                className="tt-state-pill text-xs"
-                style={{
-                  color: stateColor(r.state),
-                  borderColor: stateColor(r.state),
-                }}
-              >
-                {r.state || "n/a"}
-              </span>
+            <td
+              className="px-2 py-1.5 text-sm"
+              style={{ color: stateColor(r.state) }}
+            >
+              {r.state || "n/a"}
             </td>
-            <td className="truncate px-2 py-1.5 text-xs text-[#bfc4cc]">
-              {r.assigned_to ? r.assigned_to.split(" ")[0] : ""}
+            <td className="truncate px-2 py-1.5 text-sm text-[#bfc4cc]">
+              {r.assigned_to}
             </td>
-            <td className="truncate px-2 py-1.5 text-xs text-[#7a7f8a]">
+            <td className="truncate px-2 py-1.5 text-sm text-[#bfc4cc]">
               {r.board_lane}
             </td>
           </tr>

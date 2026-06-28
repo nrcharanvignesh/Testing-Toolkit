@@ -46,17 +46,23 @@ export function LogPanel() {
         {log.length === 0 ? (
           <p className="text-[#5a5f6a]">No activity yet.</p>
         ) : (
-          log.map((line) => (
-            <div key={line.id} className="whitespace-pre-wrap">
-              <span className="text-[#5a5f6a]">
-                {new Date(line.ts).toLocaleTimeString()}{" "}
-              </span>
-              <span style={{ color: LEVEL_COLOR[line.level] }}>
-                [{line.level}]
-              </span>{" "}
-              <span className="text-[#bfc4cc]">{line.text}</span>
-            </div>
-          ))
+          log.map((line) => {
+            // Desktop log lines are "[LEVEL] text" with no timestamp (L03).
+            // The agent already emits lines like "[INFO] ..."; strip a leading
+            // duplicate level tag so we render exactly one.
+            const text = line.text.replace(
+              /^\[(INFO|SUCCESS|WARN|WARNING|ERROR)\]\s*/i,
+              ""
+            );
+            return (
+              <div key={line.id} className="whitespace-pre-wrap">
+                <span style={{ color: LEVEL_COLOR[line.level] }}>
+                  [{line.level}]
+                </span>{" "}
+                <span className="text-[#bfc4cc]">{text}</span>
+              </div>
+            );
+          })
         )}
         <div ref={endRef} />
       </div>

@@ -109,10 +109,9 @@ export function DefectDialog({ onClose }: { onClose: () => void }) {
     <Modal
       open
       onClose={onClose}
-      title="Bulk Defect Upload"
-      subtitle={
-        currentProject ? displayName(currentProject) : "Select a project first"
-      }
+      title={`Bulk Defect Upload${
+        currentProject ? ` - ${displayName(currentProject)}` : ""
+      }`}
       width={760}
       footer={
         <>
@@ -127,11 +126,11 @@ export function DefectDialog({ onClose }: { onClose: () => void }) {
           </button>
           {!defects ? (
             <button
-              className="tt-btn-primary"
+              className="tt-btn-success"
               onClick={parse}
               disabled={busy || !files.length || !currentProject}
             >
-              {busy ? "Parsing..." : "Parse & Review"}
+              {busy ? "Parsing..." : "Parse Defects"}
             </button>
           ) : (
             <>
@@ -147,7 +146,7 @@ export function DefectDialog({ onClose }: { onClose: () => void }) {
                 onClick={upload}
                 disabled={busy || keptCount === 0}
               >
-                {busy ? "Uploading..." : `Upload ${keptCount} to ADO`}
+                {busy ? "Uploading..." : "Upload to ADO"}
               </button>
             </>
           )}
@@ -155,23 +154,32 @@ export function DefectDialog({ onClose }: { onClose: () => void }) {
       }
     >
       <div className="flex flex-col gap-4">
-        <div className="tt-help p-3 text-xs leading-relaxed">
-          <div className="tt-help-header mb-1">Flow</div>
-          <div className="tt-help-body">
-            Select documents (Word, Excel, PowerPoint, PDF) → adaptive parsing
-            (LLM fallback) → review &amp; edit below → upload Bugs. Area Path,
-            Iteration, and Board Column are inherited from the parent work item.
-          </div>
-        </div>
+        <h3 className="text-sm font-bold text-[#edf0f5]">
+          {`Bulk Defect Upload${
+            currentProject ? ` - ${displayName(currentProject)}` : ""
+          }`}
+        </h3>
+        <ol className="flex flex-col gap-1 text-sm text-[#bfc4cc]">
+          <li>1. Select defect document(s) (Word, Excel, PowerPoint, or PDF).</li>
+          <li>2. The app parses defects programmatically (falls back to AI if needed).</li>
+          <li>
+            3. Review the generated Excel and edit as needed (mark Skip=Yes to
+            exclude).
+          </li>
+          <li>
+            4. Click &apos;Upload to ADO&apos; to create Bug work items.
+            Area/Iteration/Board Column are inherited from the parent WI.
+          </li>
+        </ol>
 
         {!defects && (
           <>
             <div className="flex items-center gap-3">
               <button
-                className="tt-btn-primary !px-4 !py-1.5 text-sm"
+                className="tt-btn-success !px-4 !py-1.5 text-sm"
                 onClick={() => fileRef.current?.click()}
               >
-                <Upload className="h-4 w-4" /> Select documents
+                <Upload className="h-4 w-4" /> Select Files
               </button>
               <label className="flex items-center gap-2 text-xs text-[#bfc4cc]">
                 <input
@@ -195,7 +203,7 @@ export function DefectDialog({ onClose }: { onClose: () => void }) {
             <div className="max-h-48 overflow-auto rounded-lg border border-[#2d313c] bg-[#13161d] p-2">
               {files.length === 0 ? (
                 <p className="px-2 py-1.5 text-sm text-muted-foreground">
-                  No documents selected.
+                  No files selected.
                 </p>
               ) : (
                 files.map((f, i) => (

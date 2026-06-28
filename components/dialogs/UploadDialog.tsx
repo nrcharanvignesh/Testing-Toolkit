@@ -55,8 +55,9 @@ export function UploadDialog({ onClose }: { onClose: () => void }) {
     <Modal
       open
       onClose={onClose}
-      title="Upload to ADO"
-      subtitle={currentProject ? displayName(currentProject) : "Select a project first"}
+      title={`Upload to ADO${
+        currentProject ? ` - ${displayName(currentProject)}` : ""
+      }`}
       width={700}
       footer={
         <>

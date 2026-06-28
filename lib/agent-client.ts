@@ -474,6 +474,13 @@ export const agent = {
     return `${AGENT_URL}/artifacts/download?path=${encodeURIComponent(path)}`;
   },
 
+  async deleteArtifact(path: string): Promise<{ ok: boolean }> {
+    return agentFetch<{ ok: boolean }>(
+      `/artifacts/delete?path=${encodeURIComponent(path)}`,
+      { method: "DELETE" }
+    );
+  },
+
   // -- Generation (async job) --
   /** Start a generation run and poll to completion. */
   async generate(

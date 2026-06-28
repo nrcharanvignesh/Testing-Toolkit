@@ -1,22 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { RefreshCw, Upload, ExternalLink, FileText, Download } from "lucide-react";
+import { RefreshCw, FileText } from "lucide-react";
 import {
   agent,
   type WorkItemDetail,
   type ArtifactFile,
 } from "@/lib/agent-client";
 import { useAppState } from "@/lib/app-state";
-import { COLOR_MUTED, stateColor } from "@/lib/board-utils";
+import { COLOR_MUTED } from "@/lib/board-utils";
 
 interface DetailPaneProps {
   activeWiId: number | null;
 }
 
 export function DetailPane({ activeWiId }: DetailPaneProps) {
-  const { currentProject, settings, openDialog, setGenerateCtx, pushLog } =
-    useAppState();
+  const { currentProject, settings, displayName, pushLog } = useAppState();
   const [mode, setMode] = useState<"detail" | "outputs">("detail");
   const [detail, setDetail] = useState<WorkItemDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -53,19 +52,25 @@ export function DetailPane({ activeWiId }: DetailPaneProps) {
     window.open(url, "_blank", "noopener");
   };
 
+  // Desktop tabs: selected tab is gray/inset (not bright blue) — D01.
+  const tabStyle = (active: boolean): React.CSSProperties =>
+    active
+      ? { background: "#252830", color: "#edf0f5", borderColor: "#2d313c" }
+      : { background: "transparent", color: "#8a8f99" };
+
   return (
     <div className="tt-card flex h-full flex-col gap-2 p-2.5">
       <div className="flex items-center gap-2">
         <button
-          className="tt-btn-ghost !px-3 !py-1 text-xs"
-          data-active={mode === "detail"}
+          className="rounded-md border px-3 py-1 text-xs font-medium"
+          style={tabStyle(mode === "detail")}
           onClick={() => setMode("detail")}
         >
           Detail
         </button>
         <button
-          className="tt-btn-ghost !px-3 !py-1 text-xs"
-          data-active={mode === "outputs"}
+          className="rounded-md border px-3 py-1 text-xs font-medium"
+          style={tabStyle(mode === "outputs")}
           onClick={() => setMode("outputs")}
         >
           Outputs
@@ -76,29 +81,33 @@ export function DetailPane({ activeWiId }: DetailPaneProps) {
           disabled={!detail}
           onClick={openInAdo}
         >
-          <ExternalLink className="h-3.5 w-3.5" /> Open in ADO
+          Open in ADO
         </button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto rounded-[10px] border border-[#2d313c] bg-[#13161d] p-4">
         {mode === "detail" ? (
-          <DetailContent loading={loading} detail={detail} hasItem={activeWiId != null} />
+          <DetailContent
+            loading={loading}
+            detail={detail}
+            hasItem={activeWiId != null}
+          />
         ) : (
           <OutputsContent
             project={currentProject}
-            onRegenerate={(path) => {
-              setGenerateCtx({ tcType: "", xlsxPath: path });
-              openDialog("generate");
-            }}
-            onUpload={(path) => {
-              setGenerateCtx({ tcType: "", xlsxPath: path });
-              openDialog("upload");
-            }}
+            projectLabel={currentProject ? displayName(currentProject) : ""}
+            pushLog={pushLog}
           />
         )}
       </div>
     </div>
   );
+}
+
+/** Leaf of a backslash/slash area or iteration path, e.g. ...\Abbott → Abbott. */
+function pathTail(p: string): string {
+  if (!p) return "";
+  return p;
 }
 
 function DetailContent({
@@ -130,31 +139,34 @@ function DetailContent({
       </p>
     );
 
+  // Desktop metadata line: "User Story · State: Backlog · Column: ... · Assigned: ..."
+  const metaParts: string[] = [];
+  if (detail.wi_type) metaParts.push(detail.wi_type);
+  if (detail.state) metaParts.push(`State: ${detail.state}`);
+  if (detail.board_column) metaParts.push(`Column: ${detail.board_column}`);
+  if (detail.assigned_to) metaParts.push(`Assigned: ${detail.assigned_to}`);
+
   return (
-    <div className="flex flex-col gap-4 text-sm">
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2">
-          <span className="tt-card-id font-bold">#{detail.wi_id}</span>
-          <span
-            className="tt-state-pill"
-            style={{
-              color: stateColor(detail.state),
-              borderColor: stateColor(detail.state),
-            }}
-          >
-            {detail.state || "n/a"}
-          </span>
-          <span className="text-xs text-muted-foreground">{detail.wi_type}</span>
-        </div>
-        <h3 className="text-base font-semibold text-[#edf0f5]">
-          {detail.title}
+    <div className="flex flex-col gap-3 text-sm">
+      {/* Title line: "#1536963 · E30" */}
+      <div className="flex flex-col gap-1.5">
+        <h3 className="text-[15px] font-bold text-[#edf0f5]">
+          <span className="text-[#5ba8ff]">#{detail.wi_id}</span>
+          {detail.title ? ` · ${detail.title}` : ""}
         </h3>
-        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
-          {detail.assigned_to && <span>Assignee: {detail.assigned_to}</span>}
-          {detail.iteration_path && <span>Sprint: {detail.iteration_path}</span>}
-          {detail.area_path && <span>Area: {detail.area_path}</span>}
+        {/* Metadata line */}
+        <div className="text-xs text-[#bfc4cc]">{metaParts.join("  ·  ")}</div>
+        {/* Area / Iteration / Tags */}
+        <div className="flex flex-col gap-0.5 text-xs text-[#8a8f99]">
+          <span>Area: {pathTail(detail.area_path) || "—"}</span>
+          <span>Iteration: {pathTail(detail.iteration_path) || "—"}</span>
+          <span>
+            Tags: {detail.tags && detail.tags.length ? detail.tags.join(", ") : "—"}
+          </span>
         </div>
       </div>
+
+      <div className="border-t border-[#2d313c]" />
 
       {detail.description_html && (
         <Section title="Description" html={detail.description_html} />
@@ -165,16 +177,15 @@ function DetailContent({
 
       {detail.comments_html?.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h4 className="text-xs font-bold uppercase tracking-wide text-[#7abaff]">
-            Comments
-          </h4>
+          <h4 className="text-sm font-bold text-[#edf0f5]">Comments</h4>
           {detail.comments_html.map(([who, when, html], i) => (
-            <div key={i} className="rounded-lg border border-[#2d313c] p-2">
-              <div className="mb-1 text-xs text-muted-foreground">
-                {who} · {when}
+            <div key={i} className="flex flex-col gap-0.5">
+              <div className="text-xs text-[#7abaff]">
+                {who}{" "}
+                <span className="text-[#7a7f8a]">{when}</span>
               </div>
               <div
-                className="tt-html prose-invert text-sm"
+                className="tt-html text-sm text-[#bfc4cc]"
                 dangerouslySetInnerHTML={{ __html: html }}
               />
             </div>
@@ -184,9 +195,7 @@ function DetailContent({
 
       {detail.attachments?.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <h4 className="text-xs font-bold uppercase tracking-wide text-[#7abaff]">
-            Attachments
-          </h4>
+          <h4 className="text-sm font-bold text-[#edf0f5]">Attachments</h4>
           {detail.attachments.map((a, i) => (
             <a
               key={`${a.name}-${i}`}
@@ -203,9 +212,7 @@ function DetailContent({
 
       {detail.hyperlinks?.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <h4 className="text-xs font-bold uppercase tracking-wide text-[#7abaff]">
-            Links
-          </h4>
+          <h4 className="text-sm font-bold text-[#edf0f5]">Links</h4>
           {detail.hyperlinks.map(([label, url], i) => (
             <a
               key={`${label}-${i}`}
@@ -223,18 +230,10 @@ function DetailContent({
   );
 }
 
-function formatBytes(n: number): string {
-  if (!n || n < 1024) return `${n || 0} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function Section({ title, html }: { title: string; html: string }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <h4 className="text-xs font-bold uppercase tracking-wide text-[#7abaff]">
-        {title}
-      </h4>
+      <h4 className="text-sm font-bold text-[#edf0f5]">{title}</h4>
       <div
         className="tt-html text-sm leading-relaxed text-[#bfc4cc] [&_img]:max-w-full [&_a]:text-[#5ba8ff]"
         dangerouslySetInnerHTML={{ __html: html }}
@@ -243,92 +242,135 @@ function Section({ title, html }: { title: string; html: string }) {
   );
 }
 
+function fmtTime(modified: number): string {
+  // backend sends epoch seconds
+  const d = new Date(modified * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
+}
+
+function kindLabel(kind: string): string {
+  if (kind === "testcases") return "Implementation";
+  if (kind === "packets") return "Packets";
+  return kind;
+}
+
+/** Generated artifacts pane — desktop layout (O01-O04). */
 function OutputsContent({
   project,
-  onRegenerate,
-  onUpload,
+  projectLabel,
+  pushLog,
 }: {
   project: string;
-  onRegenerate: (path: string) => void;
-  onUpload: (path: string) => void;
+  projectLabel: string;
+  pushLog: (level: "INFO" | "SUCCESS" | "WARN" | "ERROR", t: string) => void;
 }) {
   const [files, setFiles] = useState<ArtifactFile[]>([]);
   const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<string>("");
 
   const refresh = () => {
     if (!project) return;
     setLoading(true);
     agent
       .listArtifacts(project)
-      .then(setFiles)
+      .then((fs) => {
+        setFiles(fs);
+        setSelected((cur) => (fs.some((f) => f.path === cur) ? cur : ""));
+      })
       .catch(() => setFiles([]))
       .finally(() => setLoading(false));
   };
 
   useEffect(refresh, [project]);
 
+  const openSelected = () => {
+    if (!selected) return;
+    window.open(agent.artifactDownloadUrl(selected), "_blank", "noopener");
+  };
+
+  const deleteSelected = async () => {
+    if (!selected) return;
+    try {
+      await agent.deleteArtifact(selected);
+      pushLog("SUCCESS", "Deleted artifact.");
+      setSelected("");
+      refresh();
+    } catch (e) {
+      pushLog("ERROR", `Delete failed: ${(e as Error).message}`);
+    }
+  };
+
   if (!project)
     return (
       <p style={{ color: COLOR_MUTED }} className="text-sm">
-        Select a project to view generated outputs.
+        Select a project to view generated artifacts.
       </p>
     );
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <h4 className="text-xs font-bold uppercase tracking-wide text-[#7abaff]">
-          Generated Outputs
-        </h4>
-        <button className="tt-btn-ghost !px-2 !py-1 text-xs" onClick={refresh}>
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+    <div className="flex h-full flex-col gap-2">
+      <h3 className="text-sm font-bold text-[#edf0f5]">
+        Generated artifacts{projectLabel ? ` - ${projectLabel}` : ""}
+      </h3>
+      <p className="text-xs text-[#8a8f99]">
+        {files.length} file(s) across 1 board(s).
+      </p>
+
+      <div className="min-h-0 flex-1 overflow-auto rounded-[8px] border border-[#2d313c] bg-[#0d1017]">
+        {files.length === 0 ? (
+          <p style={{ color: COLOR_MUTED }} className="p-3 text-sm">
+            No generated files yet. Generate test cases or package PDFs to see
+            artifacts here.
+          </p>
+        ) : (
+          files.map((f) => {
+            const isSel = f.path === selected;
+            return (
+              <button
+                key={f.path}
+                onClick={() => setSelected(f.path)}
+                onDoubleClick={openSelected}
+                className="block w-full truncate px-3 py-1.5 text-left text-sm"
+                style={{
+                  background: isSel ? "#16466e" : "transparent",
+                  color: isSel ? "#ffffff" : "#cfd4dc",
+                }}
+                title={f.name}
+              >
+                <span className="text-[#8a8f99]">▸ </span>
+                {`[${kindLabel(f.kind)}] ${fmtTime(f.modified)}  ${f.name}`}
+              </button>
+            );
+          })
+        )}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          className="tt-btn-primary !px-4 !py-1.5 text-sm"
+          disabled={!selected}
+          onClick={openSelected}
+        >
+          Open
+        </button>
+        <button
+          className="tt-btn-danger !px-4 !py-1.5 text-sm"
+          disabled={!selected}
+          onClick={deleteSelected}
+        >
+          Delete
+        </button>
+        <button
+          className="tt-btn-ghost !px-4 !py-1.5 text-sm"
+          onClick={refresh}
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />{" "}
+          Refresh
         </button>
       </div>
-      {files.length === 0 ? (
-        <p style={{ color: COLOR_MUTED }} className="text-sm">
-          No generated files yet. Generate test cases or package PDFs to see
-          outputs here.
-        </p>
-      ) : (
-        files.map((f) => (
-          <div
-            key={f.path}
-            className="flex items-center gap-2 rounded-lg border border-[#2d313c] bg-[#1a1d26] px-3 py-2"
-          >
-            <FileText className="h-4 w-4 shrink-0 text-[#5ba8ff]" />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm text-[#edf0f5]">{f.name}</div>
-              <div className="text-xs text-muted-foreground">
-                {f.kind} · {formatBytes(f.size)}
-              </div>
-            </div>
-            <a
-              className="tt-btn-ghost !px-2 !py-1 text-xs"
-              href={agent.artifactDownloadUrl(f.path)}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Download className="h-3.5 w-3.5" /> Download
-            </a>
-            {f.kind === "testcases" && (
-              <>
-                <button
-                  className="tt-btn-ghost !px-2 !py-1 text-xs"
-                  onClick={() => onRegenerate(f.path)}
-                >
-                  <RefreshCw className="h-3.5 w-3.5" /> Regenerate
-                </button>
-                <button
-                  className="tt-btn-ghost !px-2 !py-1 text-xs"
-                  onClick={() => onUpload(f.path)}
-                >
-                  <Upload className="h-3.5 w-3.5" /> Upload
-                </button>
-              </>
-            )}
-          </div>
-        ))
-      )}
     </div>
   );
 }

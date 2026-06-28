@@ -6,49 +6,35 @@ import { Modal } from "@/components/ui/modal";
 import { agent, type KbStatus } from "@/lib/agent-client";
 import { useAppState } from "@/lib/app-state";
 
-type Tab = "documents" | "templates" | "prompts";
-
 export function ProjectKbDialog({ onClose }: { onClose: () => void }) {
   const { currentProject, displayName, pushLog } = useAppState();
-  const [tab, setTab] = useState<Tab>("documents");
+  const projectLabel = currentProject ? displayName(currentProject) : "";
 
   return (
     <Modal
       open
       onClose={onClose}
-      title="Project Knowledge Base"
-      subtitle={currentProject ? displayName(currentProject) : undefined}
-      width={760}
+      title={`Knowledge base${projectLabel ? ` - ${projectLabel}` : ""}`}
+      width={780}
       footer={
         <button className="tt-btn-ghost" onClick={onClose}>
           Close
         </button>
       }
     >
-      <div className="flex flex-col gap-3">
-        <div className="flex items-end gap-1 border-b border-[#1e2128]">
-          {(["documents", "templates", "prompts"] as Tab[]).map((t) => (
-            <button
-              key={t}
-              className="tt-tab"
-              data-active={tab === t}
-              onClick={() => setTab(t)}
-            >
-              {t === "documents" ? "Documents" : t === "templates" ? "Templates" : "System Prompts"}
-            </button>
-          ))}
-        </div>
-        {tab === "documents" && (
-          <DocumentsTab project={currentProject} pushLog={pushLog} />
-        )}
-        {tab === "templates" && <TemplatesTab project={currentProject} pushLog={pushLog} />}
-        {tab === "prompts" && <PromptsTab />}
+      <div className="flex flex-col gap-5">
+        <h3 className="text-sm font-bold text-[#edf0f5]">
+          Knowledge base{projectLabel ? ` - ${projectLabel}` : ""}
+        </h3>
+        <DocumentsSection project={currentProject} pushLog={pushLog} />
+        <TemplatesSection project={currentProject} pushLog={pushLog} />
+        <PromptsSection />
       </div>
     </Modal>
   );
 }
 
-function DocumentsTab({
+function DocumentsSection({
   project,
   pushLog,
 }: {
@@ -58,6 +44,7 @@ function DocumentsTab({
   const [status, setStatus] = useState<KbStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [indexing, setIndexing] = useState(false);
+  const [selectedDoc, setSelectedDoc] = useState<string>("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const refresh = () => {
@@ -102,26 +89,36 @@ function DocumentsTab({
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm leading-relaxed text-muted-foreground">
-        Drop requirement documents (.md .txt .pdf .docx .xlsx .pptx .html .csv
-        .json). Scanned PDFs and images are OCR&apos;d automatically. The index
-        rebuilds when documents change.
-      </p>
+    <section className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
+        <h4 className="mr-auto text-sm font-bold text-[#edf0f5]">Documents</h4>
         <button
-          className="tt-btn-primary !px-4 !py-1.5 text-sm"
+          className="tt-btn-primary !px-3 !py-1.5 text-xs"
           disabled={busy || !project}
           onClick={() => fileRef.current?.click()}
         >
-          <Upload className="h-4 w-4" /> Upload documents
+          <Upload className="h-3.5 w-3.5" /> Add files...
         </button>
         <button
-          className="tt-btn-ghost !px-4 !py-1.5 text-sm"
+          className="tt-btn-ghost !px-3 !py-1.5 text-xs"
+          disabled={!selectedDoc}
+          title="Removing individual KB documents is done in the desktop app"
+        >
+          Remove selected
+        </button>
+        <button
+          className="tt-btn-ghost !px-3 !py-1.5 text-xs"
+          disabled
+          title="Opening the KB folder requires the desktop app"
+        >
+          Open KB folder
+        </button>
+        <button
+          className="tt-btn-ghost !px-3 !py-1.5 text-xs"
           disabled={indexing || !project}
           onClick={reindex}
         >
-          <RefreshCw className={`h-4 w-4 ${indexing ? "animate-spin" : ""}`} />{" "}
+          <RefreshCw className={`h-3.5 w-3.5 ${indexing ? "animate-spin" : ""}`} />{" "}
           Rebuild index
         </button>
         <input
@@ -132,93 +129,138 @@ function DocumentsTab({
           onChange={(e) => upload(e.target.files)}
         />
       </div>
-      <div className="max-h-64 overflow-auto rounded-lg border border-[#2d313c] bg-[#13161d] p-2">
+
+      <div className="max-h-52 overflow-auto rounded-lg border border-[#2d313c] bg-[#13161d] p-1">
         {!status || status.documents.length === 0 ? (
           <p className="px-2 py-1.5 text-sm text-muted-foreground">
             No documents uploaded yet.
           </p>
         ) : (
-          status.documents.map((d) => (
-            <div key={d} className="flex items-center gap-2 px-2 py-1 text-sm">
-              <FileText className="h-3.5 w-3.5 text-[#5ba8ff]" />
-              <span className="truncate text-[#bfc4cc]">{d}</span>
-            </div>
-          ))
+          status.documents.map((d) => {
+            const isSel = d === selectedDoc;
+            return (
+              <button
+                key={d}
+                onClick={() => setSelectedDoc(d)}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm"
+                style={{
+                  background: isSel ? "#16466e" : "transparent",
+                  color: isSel ? "#ffffff" : "#bfc4cc",
+                }}
+              >
+                <FileText className="h-3.5 w-3.5 shrink-0 text-[#5ba8ff]" />
+                <span className="truncate">{d}</span>
+              </button>
+            );
+          })
         )}
       </div>
+
       {status && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs leading-relaxed text-[#1aab5c]">
           {status.indexed
-            ? `Indexed: ${status.n_documents ?? status.documents.length} doc(s), ${status.n_chunks ?? "?"} chunk(s).`
-            : "Not yet indexed."}
+            ? `Indexing ${status.n_documents ?? status.documents.length} document(s), ${
+                status.n_chunks ?? "?"
+              } chunk(s). Generation mode: recursive retrieval (navigate + map). Retrieval: BM25 lexical (always on), dense vectors, reranker.`
+            : "Not yet indexed. Click Rebuild index."}
         </p>
       )}
-    </div>
+    </section>
   );
 }
 
-function TemplatesTab({
+function TemplatesSection({
   project,
   pushLog,
 }: {
   project: string;
   pushLog: (l: "INFO" | "SUCCESS" | "WARN" | "ERROR", t: string) => void;
 }) {
-  const phases = ["Implementation", "SIT", "UAT"] as const;
+  const [phase, setPhase] = useState("Implementation");
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm leading-relaxed text-muted-foreground">
-        Upload a client&apos;s Excel test-script template per phase. On upload it
-        is analyzed by the LLM (header row, column purposes) and saved as a
-        deterministic spec used to render generated test cases into a copy of the
-        original template.
-      </p>
-      {phases.map((p) => (
-        <div
-          key={p}
-          className="flex items-center justify-between rounded-lg border border-[#2d313c] bg-[#1a1d26] px-3 py-2.5"
+    <section className="flex flex-col gap-2">
+      <h4 className="text-sm font-bold text-[#edf0f5]">
+        Test script templates (per phase)
+      </h4>
+      <div className="flex items-center gap-2">
+        <label className="text-sm text-[#bfc4cc]">Phase:</label>
+        <select
+          className="tt-input w-44 cursor-pointer text-sm"
+          value={phase}
+          onChange={(e) => setPhase(e.target.value)}
         >
-          <span className="text-sm font-medium text-[#edf0f5]">{p} template</span>
-          <button
-            className="tt-btn-ghost !px-3 !py-1.5 text-xs"
-            disabled={!project}
-            onClick={() => pushLog("INFO", `${p} template upload (xlsx).`)}
-          >
-            <Upload className="h-3.5 w-3.5" /> Upload .xlsx
-          </button>
-        </div>
-      ))}
-    </div>
+          {["Implementation", "SIT", "UAT"].map((p) => (
+            <option key={p}>{p}</option>
+          ))}
+        </select>
+        <button
+          className="tt-btn-primary !px-3 !py-1.5 text-xs"
+          disabled={!project}
+          onClick={() => pushLog("INFO", `${phase} template upload (xlsx).`)}
+        >
+          <Upload className="h-3.5 w-3.5" /> Upload template...
+        </button>
+        <button className="tt-btn-ghost !px-3 !py-1.5 text-xs" disabled>
+          Open
+        </button>
+        <button className="tt-btn-ghost !px-3 !py-1.5 text-xs" disabled>
+          Remove
+        </button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        No template uploaded for this phase. Generation falls back to the standard
+        reviewer spreadsheet only.
+      </p>
+    </section>
   );
 }
 
-function PromptsTab() {
-  const [phase, setPhase] = useState("Implementation");
+function PromptsSection() {
   const [text, setText] = useState("");
+  const [editing, setEditing] = useState(false);
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">
-        Each phase has its own editable system prompt that extends the canonical
-        strict TC contract.
-      </p>
-      <select
-        className="tt-input cursor-pointer"
-        value={phase}
-        onChange={(e) => setPhase(e.target.value)}
-      >
-        {["Implementation", "SIT", "UAT"].map((p) => (
-          <option key={p}>{p}</option>
-        ))}
-      </select>
+    <section className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <h4 className="text-sm font-bold text-[#edf0f5]">System prompt</h4>
+        <label className="ml-2 text-sm text-[#bfc4cc]">Scope:</label>
+        <select className="tt-input w-56 cursor-pointer text-sm" defaultValue="general">
+          <option value="general">General (manual mode / default)</option>
+          <option value="implementation">Implementation</option>
+          <option value="sit">SIT</option>
+          <option value="uat">UAT</option>
+        </select>
+        <div className="flex-1" />
+        <button
+          className="tt-btn-ghost !px-3 !py-1.5 text-xs"
+          onClick={() => setEditing(false)}
+        >
+          View
+        </button>
+        <button
+          className="tt-btn-ghost !px-3 !py-1.5 text-xs"
+          onClick={() => setEditing(true)}
+        >
+          Edit
+        </button>
+      </div>
       <textarea
-        className="tt-input min-h-52 resize-y font-mono text-xs"
-        placeholder={`System prompt for ${phase} phase...`}
+        className="tt-input min-h-40 resize-y font-mono text-xs"
+        placeholder="System prompt (extends the canonical strict TC contract)..."
         value={text}
+        disabled={!editing}
         onChange={(e) => setText(e.target.value)}
       />
-      <div className="flex justify-end">
-        <button className="tt-btn-primary !px-4 !py-1.5 text-sm">Save prompt</button>
+      <div className="flex items-center justify-end gap-2">
+        <button className="tt-btn-ghost !px-3 !py-1.5 text-xs" disabled={!editing}>
+          Reset to default
+        </button>
+        <button
+          className="tt-btn-primary !px-4 !py-1.5 text-sm"
+          disabled={!editing}
+        >
+          Save prompt
+        </button>
       </div>
-    </div>
+    </section>
   );
 }

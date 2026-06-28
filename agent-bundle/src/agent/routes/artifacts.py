@@ -58,6 +58,23 @@ async def download_artifact(path: str = Query(...)) -> FileResponse:
     return FileResponse(target, media_type=media, filename=target.name)
 
 
+@router.delete("/delete")
+async def delete_artifact(path: str = Query(...)) -> dict[str, Any]:
+    """Delete a single generated artifact (desktop 'Delete' button).
+
+    Constrained to the toolkit workspace so a crafted ?path= cannot delete
+    arbitrary files off the user's machine.
+    """
+    target = Path(path).resolve()
+    root = _workspace_root()
+    if root not in target.parents and target != root:
+        raise HTTPException(403, "Path outside workspace")
+    if not target.exists() or not target.is_file():
+        raise HTTPException(404, "Artifact not found")
+    target.unlink()
+    return {"ok": True, "deleted": str(target)}
+
+
 @router.get("/{project}")
 async def list_artifacts(project: str) -> list[dict[str, Any]]:
     from core.app_config import OUTPUTS_DIR

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import {
   agent,
@@ -35,14 +36,28 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState("");
   const [progress, setProgress] = useState<JobProgress | null>(null);
   const [pushed, setPushed] = useState<string>("");
+  const [runLog, setRunLog] = useState<string[]>([]);
+
+  // Custom options (ADO target fields) — desktop parity (I03).
+  const [optsOpen, setOptsOpen] = useState(true);
+  const [areaPath, setAreaPath] = useState("");
+  const [iterationPath, setIterationPath] = useState("");
+  const [testCategory, setTestCategory] = useState("");
+  const [inherit, setInherit] = useState(true);
+  const [fastModel, setFastModel] = useState(false);
 
   const tcType = generateCtx.tcType as TcType | "";
-  const phase = tcType ? TC_DISPLAY_NAME[tcType] : "test case";
+  const phase = tcType ? TC_DISPLAY_NAME[tcType] : "Test case";
+  const projectLabel = currentProject ? displayName(currentProject) : "";
+  const titleText = `Generate ${phase} TC - ${projectLabel}`;
   const ids = [...selected].sort((a, b) => a - b);
-  const rows = (boardView?.rows ?? []).filter((r) => selected.has(r.wi_id));
 
+  const appendLog = (line: string) => setRunLog((prev) => [...prev, line]);
   const handlers = {
-    onLog: (line: string) => pushLog(agentLogLevel(line), line),
+    onLog: (line: string) => {
+      appendLog(line);
+      pushLog(agentLogLevel(line), line);
+    },
     onProgress: (p: JobProgress) => setProgress(p),
   };
 
@@ -51,6 +66,7 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setPushed("");
     setProgress(null);
+    if (!isRegen) setRunLog([]);
     setStatus(
       isRegen ? "Regenerating with feedback..." : "Generating test cases..."
     );
@@ -129,6 +145,11 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
     }
   };
 
+  const storeExcel = () => {
+    if (!result) return;
+    window.open(agent.artifactDownloadUrl(result.xlsx_path), "_blank", "noopener");
+  };
+
   const progressPct =
     progress && progress.total > 0
       ? Math.round((progress.current / progress.total) * 100)
@@ -138,119 +159,148 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
     <Modal
       open
       onClose={onClose}
-      title={`Generate ${phase} Test Cases`}
-      subtitle={
-        currentProject
-          ? `${displayName(currentProject)} · ${ids.length} work item(s) selected`
-          : undefined
-      }
-      width={760}
+      title={titleText}
+      width={820}
       footer={
         <>
           {status && (
             <span className="mr-auto text-xs text-muted-foreground">
               {status}
-              {progressPct != null && ` · ${progress?.stage} ${progressPct}%`}
             </span>
           )}
-          <button className="tt-btn-ghost" onClick={onClose} disabled={busy}>
-            Close
-          </button>
-          {mode === "auto" && !result && (
+          {mode === "auto" && (
             <button
               className="tt-btn-success"
               onClick={() => run(false)}
               disabled={busy || !ids.length}
             >
-              {busy ? "Generating..." : "Generate"}
+              {busy ? "Generating..." : "AI Generate"}
             </button>
           )}
-          {result && (
-            <button
-              className="tt-btn-success"
-              onClick={push}
+          <button
+            className="tt-btn-ghost"
+            data-active={mode === "manual"}
+            onClick={() => setMode((m) => (m === "manual" ? "auto" : "manual"))}
+            disabled={busy}
+          >
+            Manual mode
+          </button>
+          <button className="tt-btn-ghost" disabled title="Stop (desktop only)">
+            Stop
+          </button>
+          <label className="flex items-center gap-1.5 px-1 text-xs text-[#bfc4cc]">
+            <input
+              type="checkbox"
+              className="tt-check"
+              checked={fastModel}
+              onChange={(e) => setFastModel(e.target.checked)}
               disabled={busy}
-              title="Create the reviewed test cases in Azure DevOps"
-            >
-              {busy ? "Working..." : "Push to ADO"}
-            </button>
-          )}
+            />
+            Fast model
+          </label>
+          <button
+            className="tt-btn-ghost"
+            onClick={storeExcel}
+            disabled={!result}
+            title="Open the review Excel workbook"
+          >
+            Store Excel
+          </button>
+          <button
+            className="tt-btn-success"
+            onClick={push}
+            disabled={busy || !result}
+            title="Create the reviewed test cases in Azure DevOps"
+          >
+            {busy ? "Working..." : "Push to ADO"}
+          </button>
+          <button className="tt-btn-ghost" onClick={onClose} disabled={busy}>
+            Close
+          </button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
-        {/* Mode toggle */}
-        <div className="flex items-center gap-2">
+        {/* Content heading */}
+        <h3 className="text-[15px] font-bold text-[#edf0f5]">
+          {titleText}{" "}
+          <span className="font-normal text-[#8a8f99]">
+            ({ids.length} work item(s))
+          </span>
+        </h3>
+
+        {/* Custom options (ADO target fields) */}
+        <div className="rounded-lg border border-[#2d313c] bg-[#13161d]">
           <button
-            className="tt-btn-ghost !px-3 !py-1 text-xs"
-            data-active={mode === "auto"}
-            onClick={() => setMode("auto")}
+            className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-sm font-semibold text-[#7abaff]"
+            onClick={() => setOptsOpen((o) => !o)}
           >
-            Automatic (API)
+            {optsOpen ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+            Custom options (ADO target fields)
           </button>
-          <button
-            className="tt-btn-ghost !px-3 !py-1 text-xs"
-            data-active={mode === "manual"}
-            onClick={() => setMode("manual")}
-          >
-            Manual Mode
-          </button>
-          {!settings?.has_api_key && (
-            <span className="text-xs text-[#f59e0b]">
-              No API key configured — Manual Mode recommended.
-            </span>
+          {optsOpen && (
+            <div className="flex flex-col gap-2.5 px-3 pb-3">
+              <OptRow label="Area Path">
+                <input
+                  className="tt-input"
+                  placeholder="Leave blank to inherit from each parent work item."
+                  value={areaPath}
+                  onChange={(e) => setAreaPath(e.target.value)}
+                />
+              </OptRow>
+              <OptRow label="Iteration Path">
+                <input
+                  className="tt-input"
+                  placeholder="Leave blank to inherit from each parent work item."
+                  value={iterationPath}
+                  onChange={(e) => setIterationPath(e.target.value)}
+                />
+              </OptRow>
+              <OptRow label="Test Category field">
+                <input
+                  className="tt-input"
+                  placeholder="Custom.TestCategory"
+                  value={testCategory}
+                  onChange={(e) => setTestCategory(e.target.value)}
+                />
+              </OptRow>
+              <OptRow label="Inheritance">
+                <label className="flex items-center gap-2 text-sm text-[#bfc4cc]">
+                  <input
+                    type="checkbox"
+                    className="tt-check"
+                    checked={inherit}
+                    onChange={(e) => setInherit(e.target.checked)}
+                  />
+                  Inherit Area/Iteration from parent when not overridden
+                </label>
+              </OptRow>
+            </div>
           )}
         </div>
 
-        {/* Selected work items */}
-        <div className="flex flex-col gap-1.5">
-          <h4 className="text-xs font-bold uppercase tracking-wide text-[#7abaff]">
-            Selected work items
-          </h4>
-          <div className="max-h-32 overflow-auto rounded-lg border border-[#2d313c] bg-[#13161d] p-2">
-            {rows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No work items selected.
-              </p>
-            ) : (
-              rows.map((r) => (
-                <div key={r.wi_id} className="truncate py-0.5 text-sm">
-                  <span className="font-semibold text-[#5ba8ff]">
-                    #{r.wi_id}
-                  </span>{" "}
-                  <span className="text-[#bfc4cc]">{r.title}</span>
-                </div>
-              ))
-            )}
+        {/* Progress */}
+        <div className="rounded-lg border border-[#2d313c] bg-[#13161d] p-3">
+          <div className="mb-1.5 text-xs text-[#bfc4cc]">
+            {busy
+              ? progress?.stage || `Fetching ${ids.length} work item(s)...`
+              : result
+                ? "Done."
+                : "Idle."}
+          </div>
+          <div className="tt-progress">
+            <div
+              className="tt-progress-chunk"
+              style={{ width: `${progressPct ?? (busy ? 8 : 0)}%` }}
+            />
           </div>
         </div>
 
-        {mode === "auto" ? (
-          <div className="flex flex-col gap-3">
-            <div className="tt-help p-3 text-xs leading-relaxed">
-              <div className="tt-help-header mb-1">
-                Recursive Language Model pipeline
-              </div>
-              <div className="tt-help-body">
-                Navigate → Map → Decompose → Generate (extended thinking) → Verify
-                + Gap-Fill. Coverage verification and gap-fill are always on. KBs
-                up to ~375 pages are passed whole for full coverage.
-              </div>
-            </div>
-
-            {result && (
-              <ReviewCard
-                result={result}
-                pushed={pushed}
-                feedback={feedback}
-                setFeedback={setFeedback}
-                iteration={iteration}
-                busy={busy}
-                onRegenerate={() => run(true)}
-              />
-            )}
-          </div>
-        ) : (
+        {mode === "manual" ? (
           <ManualMode
             project={currentProject}
             ids={ids}
@@ -261,14 +311,56 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
             onValidate={runManual}
             pushLog={pushLog}
           />
+        ) : (
+          <>
+            {/* Generation log pane */}
+            <div className="min-h-40 max-h-72 overflow-auto rounded-lg border border-[#2d313c] bg-[#0d1017] p-3 font-mono text-xs leading-relaxed">
+              {runLog.length === 0 ? (
+                <p className="text-[#5a5f6a]">
+                  Generation log will appear here.
+                </p>
+              ) : (
+                runLog.map((l, i) => (
+                  <div key={i} className="whitespace-pre-wrap text-[#bfc4cc]">
+                    {l}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {result && (
+              <RegenerateSection
+                pushed={pushed}
+                feedback={feedback}
+                setFeedback={setFeedback}
+                iteration={iteration}
+                busy={busy}
+                onRegenerate={() => run(true)}
+              />
+            )}
+          </>
         )}
       </div>
     </Modal>
   );
 }
 
-function ReviewCard({
-  result,
+function OptRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[140px_1fr] items-center gap-3">
+      <label className="text-right text-sm text-[#bfc4cc]">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function RegenerateSection({
   pushed,
   feedback,
   setFeedback,
@@ -276,7 +368,6 @@ function ReviewCard({
   busy,
   onRegenerate,
 }: {
-  result: GenerationResult;
   pushed: string;
   feedback: string;
   setFeedback: (v: string) => void;
@@ -285,39 +376,35 @@ function ReviewCard({
   onRegenerate: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-[#1aab5c]/40 bg-[#0d2a1c] p-3">
-      <p className="text-sm text-[#22c46a]">
-        {result.n_test_cases} test case(s) across {result.n_stories} story(ies).
+    <div className="flex flex-col gap-2 rounded-lg border border-[#2d313c] bg-[#13161d] p-3">
+      <h4 className="text-sm font-bold text-[#edf0f5]">Regenerate with feedback</h4>
+      <p className="text-xs text-[#8a8f99]">
+        Describe the changes you want applied ({iteration}/{MAX_ITERATIONS}{" "}
+        iterations used).
       </p>
-      <a
-        className="break-all text-xs text-[#5ba8ff] hover:underline"
-        href={agent.artifactDownloadUrl(result.xlsx_path)}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        Download review Excel: {result.xlsx_name}
-      </a>
+      <textarea
+        className="tt-input min-h-20 resize-y"
+        placeholder="e.g. Add more negative test cases for field validation, include boundary values for the date picker, merge steps 3 and 4 into a single step..."
+        value={feedback}
+        onChange={(e) => setFeedback(e.target.value)}
+        disabled={iteration >= MAX_ITERATIONS || busy}
+      />
       {pushed && <p className="text-sm text-[#22c46a]">{pushed}</p>}
-      <div className="mt-1 flex flex-col gap-1.5">
-        <label className="text-xs text-[#bfc4cc]">
-          Regeneration feedback (iteration {iteration}/{MAX_ITERATIONS})
-        </label>
-        <textarea
-          className="tt-input min-h-20 resize-y"
-          placeholder="Describe changes to apply, then Regenerate..."
-          value={feedback}
-          onChange={(e) => setFeedback(e.target.value)}
-          disabled={iteration >= MAX_ITERATIONS || busy}
-        />
-        <div className="flex justify-end">
-          <button
-            className="tt-btn-success !px-4 !py-1.5 text-sm"
-            onClick={onRegenerate}
-            disabled={busy || !feedback.trim() || iteration >= MAX_ITERATIONS}
-          >
-            Regenerate
-          </button>
-        </div>
+      <div className="flex items-center justify-between">
+        <button
+          className="tt-btn-ghost !px-3 !py-1.5 text-xs"
+          disabled
+          title="Attach files (desktop only)"
+        >
+          Attach files...
+        </button>
+        <button
+          className="tt-btn-primary !px-4 !py-1.5 text-sm"
+          onClick={onRegenerate}
+          disabled={busy || !feedback.trim() || iteration >= MAX_ITERATIONS}
+        >
+          Regenerate
+        </button>
       </div>
     </div>
   );
@@ -378,14 +465,11 @@ function ManualMode({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="tt-help p-3 text-xs leading-relaxed">
-        <div className="tt-help-header mb-1">Manual Mode</div>
-        <div className="tt-help-body">
-          Copy the system prompt and work-item dump into any LLM session, then
-          paste the returned JSON below and validate it. The review and push
-          steps are identical to automatic mode.
-        </div>
-      </div>
+      <p className="text-xs leading-relaxed text-[#8a8f99]">
+        Manual mode: copy the system prompt and work-item dump into any LLM
+        session, then paste the returned JSON below and validate it. The review
+        and push steps are identical to AI Generate.
+      </p>
 
       <button
         className="tt-btn-ghost self-start !px-3 !py-1.5 text-xs"
@@ -396,22 +480,14 @@ function ManualMode({
       </button>
 
       {prompt && (
-        <CopyBlock
-          label="System prompt"
-          text={prompt}
-          onCopy={() => copy(prompt)}
-        />
+        <CopyBlock label="System prompt" text={prompt} onCopy={() => copy(prompt)} />
       )}
       {dump && (
-        <CopyBlock
-          label="Work-item dump"
-          text={dump}
-          onCopy={() => copy(dump)}
-        />
+        <CopyBlock label="Work-item dump" text={dump} onCopy={() => copy(dump)} />
       )}
 
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-bold uppercase tracking-wide text-[#7abaff]">
+        <label className="text-sm font-bold text-[#edf0f5]">
           Paste JSON response
         </label>
         <textarea
@@ -447,9 +523,7 @@ function CopyBlock({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold uppercase tracking-wide text-[#7abaff]">
-          {label}
-        </span>
+        <span className="text-sm font-bold text-[#edf0f5]">{label}</span>
         <button className="tt-btn-ghost !px-2 !py-1 text-xs" onClick={onCopy}>
           Copy
         </button>

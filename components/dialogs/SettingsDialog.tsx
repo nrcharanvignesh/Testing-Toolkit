@@ -62,8 +62,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     <Modal
       open
       onClose={onClose}
-      title="Testing Toolkit — Settings"
-      subtitle="LLM API, Azure DevOps, and display preferences."
+      title="Testing Toolkit - Settings"
       width={680}
       footer={
         <>

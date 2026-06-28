@@ -64,8 +64,9 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
     <Modal
       open
       onClose={onClose}
-      title="Package PDFs"
-      subtitle={currentProject ? displayName(currentProject) : "Select a project first"}
+      title={`Package PDFs${
+        currentProject ? ` - ${displayName(currentProject)}` : ""
+      }`}
       width={700}
       footer={
         <>

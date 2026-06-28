@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Search } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { agent, type RetrievedChunk } from "@/lib/agent-client";
 import { useAppState } from "@/lib/app-state";
@@ -14,6 +13,8 @@ export function RetrievalDialog({ onClose }: { onClose: () => void }) {
   const [chunks, setChunks] = useState<RetrievedChunk[]>([]);
   const [status, setStatus] = useState("");
 
+  const projectLabel = currentProject ? displayName(currentProject) : "";
+
   const run = async () => {
     if (!currentProject || !query.trim()) return;
     setBusy(true);
@@ -22,7 +23,7 @@ export function RetrievalDialog({ onClose }: { onClose: () => void }) {
       const res = await agent.kbRetrieve(currentProject, query.trim(), topK);
       setChunks(res);
       setStatus(`${res.length} chunk(s) retrieved.`);
-      pushLog("INFO", `Retrieval preview: ${res.length} chunk(s) for "${query.trim()}".`);
+      pushLog("INFO", `Retrieval preview: ${res.length} chunk(s).`);
     } catch (e) {
       setStatus(`Retrieval failed: ${(e as Error).message}`);
       pushLog("ERROR", `Retrieval failed: ${(e as Error).message}`);
@@ -35,12 +36,7 @@ export function RetrievalDialog({ onClose }: { onClose: () => void }) {
     <Modal
       open
       onClose={onClose}
-      title="Retrieval Preview"
-      subtitle={
-        currentProject
-          ? `${displayName(currentProject)} · local, API-free`
-          : "Select a project first"
-      }
+      title={`Retrieval preview (test)${projectLabel ? ` - ${projectLabel}` : ""}`}
       width={780}
       footer={
         <>
@@ -54,22 +50,28 @@ export function RetrievalDialog({ onClose }: { onClose: () => void }) {
       }
     >
       <div className="flex flex-col gap-3">
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          Hybrid retrieval: BM25 + dense vectors (bge-small) with Reciprocal Rank
-          Fusion and cross-encoder reranking. Falls back to BM25 when dense models
-          are absent.
+        <h3 className="text-sm font-bold text-[#edf0f5]">
+          Retrieval preview{projectLabel ? ` - ${projectLabel}` : ""}
+        </h3>
+        <p className="text-sm leading-relaxed text-[#bfc4cc]">
+          Paste a user story (or any work-item text). This shows the KB chunks the
+          local retriever would supply for it - ranked, scored, and by source -
+          with NO LLM API call and NO ADO changes. Use it to sanity-check
+          retrieval before generating.
         </p>
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              className="tt-input !pl-8"
-              placeholder="Query the knowledge base..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && run()}
-            />
-          </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm text-[#bfc4cc]">Story / work-item text</label>
+          <textarea
+            className="tt-input min-h-32 resize-y"
+            placeholder="Paste the user story title and description here..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <label className="text-sm text-[#bfc4cc]">Chunks to retrieve:</label>
           <input
             type="number"
             className="tt-input w-20"
@@ -77,21 +79,20 @@ export function RetrievalDialog({ onClose }: { onClose: () => void }) {
             min={1}
             max={96}
             onChange={(e) => setTopK(parseInt(e.target.value, 10) || 32)}
-            title="Top K"
           />
           <button
             className="tt-btn-primary !px-4 !py-1.5 text-sm"
             onClick={run}
             disabled={busy || !query.trim() || !currentProject}
           >
-            {busy ? "..." : "Retrieve"}
+            {busy ? "Retrieving..." : "Preview retrieval"}
           </button>
         </div>
 
-        <div className="flex max-h-[50vh] flex-col gap-2 overflow-auto">
+        <div className="flex max-h-[44vh] flex-col gap-2 overflow-auto rounded-lg border border-[#2d313c] bg-[#0d1017] p-2">
           {chunks.length === 0 ? (
             <p className="py-4 text-center text-sm text-muted-foreground">
-              No results yet. Enter a query and retrieve.
+              No results yet. Paste text and preview retrieval.
             </p>
           ) : (
             chunks.map((c, i) => (

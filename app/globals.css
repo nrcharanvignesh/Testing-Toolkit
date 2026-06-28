@@ -57,6 +57,10 @@
   --color-action-hover: #0077ed;
   --color-action-press: #005bb5;
 
+  /* Desktop OS-style title bar (teal) used on the app frame and dialog frames */
+  --color-titlebar: #159a9a;
+  --color-titlebar-text: #eafdfd;
+
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
@@ -421,6 +425,53 @@
     background: linear-gradient(90deg, #0071e3, #5ba8ff);
     border-radius: 6px;
     transition: width 0.2s ease;
+  }
+
+  /* ---- OS-style teal title bar (app frame + dialog frames) ---- */
+  .tt-titlebar {
+    background: var(--color-titlebar);
+    color: var(--color-titlebar-text);
+    border-bottom: 1px solid #0e7e7e;
+  }
+  .tt-titlebar-btn {
+    color: #d6f5f5;
+    width: 30px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: background 0.1s ease;
+  }
+  .tt-titlebar-btn:hover {
+    background: rgba(255, 255, 255, 0.18);
+  }
+  .tt-titlebar-btn.is-close:hover {
+    background: #e53e3e;
+    color: #fff;
+  }
+
+  /* ---- Board tree group row (desktop: plain text + disclosure triangle) ---- */
+  .tt-group-row {
+    background: #0d1017;
+    color: #cfd4dc;
+    font-weight: 600;
+  }
+  .tt-group-tri {
+    color: #8a8f99;
+    display: inline-block;
+    width: 14px;
+    font-size: 10px;
+    user-select: none;
+  }
+  /* Segmented per-cell selection band (desktop QTableView selection) */
+  .tt-row-selected > td {
+    background: #16466e;
+    color: #ffffff;
+    box-shadow: inset 0 0 0 9999px rgba(22, 70, 110, 0);
+  }
+  .tt-row-selected > td:not(:last-child) {
+    border-right: 1px solid #0d1017;
   }
 
   /* ---- Dialog overlay ----
