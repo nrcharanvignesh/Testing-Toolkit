@@ -5,10 +5,12 @@ import {
   Settings,
   Brain,
   ChevronLeft,
+  RefreshCw,
 } from "lucide-react";
 import { useAppState } from "@/lib/app-state";
 import { Dropdown } from "@/components/ui/dropdown";
 import { agent } from "@/lib/agent-client";
+import { useAppUpdate } from "@/lib/use-app-update";
 
 export function NavPanel() {
   const {
@@ -27,6 +29,14 @@ export function NavPanel() {
     pushLog,
   } = useAppState();
 
+  const { apply: applyUpdate, phase: updatePhase, busy: updateBusy } =
+    useAppUpdate(pushLog);
+
+  async function onUpdateClick() {
+    setLogVisible(true);
+    await applyUpdate();
+  }
+
   async function openLogFolder() {
     setLogVisible(true);
     try {
@@ -39,6 +49,24 @@ export function NavPanel() {
 
   return (
     <div className="tt-rail flex w-56 shrink-0 flex-col gap-2 p-2">
+      {/* Update app */}
+      <button
+        className="tt-btn-ghost flex w-full items-center justify-center gap-2 !py-1.5 text-xs"
+        onClick={onUpdateClick}
+        disabled={updateBusy}
+        title="Check for and install the latest app patches, then reload"
+      >
+        <RefreshCw
+          className={`h-3.5 w-3.5 ${updateBusy ? "animate-spin" : ""}`}
+          strokeWidth={2}
+        />
+        {updatePhase === "applying"
+          ? "Checking..."
+          : updatePhase === "restarting"
+            ? "Restarting..."
+            : "Update app"}
+      </button>
+
       {/* Projects */}
       <div className="flex items-center justify-between px-1">
         <span className="text-sm font-semibold text-[#bfc4cc]">Projects</span>

@@ -814,6 +814,15 @@ export const agent = {
   async recentLog(maxBytes = 60000): Promise<RecentLog> {
     return agentFetch<RecentLog>(`/tools/log?max_bytes=${maxBytes}`);
   },
+
+  // -- Updates --
+  async updateStatus(): Promise<UpdateStatus> {
+    return agentFetch<UpdateStatus>("/update/status");
+  },
+
+  async applyUpdate(): Promise<UpdateApplyResult> {
+    return agentFetch<UpdateApplyResult>("/update/apply", { method: "POST" });
+  },
 };
 
 export interface ModelInfo {
@@ -826,6 +835,24 @@ export interface RecentLog {
   text: string;
   path: string;
   dir: string;
+}
+
+export interface UpdateStatus {
+  current: string;
+  latest: string | null;
+  update_available: boolean;
+  configured: boolean;
+  reachable: boolean;
+  install_dir: string;
+}
+
+export interface UpdateApplyResult {
+  applied: boolean;
+  status: "applied" | "up_to_date" | "failed" | "not_configured" | "unreachable";
+  current: string;
+  latest: string | null;
+  restarting: boolean;
+  detail?: string;
 }
 
 export interface SystemPrompt {

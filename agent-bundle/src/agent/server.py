@@ -180,6 +180,7 @@ from agent.routes.defects import router as defects_router
 from agent.routes.jobs import router as jobs_router
 from agent.routes.tools import router as tools_router
 from agent.routes.artifacts import router as artifacts_router
+from agent.routes.update import router as update_router
 
 app.include_router(health_router)
 app.include_router(settings_router, prefix="/settings")
@@ -191,6 +192,7 @@ app.include_router(defects_router, prefix="/defects")
 app.include_router(jobs_router, prefix="/jobs")
 app.include_router(tools_router, prefix="/tools")
 app.include_router(artifacts_router, prefix="/artifacts")
+app.include_router(update_router, prefix="/update")
 
 
 def _install_dir() -> Path:

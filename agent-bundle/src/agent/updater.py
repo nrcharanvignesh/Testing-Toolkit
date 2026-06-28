@@ -43,11 +43,15 @@ MANIFEST_URL: str = ""
 _stop_event = threading.Event()
 
 
-def _config_path() -> Path:
-    install_dir = Path(
+def install_dir() -> Path:
+    """Directory the agent is installed into (holds update.json, pid, etc.)."""
+    return Path(
         os.environ.get("TT_INSTALL_DIR", Path.home() / "TestingToolkitWeb")
     ).expanduser()
-    return install_dir / "update.json"
+
+
+def _config_path() -> Path:
+    return install_dir() / "update.json"
 
 
 def _load_config() -> dict[str, Any]:
@@ -92,27 +96,53 @@ def _update_loop() -> None:
         _stop_event.wait(CHECK_INTERVAL_SEC)
 
 
-def _check_and_apply() -> None:
-    if not MANIFEST_URL:
-        return
-
-    headers = _auth_headers()
+def _fetch_manifest() -> dict[str, Any] | None:
+    """Fetch + parse the update manifest, or None if not configured/reachable."""
+    url = MANIFEST_URL or resolve_manifest_url()
+    if not url:
+        return None
     try:
-        resp = httpx.get(MANIFEST_URL, headers=headers, timeout=10,
+        resp = httpx.get(url, headers=_auth_headers(), timeout=10,
                          follow_redirects=True)
         if resp.status_code != 200:
-            return
-        manifest: dict[str, Any] = resp.json()
+            return None
+        return resp.json()
     except Exception:
-        return
+        return None
 
+
+def check_for_update() -> dict[str, Any]:
+    """Non-destructive: report current vs. available version. Safe to call
+    on demand from the UI; never downloads or restarts anything."""
+    configured = bool(MANIFEST_URL or resolve_manifest_url())
+    manifest = _fetch_manifest()
+    latest = manifest.get("version", "") if manifest else ""
+    return {
+        "current": AGENT_VERSION,
+        "latest": latest or None,
+        "update_available": bool(latest and latest != AGENT_VERSION),
+        "configured": configured,
+        "reachable": manifest is not None,
+        "install_dir": str(install_dir()),
+    }
+
+
+def _apply_manifest(manifest: dict[str, Any], *, defer_restart: bool = False) -> str:
+    """Download, verify and install the files in ``manifest``.
+
+    Returns "up_to_date", "applied" or "failed". When ``defer_restart`` is
+    True the restart is scheduled ~1s out so an HTTP caller can get a response
+    back before the process is replaced.
+    """
     remote_version = manifest.get("version", "")
     if not remote_version or remote_version == AGENT_VERSION:
-        return
+        return "up_to_date"
 
     files = manifest.get("files", [])
     if not files:
-        return
+        return "up_to_date"
+
+    headers = _auth_headers()
 
     # Installed layout: this file is <install>/agent/src/agent/updater.py
     # so src_root = <install>/agent/src and a manifest path "agent/server.py"
@@ -130,19 +160,19 @@ def _check_and_apply() -> None:
             r = httpx.get(url, headers=headers, timeout=30,
                           follow_redirects=True)
             if r.status_code != 200:
-                return  # abort the whole update; try again next cycle
+                return "failed"  # abort the whole update; try again next cycle
             content = r.content
             if expected_hash and hashlib.sha256(content).hexdigest() != expected_hash:
-                return  # corrupt/mismatched -> abort, do not apply a partial update
+                return "failed"  # corrupt/mismatched -> do not apply partial
             staged.append((src_root / rel_path, content))
         except Exception:
-            return
+            return "failed"
 
     # Install any new dependencies (extra wheels) BEFORE swapping in source
     # that imports them. If this fails we abort so we never restart into code
     # whose imports cannot resolve (which would crash-loop the agent).
     if not _install_extra_wheels(manifest.get("extraWheels") or [], headers):
-        return
+        return "failed"
 
     # All files fetched and verified -> apply atomically-ish, then restart.
     for dest, content in staged:
@@ -150,9 +180,47 @@ def _check_and_apply() -> None:
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(content)
         except Exception:
-            return
+            return "failed"
 
-    _restart()
+    if defer_restart:
+        threading.Timer(1.0, _restart).start()
+    else:
+        _restart()
+    return "applied"
+
+
+def apply_update_now() -> dict[str, Any]:
+    """On-demand update triggered from the UI. Downloads + applies the latest
+    manifest and (if anything changed) schedules a restart so the new code
+    takes effect. Returns a status dict for the caller to surface."""
+    if not (MANIFEST_URL or resolve_manifest_url()):
+        return {
+            "applied": False, "status": "not_configured",
+            "current": AGENT_VERSION, "latest": None, "restarting": False,
+            "detail": "Automatic updates are not configured for this install.",
+        }
+    manifest = _fetch_manifest()
+    if not manifest:
+        return {
+            "applied": False, "status": "unreachable",
+            "current": AGENT_VERSION, "latest": None, "restarting": False,
+            "detail": "Could not reach the update server.",
+        }
+    status = _apply_manifest(manifest, defer_restart=True)
+    return {
+        "applied": status == "applied",
+        "status": status,
+        "current": AGENT_VERSION,
+        "latest": manifest.get("version", "") or None,
+        "restarting": status == "applied",
+    }
+
+
+def _check_and_apply() -> None:
+    manifest = _fetch_manifest()
+    if not manifest:
+        return
+    _apply_manifest(manifest)
 
 
 def _install_extra_wheels(wheels: list[dict[str, Any]], headers: dict[str, str]) -> bool:
