@@ -3,7 +3,6 @@
 import {
   Folder,
   LayoutGrid,
-  Wrench,
   HelpCircle,
   Settings,
   Brain,
@@ -64,25 +63,6 @@ export function ActivityBar() {
 
       <div className="flex-1" />
 
-      <Dropdown
-        align="left"
-        direction="up"
-        items={[
-          { label: "Bulk Defects...", onClick: () => openDialog("defects") },
-          { label: "Retrieval preview...", onClick: () => openDialog("retrieval") },
-        ]}
-        trigger={({ toggle, ref }) => (
-          <button
-            ref={ref}
-            onClick={toggle}
-            title="Tools"
-            aria-label="Tools"
-            className="tt-btn-ghost h-8 w-8 shrink-0 !rounded-lg !border-transparent !p-0"
-          >
-            <Wrench className="h-[18px] w-[18px]" strokeWidth={2} />
-          </button>
-        )}
-      />
       <Dropdown
         align="left"
         direction="up"

@@ -29,10 +29,8 @@ export type DialogId =
   | "settings"
   | "generate"
   | "kb"
-  | "defects"
   | "upload"
   | "package"
-  | "retrieval"
   | "about"
   | "viewlog"
   | null;

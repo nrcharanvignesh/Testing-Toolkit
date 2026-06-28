@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Wrench,
   HelpCircle,
   Settings,
   Brain,
@@ -105,24 +104,6 @@ export function NavPanel() {
 
       {/* Bottom buttons */}
       <div className="flex items-center gap-1">
-        <Dropdown
-          align="left"
-          direction="up"
-          items={[
-            { label: "Bulk Defects...", onClick: () => openDialog("defects") },
-            { label: "Retrieval preview...", onClick: () => openDialog("retrieval") },
-          ]}
-          trigger={({ toggle, ref }) => (
-            <button
-              ref={ref}
-              onClick={toggle}
-              title="Tools"
-              className="tt-btn-ghost h-8 w-8 !p-0"
-            >
-              <Wrench className="h-[18px] w-[18px]" strokeWidth={2} />
-            </button>
-          )}
-        />
         <Dropdown
           align="left"
           direction="up"
