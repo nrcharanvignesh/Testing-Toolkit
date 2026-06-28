@@ -103,7 +103,16 @@ async def recent_log(max_bytes: int = 60000) -> dict[str, Any]:
     Mirrors the desktop Help -> 'View recent log...' dialog, which shows the
     last ~60 KB of the log so it can be copied into a bug report.
     """
-    from core.app_logging import log_path, log_dir, tail_log
+    from core.app_logging import init_logging, log_path, log_dir, tail_log
+
+    # Safety net: if the process was launched in a way that skipped startup
+    # logging init, configure it now (idempotent) so the dialog points at a
+    # real file instead of "(no log file configured)".
+    try:
+        if log_path() is None:
+            init_logging()
+    except Exception:
+        pass
 
     try:
         text = tail_log(max_bytes)

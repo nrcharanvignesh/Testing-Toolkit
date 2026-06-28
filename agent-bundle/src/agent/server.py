@@ -46,6 +46,20 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:  # noqa: BLE001
         print(f"[agent] ensure_workspace failed (non-fatal): {exc}", flush=True)
 
+    # Ensure the structured rotating log exists no matter how the agent was
+    # started. main() also calls this, but when the process is launched by
+    # importing `app` directly (uvicorn, a launcher, or an older entrypoint)
+    # main() never runs, leaving log_path()/tail_log() at None -> the in-app
+    # "Recent log" shows "(no log file configured)". init_logging() is
+    # idempotent, so calling it here as well is safe.
+    try:
+        from core.app_logging import init_logging
+        lp = init_logging()
+        if lp is not None:
+            print(f"[agent] log file: {lp}", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[agent] could not init structured logging (non-fatal): {exc}", flush=True)
+
     # Preload ONNX models in the background so a slow/failed load never blocks
     # the HTTP server (and therefore the health check) from starting.
     def _bg_preload() -> None:
