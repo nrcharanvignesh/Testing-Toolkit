@@ -45,7 +45,7 @@ function DocumentsSection({
   const [busy, setBusy] = useState(false);
   const [indexing, setIndexing] = useState(false);
   const [indexProgress, setIndexProgress] = useState("");
-  const [selectedDoc, setSelectedDoc] = useState<string>("");
+  const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
 
   const refresh = () => {
@@ -57,6 +57,58 @@ function DocumentsSection({
   };
 
   useEffect(refresh, [project]);
+
+  const docs = status?.documents ?? [];
+
+  // Drop selections that no longer exist after a refresh/removal.
+  useEffect(() => {
+    setSelectedDocs((prev) => {
+      const valid = new Set(docs.filter((d) => prev.has(d)));
+      return valid.size === prev.size ? prev : valid;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
+  const allSelected = docs.length > 0 && selectedDocs.size === docs.length;
+  const someSelected = selectedDocs.size > 0 && !allSelected;
+
+  const setAll = (on: boolean) =>
+    setSelectedDocs(on ? new Set(docs) : new Set());
+
+  const toggleDoc = (name: string, on: boolean) =>
+    setSelectedDocs((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(name);
+      else next.delete(name);
+      return next;
+    });
+
+  const removeSelected = async () => {
+    if (!project || selectedDocs.size === 0) return;
+    const names = [...selectedDocs];
+    const ok = window.confirm(
+      `Remove ${names.length} document(s) from the knowledge base? ` +
+        "The index will need to be rebuilt afterwards."
+    );
+    if (!ok) return;
+    setBusy(true);
+    let okCount = 0;
+    for (const name of names) {
+      try {
+        await agent.deleteKbDocument(project, name);
+        okCount += 1;
+      } catch (e) {
+        pushLog("ERROR", `Could not remove ${name}: ${(e as Error).message}`);
+      }
+    }
+    setSelectedDocs(new Set());
+    pushLog(
+      okCount ? "SUCCESS" : "WARN",
+      `Removed ${okCount}/${names.length} KB document(s). Rebuild the index to apply.`
+    );
+    refresh();
+    setBusy(false);
+  };
 
   const upload = async (files: FileList | null) => {
     if (!files || !project) return;
@@ -129,10 +181,12 @@ function DocumentsSection({
         </button>
         <button
           className="tt-btn-ghost !px-3 !py-1.5 text-xs"
-          disabled={!selectedDoc}
-          title="Removing individual KB documents is done in the desktop app"
+          disabled={busy || selectedDocs.size === 0}
+          onClick={removeSelected}
+          title="Remove the checked documents from the knowledge base"
         >
           Remove selected
+          {selectedDocs.size > 0 ? ` (${selectedDocs.size})` : ""}
         </button>
         <button
           className="tt-btn-ghost !px-3 !py-1.5 text-xs"
@@ -158,27 +212,65 @@ function DocumentsSection({
         />
       </div>
 
-      <div className="max-h-52 overflow-auto rounded-lg border border-[#2d313c] bg-[#13161d] p-1">
-        {!status || status.documents.length === 0 ? (
+      {docs.length > 0 && (
+        <div className="flex items-center gap-2 px-1">
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-[#bfc4cc]">
+            <input
+              type="checkbox"
+              className="tt-check"
+              checked={allSelected}
+              ref={(el) => {
+                if (el) el.indeterminate = someSelected;
+              }}
+              onChange={(e) => setAll(e.target.checked)}
+            />
+            Select all
+          </label>
+          <span className="text-xs text-muted-foreground">
+            {selectedDocs.size} of {docs.length} selected
+          </span>
+        </div>
+      )}
+
+      <div
+        className="max-h-52 overflow-auto rounded-lg border border-[#2d313c] bg-[#13161d] p-1 focus:outline-none focus-visible:ring-1 focus-visible:ring-[#5ba8ff]"
+        tabIndex={0}
+        role="listbox"
+        aria-multiselectable="true"
+        aria-label="Knowledge base documents"
+        onKeyDown={(e) => {
+          // Ctrl/Cmd+A selects every document without leaving the dialog.
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+            e.preventDefault();
+            setAll(true);
+          }
+        }}
+      >
+        {docs.length === 0 ? (
           <p className="px-2 py-1.5 text-sm text-muted-foreground">
             No documents uploaded yet.
           </p>
         ) : (
-          status.documents.map((d) => {
-            const isSel = d === selectedDoc;
+          docs.map((d) => {
+            const isSel = selectedDocs.has(d);
             return (
-              <button
+              <label
                 key={d}
-                onClick={() => setSelectedDoc(d)}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm"
+                className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-[#1a1d26]"
                 style={{
                   background: isSel ? "#16466e" : "transparent",
                   color: isSel ? "#ffffff" : "#bfc4cc",
                 }}
               >
+                <input
+                  type="checkbox"
+                  className="tt-check"
+                  checked={isSel}
+                  onChange={(e) => toggleDoc(d, e.target.checked)}
+                />
                 <FileText className="h-3.5 w-3.5 shrink-0 text-[#5ba8ff]" />
                 <span className="truncate">{d}</span>
-              </button>
+              </label>
             );
           })
         )}
