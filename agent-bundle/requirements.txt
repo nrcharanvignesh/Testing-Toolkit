@@ -11,6 +11,10 @@
 # --- Web server ---
 fastapi>=0.111
 uvicorn>=0.29
+# Required by FastAPI for multipart/form-data (file uploads in the KB +
+# defects routes). Pure-python; its wheel ships in agent-bundle/extra-wheels
+# and is overlaid into the wheelhouse by the installer for offline installs.
+python-multipart>=0.0.9
 pydantic>=2.7
 
 # --- HTTP + TLS ---
