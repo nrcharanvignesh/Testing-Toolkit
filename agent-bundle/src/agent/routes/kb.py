@@ -228,3 +228,144 @@ async def kb_status(project: str) -> dict:
         "documents": docs,
         "indexed": index_file.exists(),
     }
+
+
+@router.delete("/document/{project}")
+async def delete_document(project: str, name: str) -> dict:
+    """Delete a single document from the project's kb/ folder and invalidate
+    the stored index so the next rebuild reflects the change. Mirrors the
+    desktop project KB dialog's "Remove selected" action."""
+    project_dir = PROJECTS_DIR / project
+    kb_dir = (project_dir / "kb").resolve()
+    target = (kb_dir / name).resolve()
+    # Path-traversal guard: the resolved target must live inside kb/.
+    if target.parent != kb_dir:
+        raise HTTPException(400, "Invalid document name")
+    if not target.exists() or not target.is_file():
+        raise HTTPException(404, f"Document not found: {name}")
+    target.unlink()
+    # Drop the index so status shows "not indexed" until a rebuild runs.
+    index_file = project_dir / "kb_index.json"
+    try:
+        if index_file.exists():
+            index_file.unlink()
+    except OSError:
+        pass
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------
+# Per-phase test-script templates (desktop project KB dialog parity)
+# ---------------------------------------------------------------------
+def _template_payload(project: str, phase: str) -> dict:
+    import core.project_store as ps
+
+    tpl, spec = ps.get_template(project, phase)
+    if tpl is None:
+        return {"has": False, "name": "", "describe": ""}
+    describe = ""
+    if spec is not None:
+        try:
+            describe = spec.describe()
+        except Exception:  # noqa: BLE001
+            describe = "spec unavailable"
+    return {"has": True, "name": Path(str(tpl)).name, "describe": describe}
+
+
+@router.get("/template/{project}/{phase}")
+async def template_status(project: str, phase: str) -> dict:
+    """Return the stored template status for a phase (implementation/sit/uat)."""
+    return _template_payload(project, phase)
+
+
+@router.post("/template/{project}/{phase}")
+async def upload_template(
+    project: str,
+    phase: str,
+    file: UploadFile = File(...),
+) -> dict:
+    """Store an uploaded Excel test-script template for a phase, analyzing it
+    once into a reusable spec. Best-effort LLM column analysis is attempted
+    when an API key is configured, exactly like the desktop dialog; otherwise
+    the heuristic analyzer is used."""
+    import tempfile
+
+    import core.project_store as ps
+
+    suffix = Path(file.filename or "template.xlsx").suffix.lower() or ".xlsx"
+    content = await file.read()
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+
+    try:
+        llm_mapping = None
+        llm_header_row = None
+        try:
+            from core.settings_store import build_llm_client, model_pair
+            from testgen.template_analyzer import analyze_template_with_llm
+
+            client = build_llm_client()
+            if client is not None:
+                primary, _fast = model_pair()
+                llm_header_row, llm_mapping = analyze_template_with_llm(
+                    client, primary, str(tmp_path)
+                )
+        except Exception:  # noqa: BLE001 — LLM analysis is best-effort.
+            llm_mapping = None
+            llm_header_row = None
+
+        try:
+            ps.save_template(
+                project, phase, tmp_path,
+                llm_mapping=llm_mapping, llm_header_row=llm_header_row,
+            )
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    return _template_payload(project, phase)
+
+
+@router.delete("/template/{project}/{phase}")
+async def delete_template(project: str, phase: str) -> dict:
+    """Remove the stored template (and its spec) for a phase."""
+    import core.project_store as ps
+
+    paths = ps.ProjectPaths.for_name(project)
+    existing = paths.find_template(phase)
+    if existing is not None and existing.exists():
+        try:
+            existing.unlink()
+        except OSError:
+            pass
+    spec_path = paths.template_spec_path(phase)
+    try:
+        if spec_path.exists():
+            spec_path.unlink()
+    except OSError:
+        pass
+    return {"ok": True}
+
+
+@router.get("/template/{project}/{phase}/download")
+async def download_template(project: str, phase: str):
+    """Download the stored template workbook for a phase (web equivalent of
+    the desktop dialog's "Open" button)."""
+    from fastapi.responses import FileResponse
+
+    import core.project_store as ps
+
+    tpl, _spec = ps.get_template(project, phase)
+    if tpl is None:
+        raise HTTPException(404, "No template uploaded for this phase")
+    path = Path(str(tpl))
+    return FileResponse(
+        str(path),
+        filename=path.name,
+        media_type="application/octet-stream",
+    )
