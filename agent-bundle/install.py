@@ -163,11 +163,18 @@ def find_system_python() -> str | None:
 # --------------------------------------------------------------------------
 # pip helpers (always offline)
 # --------------------------------------------------------------------------
+# Quiet, non-interactive pip flags shared by every install command so the
+# console shows a clean summary instead of a per-wheel "Processing ..." flood.
+# Warnings and errors are still printed.
+_PIP_QUIET = ["--quiet", "--no-input", "--disable-pip-version-check"]
+
+
 def pip_args_offline(extra: list[str]) -> list[str]:
     return [
         "-m",
         "pip",
         "install",
+        *_PIP_QUIET,
         "--no-index",
         f"--find-links={WHEELHOUSE}",
         *extra,
@@ -186,6 +193,7 @@ def pip_args_online(extra: list[str]) -> list[str]:
         "-m",
         "pip",
         "install",
+        *_PIP_QUIET,
         f"--find-links={WHEELHOUSE}",
         *extra,
     ]
@@ -285,7 +293,7 @@ def install_via_venv(base_python: str, online: bool = False) -> str | None:
         info("Installing packages (bundled wheels first, missing ones from PyPI)...")
         args = pip_args_online(["-r", str(REQUIREMENTS)])
     else:
-        info("Installing packages offline from the bundled wheelhouse...")
+        info("Installing packages offline from the bundled wheelhouse (this can take a minute)...")
         args = pip_args_offline(["-r", str(REQUIREMENTS)])
     r = subprocess.run([str(venv_py), *args], text=True)
     if r.returncode != 0:

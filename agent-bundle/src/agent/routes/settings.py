@@ -11,6 +11,7 @@ router = APIRouter()
 class SettingsResponse(BaseModel):
     configured: bool
     has_api_key: bool
+    has_pat: bool
     organization: str
     model: str
     fast_model: str
@@ -36,6 +37,7 @@ async def get_settings() -> SettingsResponse:
         get_setting,
         has_api_key,
         is_configured,
+        load_pat_value,
         KEY_BASE_URL,
         KEY_FALLBACK_MODEL,
         KEY_FAST_MODEL,
@@ -46,6 +48,7 @@ async def get_settings() -> SettingsResponse:
     return SettingsResponse(
         configured=is_configured(),
         has_api_key=has_api_key(),
+        has_pat=bool(load_pat_value()),
         organization=get_setting(KEY_ORG),
         model=get_setting(KEY_MODEL),
         fast_model=get_setting(KEY_FAST_MODEL),

@@ -79,6 +79,17 @@ try { Start-Transcript -Path $LogFile -Force | Out-Null; $Transcribing = $true }
 
 function Write-Step($m) { Write-Host ""; Write-Host "==> $m" -ForegroundColor Cyan }
 function Write-Dbg($m)  { if ($Verbose) { Write-Host ("    [debug] " + $m) -ForegroundColor DarkGray } }
+# A single in-place progress bar (overwrites itself with a leading CR) so the
+# download shows clean forward motion instead of a wall of per-part lines.
+function Show-Bar($done, $total) {
+  $w = 28
+  $frac = if ($total -gt 0) { $done / $total } else { 0 }
+  $fill = [int][Math]::Round($frac * $w)
+  if ($fill -gt $w) { $fill = $w }
+  if ($fill -lt 0)  { $fill = 0 }
+  $bar = ('#' * $fill) + ('-' * ($w - $fill))
+  Write-Host -NoNewline ("\`r    [{0}] {1,3:N0}%  ({2}/{3})   " -f $bar, ($frac * 100), $done, $total)
+}
 
 try {
   Write-Host ""
@@ -119,8 +130,7 @@ try {
     }
   }
 
-  Write-Step ("Downloading parts ({0} at a time, retry + checksum, resumable)" -f $Concurrency)
-  Write-Host ("    progress is shown as each part finishes; logs in " + $LogFile) -ForegroundColor DarkGray
+  Write-Step "Downloading agent bundle"
 
   # The download worker. Returns a structured result object (never throws) so
   # the main thread can log rich per-part diagnostics in real time.
@@ -246,14 +256,14 @@ try {
     $jobs += [pscustomobject]@{ PS = $ps; Handle = $ps.BeginInvoke(); Name = $p.name }
   }
 
-  # Report completions in real time (any order) + periodic heartbeat so the
-  # user can always see that work is progressing.
+  # Drive a single progress bar as parts complete (any order). Per-attempt and
+  # per-part detail still goes to the transcript log; the console stays clean.
   $pending = [System.Collections.ArrayList]::new()
   foreach ($j in $jobs) { [void]$pending.Add($j) }
   $done = 0
   $failures = @()
-  $started = Get-Date
-  $lastBeat = Get-Date
+  $total = $jobs.Count
+  Show-Bar 0 $total
   while ($pending.Count -gt 0) {
     for ($i = $pending.Count - 1; $i -ge 0; $i--) {
       $j = $pending[$i]
@@ -263,30 +273,16 @@ try {
         catch { $r = [pscustomobject]@{ Name = $j.Name; Status = 'failed'; Error = $_.Exception.Message; Attempts = $MaxRetries; Bytes = 0; Redirect = $false; Log = $null } }
         finally { $j.PS.Dispose() }
         $pending.RemoveAt($i)
-        if ($r.Status -eq 'failed') {
-          $failures += $r
-          Write-Host ("    [x] {0} FAILED after {1} attempt(s): {2}" -f $r.Name, $r.Attempts, $r.Error) -ForegroundColor Red
-          if ($r.Log) { foreach ($ln in $r.Log) { Write-Host ("        " + $ln) -ForegroundColor DarkGray } }
-        } else {
-          $done++
-          $tag = if ($r.Status -eq 'cached') { 'cached' } else { 'ok' }
-          $via = if ($r.Redirect) { ' via redirect' } else { '' }
-          Write-Host ("    [{0}/{1}] {2} {3} ({4:N1} MB, {5} attempt(s), {6}s{7})" -f $done, $jobs.Count, $r.Name, $tag, ($r.Bytes / 1MB), $r.Attempts, [int]($r.Ms / 1000), $via) -ForegroundColor Green
-          if ($Verbose -and $r.Log) { foreach ($ln in $r.Log) { Write-Host ("        " + $ln) -ForegroundColor DarkGray } }
-        }
+        if ($r.Status -eq 'failed') { $failures += $r } else { $done++ }
+        Show-Bar ($done + $failures.Count) $total
       }
     }
-    if ($pending.Count -gt 0) {
-      Start-Sleep -Milliseconds 300
-      if (((Get-Date) - $lastBeat).TotalSeconds -ge 3) {
-        $el = [int]((Get-Date) - $started).TotalSeconds
-        Write-Host ("    ...working: {0}/{1} done, {2} in flight, {3}s elapsed" -f $done, $jobs.Count, $pending.Count, $el) -ForegroundColor DarkGray
-        $lastBeat = Get-Date
-      }
-    }
+    if ($pending.Count -gt 0) { Start-Sleep -Milliseconds 200 }
   }
+  Write-Host ""
   $pool.Close(); $pool.Dispose()
   if ($failures.Count -gt 0) {
+    foreach ($f in $failures) { Write-Host ("    [x] " + $f.Name + " failed: " + $f.Error) -ForegroundColor Red }
     throw ([string]$failures.Count + ' part(s) failed to download. Completed parts are cached and will be skipped when you re-run this installer. See the log: ' + $LogFile)
   }
 
@@ -523,8 +519,19 @@ try:
     dbg("work dir: %s" % work)
     dbg("parts cache: %s" % parts_dir)
 
-    step("Downloading parts (%d at a time, retry + checksum, resumable)" % CONCURRENCY)
-    log("    progress is shown as each part finishes; logs in %s" % _log_path)
+    step("Downloading agent bundle")
+
+    # A single in-place progress bar (CR-overwritten). Per-part detail still
+    # goes to the transcript log; the console stays clean.
+    def show_bar(done, total):
+        w = 28
+        frac = (done / total) if total else 0
+        fill = int(round(frac * w))
+        if fill > w: fill = w
+        if fill < 0: fill = 0
+        bar = "#" * fill + "-" * (w - fill)
+        sys.stdout.write("\\r    [%s] %3d%%  (%d/%d)   " % (bar, int(frac * 100), done, total))
+        sys.stdout.flush()
 
     def sha256_file(path):
         h = hashlib.sha256()
@@ -569,20 +576,21 @@ try:
 
     done = 0
     failures = []
+    total = len(parts)
+    show_bar(0, total)
     with ThreadPoolExecutor(max_workers=CONCURRENCY) as ex:
         futs = {ex.submit(download, p): p for p in parts}
         for fut in as_completed(futs):
             r = fut.result()
             if r["status"] == "failed":
                 failures.append(r)
-                log("    [x] %s FAILED after %d attempt(s): %s" % (r["name"], r["attempts"], r["error"]))
             else:
                 done += 1
-                log("    [%d/%d] %s %s (%.1f MB, %d attempt(s), %ds)" % (
-                    done, len(parts), r["name"],
-                    "cached" if r["status"] == "cached" else "ok",
-                    r["bytes"] / 1048576.0, r["attempts"], int(r["secs"])))
+            show_bar(done + len(failures), total)
+    sys.stdout.write("\\n"); sys.stdout.flush()
     if failures:
+        for f in failures:
+            log("    [x] %s failed: %s" % (f["name"], f["error"]))
         raise RuntimeError(
             "%d part(s) failed to download. Completed parts are cached and will be "
             "skipped when you re-run this installer. See the log: %s" % (len(failures), _log_path))

@@ -45,7 +45,7 @@ export interface HealthResponse {
 export interface SettingsResponse {
   configured: boolean;
   has_api_key: boolean;
-  has_pat?: boolean;
+  has_pat: boolean;
   organization: string;
   model: string;
   fast_model: string;
@@ -586,6 +586,33 @@ export const agent = {
       throw new Error(humanizeError(res.status, body));
     }
     return res.json();
+  },
+
+  /** Export reviewed defects to an .xlsx and trigger a browser download. */
+  async downloadDefectsExcel(defects: ParsedDefect[]): Promise<void> {
+    const kept = defects.filter((d) => !d.skip && d.title.trim());
+    if (kept.length === 0) throw new Error("No defects to export");
+    const res = await fetch(`${AGENT_URL}/defects/excel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ defects: kept }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(humanizeError(res.status, body));
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("content-disposition") ?? "";
+    const match = /filename="?([^"]+)"?/.exec(disposition);
+    const filename = match?.[1] ?? "defects_review.xlsx";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   },
 
   /** Create Bug work items from reviewed defects (async job). */

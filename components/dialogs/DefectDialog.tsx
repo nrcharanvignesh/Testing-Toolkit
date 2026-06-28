@@ -75,6 +75,22 @@ export function DefectDialog({ onClose }: { onClose: () => void }) {
     }
   };
 
+  const exportExcel = async () => {
+    if (!defects) return;
+    setBusy(true);
+    setStatus("Building reviewer Excel...");
+    try {
+      await agent.downloadDefectsExcel(defects);
+      setStatus("Excel downloaded.");
+      pushLog("SUCCESS", "Exported reviewed defects to Excel.");
+    } catch (e) {
+      setStatus(`Export failed: ${(e as Error).message}`);
+      pushLog("ERROR", `Defect Excel export failed: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const setField = (idx: number, field: keyof ParsedDefect, value: unknown) => {
     setDefects((prev) =>
       prev
@@ -118,13 +134,22 @@ export function DefectDialog({ onClose }: { onClose: () => void }) {
               {busy ? "Parsing..." : "Parse & Review"}
             </button>
           ) : (
-            <button
-              className="tt-btn-success"
-              onClick={upload}
-              disabled={busy || keptCount === 0}
-            >
-              {busy ? "Uploading..." : `Upload ${keptCount} to ADO`}
-            </button>
+            <>
+              <button
+                className="tt-btn-ghost"
+                onClick={exportExcel}
+                disabled={busy || keptCount === 0}
+              >
+                Export to Excel
+              </button>
+              <button
+                className="tt-btn-success"
+                onClick={upload}
+                disabled={busy || keptCount === 0}
+              >
+                {busy ? "Uploading..." : `Upload ${keptCount} to ADO`}
+              </button>
+            </>
           )}
         </>
       }
