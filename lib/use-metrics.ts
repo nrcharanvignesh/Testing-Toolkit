@@ -14,39 +14,48 @@ import { agent, type MetricsResponse } from "./agent-client";
  */
 export function useMetrics(enabled: boolean, intervalMs = 3000) {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
-  // Once the endpoint proves unavailable, don't keep hammering it this session.
-  const unavailable = useRef(false);
-  const failures = useRef(0);
 
   useEffect(() => {
-    if (!enabled || unavailable.current) {
+    if (!enabled) {
       setMetrics(null);
       return;
     }
     let cancelled = false;
+    // Per-connection state: each (re)connect re-probes from scratch, so an
+    // agent upgraded to one that has /metrics is rediscovered without a reload.
+    let failures = 0;
+    let id: ReturnType<typeof setInterval> | null = null;
+
+    const stop = () => {
+      if (id !== null) {
+        clearInterval(id);
+        id = null;
+      }
+    };
 
     const sample = async () => {
       try {
         const m = await agent.metrics();
         if (cancelled) return;
-        failures.current = 0;
+        failures = 0;
         setMetrics(m);
       } catch {
         if (cancelled) return;
-        failures.current += 1;
-        // 3 strikes => treat as an old agent without /metrics; give up quietly.
-        if (failures.current >= 3) {
-          unavailable.current = true;
+        failures += 1;
+        // 3 strikes => treat as an old agent without /metrics; actually stop
+        // polling (don't keep hammering a 404 every interval) and stay null.
+        if (failures >= 3) {
           setMetrics(null);
+          stop();
         }
       }
     };
 
     void sample();
-    const id = setInterval(sample, intervalMs);
+    id = setInterval(sample, intervalMs);
     return () => {
       cancelled = true;
-      clearInterval(id);
+      stop();
     };
   }, [enabled, intervalMs]);
 

@@ -64,6 +64,70 @@ def _l2_normalize(mat: np.ndarray) -> np.ndarray:
     return (mat / norms).astype(np.float32)
 
 
+def _accelerated_providers() -> list[str] | None:
+    """ONNX providers to request, preferring an accelerator when one exists.
+
+    Returns the ordered provider list from core.hardware (e.g.
+    ["CUDAExecutionProvider", "CPUExecutionProvider"]) only when a real
+    accelerator is present; otherwise None so we don't perturb the default
+    CPU-only construction. Fully OS/architecture-agnostic (CUDA on
+    Windows/Linux, CoreML on Apple Silicon, DirectML on Windows) and fail-safe.
+    """
+    try:
+        from core.hardware import gpu_available, onnx_providers
+
+        if not gpu_available():
+            return None
+        providers = onnx_providers()
+        # Only meaningful if it contains something beyond plain CPU.
+        if providers and any(p != "CPUExecutionProvider" for p in providers):
+            return providers
+    except Exception:
+        pass
+    return None
+
+
+def _construct_with_fallbacks(cls: Any, base_kwargs: dict[str, Any]) -> Any:
+    """Construct a fastembed model, requesting GPU providers when available and
+    degrading gracefully on older fastembed builds.
+
+    ``base_kwargs`` are always kept (e.g. model_name, cache_dir). The optional
+    accelerator/offline keywords are layered on top and dropped one at a time
+    (newest/most-optional first) if a given fastembed version rejects them with
+    a TypeError, so we never lose the offline cache_dir just because
+    ``providers`` or ``local_files_only`` is unsupported.
+    """
+    # Optional kwargs in drop order: try ALL, then drop providers, then drop
+    # local_files_only — base_kwargs always survive.
+    optional: dict[str, Any] = {}
+    providers = _accelerated_providers()
+    if providers is not None:
+        optional["providers"] = providers
+    if base_kwargs.get("cache_dir"):
+        optional["local_files_only"] = True
+
+    drop_order = ["providers", "local_files_only"]
+    # Build the sequence of optional-kwarg sets to try, progressively dropping.
+    trials: list[dict[str, Any]] = [dict(optional)]
+    current = dict(optional)
+    for key in drop_order:
+        if key in current:
+            current = dict(current)
+            current.pop(key, None)
+            trials.append(dict(current))
+
+    last_exc: Exception | None = None
+    for extra in trials:
+        try:
+            return cls(**base_kwargs, **extra)
+        except TypeError as exc:
+            last_exc = exc
+            continue
+    if last_exc is not None:
+        raise last_exc
+    return cls(**base_kwargs)
+
+
 def _build_text_embedding(text_embedding_cls: Any, model_name: str) -> Any:
     """Construct a fastembed TextEmbedding.
 
@@ -71,18 +135,18 @@ def _build_text_embedding(text_embedding_cls: Any, model_name: str) -> Any:
     offline from it via cache_dir + local_files_only=True. Older fastembed
     builds without the local_files_only kwarg fall back to cache_dir only.
     With no bundled cache, use the default behavior (system cache / download).
+    When a GPU/accelerator is detected, request the accelerated ONNX providers
+    so embedding actually runs on the GPU (CPU otherwise).
     """
     models_dir: str | None = bundled_models_dir()
     if models_dir is not None:
-        try:
-            return text_embedding_cls(
-                model_name=model_name,
-                cache_dir=models_dir,
-                local_files_only=True,
-            )
-        except TypeError:
-            return text_embedding_cls(model_name=model_name, cache_dir=models_dir)
-    return text_embedding_cls(model_name=model_name)
+        return _construct_with_fallbacks(
+            text_embedding_cls,
+            {"model_name": model_name, "cache_dir": models_dir},
+        )
+    return _construct_with_fallbacks(
+        text_embedding_cls, {"model_name": model_name}
+    )
 
 
 class _FastEmbedEmbedder:

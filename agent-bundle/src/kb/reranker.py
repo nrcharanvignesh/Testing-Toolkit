@@ -44,19 +44,21 @@ def _build_cross_encoder(cross_encoder_cls: Any, model_name: str) -> Any:
 
     Mirrors the embedder logic: when a project-local model cache is bundled,
     load strictly offline via cache_dir + local_files_only=True (falling back
-    to cache_dir only on older fastembed builds). Otherwise default behavior.
+    to cache_dir only on older fastembed builds), and request the accelerated
+    ONNX providers when a GPU is detected so reranking runs on the GPU. Reuses
+    the embedder's construction ladder so both models behave identically.
     """
+    from kb.embeddings import _construct_with_fallbacks
+
     models_dir: str | None = bundled_models_dir()
     if models_dir is not None:
-        try:
-            return cross_encoder_cls(
-                model_name=model_name,
-                cache_dir=models_dir,
-                local_files_only=True,
-            )
-        except TypeError:
-            return cross_encoder_cls(model_name=model_name, cache_dir=models_dir)
-    return cross_encoder_cls(model_name=model_name)
+        return _construct_with_fallbacks(
+            cross_encoder_cls,
+            {"model_name": model_name, "cache_dir": models_dir},
+        )
+    return _construct_with_fallbacks(
+        cross_encoder_cls, {"model_name": model_name}
+    )
 
 
 class _FastEmbedReranker:
