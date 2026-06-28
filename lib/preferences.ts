@@ -47,6 +47,16 @@ export interface UiPreferences {
    * whether the toolkit is otherwise configured. Empty string = never checked.
    */
   lastUpdateCheck: string;
+  /**
+   * Full name of the last selected project, restored on the next launch so the
+   * app reopens where the user left off. Empty string = none yet.
+   */
+  lastProject: string;
+  /**
+   * `label` of the last selected board (e.g. "Abbott 2026 Enhancements /
+   * Stories"), restored after its project's boards load. Empty string = none.
+   */
+  lastBoard: string;
 }
 
 const KEY = "tt.ui.prefs.v3";
@@ -61,6 +71,8 @@ const DEFAULTS: UiPreferences = {
   pendingReindex: false,
   pendingReinstall: false,
   lastUpdateCheck: "",
+  lastProject: "",
+  lastBoard: "",
 };
 
 let cache: UiPreferences = DEFAULTS;
@@ -81,6 +93,9 @@ function load(): UiPreferences {
       pendingReinstall: !!parsed.pendingReinstall,
       lastUpdateCheck:
         typeof parsed.lastUpdateCheck === "string" ? parsed.lastUpdateCheck : "",
+      lastProject:
+        typeof parsed.lastProject === "string" ? parsed.lastProject : "",
+      lastBoard: typeof parsed.lastBoard === "string" ? parsed.lastBoard : "",
     };
   } catch {
     return DEFAULTS;
@@ -159,6 +174,18 @@ export function setPendingReindexPref(value: boolean) {
 export function setPendingReinstallPref(value: boolean) {
   ensureLoaded();
   persist({ ...cache, pendingReinstall: value });
+}
+
+/** Non-hook setter for the last selected project (always persisted). */
+export function setLastProjectPref(full: string) {
+  ensureLoaded();
+  persist({ ...cache, lastProject: full });
+}
+
+/** Non-hook setter for the last selected board label (always persisted). */
+export function setLastBoardPref(label: string) {
+  ensureLoaded();
+  persist({ ...cache, lastBoard: label });
 }
 
 /** Local calendar date as "YYYY-MM-DD" (not UTC) for daily-check comparisons. */

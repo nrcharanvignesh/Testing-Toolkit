@@ -11,6 +11,7 @@ import {
   createContext,
   useContext,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -28,6 +29,8 @@ import {
   getPreferences,
   setPanelPref,
   setPendingReindexPref,
+  setLastProjectPref,
+  setLastBoardPref,
 } from "./preferences";
 
 export type KbState = "none" | "indexing" | "ready" | "error";
@@ -170,6 +173,9 @@ export function AppStateProvider({
   const indexingRef = useRef(false);
   const rerunIndexRef = useRef(false);
 
+  // Ensures the saved last project/board is restored at most once per session.
+  const restoredRef = useRef(false);
+
   const [navVisible, setNavVisibleState] = useState<boolean>(
     () => getPreferences().panels.nav
   );
@@ -222,7 +228,7 @@ export function AppStateProvider({
   }, [pushLog]);
 
   const reloadBoards = useCallback(
-    async (projectOverride?: string) => {
+    async (projectOverride?: string, preferredBoardLabel?: string) => {
       const project = projectOverride ?? currentProject;
       if (!project) return;
       setBoardsLoading(true);
@@ -245,10 +251,17 @@ export function AppStateProvider({
         setBoards(deduped);
         pushLog("SUCCESS", `${deduped.length} board(s) loaded.`);
         if (deduped.length) {
+          // Prefer the previously selected board (restored across launches) when
+          // it still exists; otherwise fall back to the Stories board / first.
+          const preferred = preferredBoardLabel
+            ? deduped.find((b) => b.label === preferredBoardLabel)
+            : undefined;
           const storiesBoard =
+            preferred ??
             deduped.find((b) =>
               (b.name || "").toLowerCase().includes("stories")
-            ) ?? deduped[0];
+            ) ??
+            deduped[0];
           selectBoardInternal(storiesBoard, project);
         }
       } catch (e) {
@@ -286,6 +299,8 @@ export function AppStateProvider({
   const selectBoardInternal = useCallback(
     (b: Board, project: string) => {
       setCurrentBoard(b);
+      // Remember this board so it's restored on the next launch.
+      setLastBoardPref(b.label);
       loadBoardView(project, b);
     },
     [loadBoardView]
@@ -445,19 +460,36 @@ export function AppStateProvider({
   }, [displayName, pushLog, setLogVisible]);
 
   const selectProject = useCallback(
-    (full: string) => {
+    (full: string, preferredBoardLabel?: string) => {
       if (!full) return;
       setCurrentProject(full);
       setCurrentBoard(null);
       setBoardView(null);
       setBoards([]);
       setSelected(new Set());
+      // Remember this project so it's restored on the next launch.
+      setLastProjectPref(full);
       pushLog("INFO", `Selected project: ${displayName(full)}`);
-      reloadBoards(full);
+      reloadBoards(full, preferredBoardLabel);
       kickKbIndex(full);
     },
     [displayName, pushLog, reloadBoards, kickKbIndex]
   );
+
+  // Restore the last selected project (and, via reloadBoards, its last board)
+  // once the project list has loaded — so the app reopens exactly where the
+  // user left off. Only runs when nothing is selected yet, so a manual Refresh
+  // after the user has navigated never yanks them back.
+  useEffect(() => {
+    if (restoredRef.current) return;
+    if (!projects.length) return;
+    restoredRef.current = true;
+    if (currentProject) return; // user already picked something
+    const { lastProject, lastBoard } = getPreferences();
+    if (lastProject && projects.includes(lastProject)) {
+      selectProject(lastProject, lastBoard || undefined);
+    }
+  }, [projects, currentProject, selectProject]);
 
   const toggleSelected = useCallback((id: number, on: boolean) => {
     setSelected((prev) => {

@@ -120,12 +120,13 @@ export function BoardGrid() {
     setSelected(next);
   };
 
-  // Desktop header includes the full board name (with " / Stories"), e.g.
-  // "Abbott - Abbott 2026 Enhancements / Stories Work Items" (H01).
+  // Header shows the selected board the same way the Boards sidebar does — by
+  // its team name (e.g. "Abbott 2026 Enhancements"), NOT the board kind
+  // ("Stories"). So this reads "Abbott - Abbott 2026 Enhancements Work Items".
   const headerLabel =
     currentProject && currentBoard
       ? `${displayName(currentProject)} - ${
-          currentBoard.name || currentBoard.team_name
+          currentBoard.team_name || currentBoard.name
         } Work Items`
       : currentProject
         ? `${displayName(currentProject)} Work Items`
