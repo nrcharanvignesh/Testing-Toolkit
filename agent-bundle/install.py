@@ -42,6 +42,12 @@ MIN_PY = (3, 9)
 BUNDLE_DIR = Path(__file__).resolve().parent
 WHEELHOUSE = BUNDLE_DIR / "wheelhouse"
 MODELS_SRC = BUNDLE_DIR / "models"
+# The two local models that dense indexing requires (Hugging Face cache folder
+# names). Both must ship in the bundle so retrieval runs fully offline.
+REQUIRED_MODELS = (
+    "models--qdrant--bge-small-en-v1.5-onnx-q",   # dense embedder
+    "models--Xenova--ms-marco-MiniLM-L-6-v2",     # cross-encoder reranker
+)
 SRC_DIR = BUNDLE_DIR / "src"
 RUNTIME_DIR = BUNDLE_DIR / "runtime"
 REQUIREMENTS = BUNDLE_DIR / "requirements.txt"
@@ -666,6 +672,21 @@ def start_agent(launch_python: str, use_pythonpath: bool) -> None:
     warn(f"Full log: {log_path}")
 
 
+def _model_populated(model_dir: Path) -> bool:
+    """True if a bundled HF model cache folder has at least one non-empty
+    snapshot (i.e. the model files are really present, not just an empty dir)."""
+    snapshots = model_dir / "snapshots"
+    try:
+        if not snapshots.is_dir():
+            return False
+        for snap in snapshots.iterdir():
+            if snap.is_dir() and any(snap.iterdir()):
+                return True
+    except OSError:
+        return False
+    return False
+
+
 # --------------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------------
@@ -691,6 +712,27 @@ def main() -> int:
         error(f"Bundle is incomplete, missing: {', '.join(missing)}")
         error("Make sure you run this from inside the full agent-bundle folder.")
         return 1
+
+    # Validate BOTH local models ship in the bundle. Dense indexing is enforced
+    # (TT_ENFORCE_DENSE), so a model-less install would fail at index time -
+    # catch it here and fail loudly up front instead. Set TT_ENFORCE_DENSE=0 to
+    # allow a lexical-only install (models become optional, warn-only).
+    enforce_dense = (os.environ.get("TT_ENFORCE_DENSE", "1").strip() or "1") != "0"
+    missing_models = [
+        name for name in REQUIRED_MODELS
+        if not _model_populated(MODELS_SRC / name)
+    ]
+    if missing_models:
+        if enforce_dense:
+            error("Bundle is missing required local model(s): "
+                  f"{', '.join(missing_models)}")
+            error("Dense indexing is enforced and needs both bundled models. "
+                  "Re-download the full installer, or set TT_ENFORCE_DENSE=0 to "
+                  "install with lexical-only retrieval.")
+            return 1
+        warn("Local model(s) missing: " + ", ".join(missing_models) +
+             ". Installing anyway (TT_ENFORCE_DENSE=0); retrieval will be "
+             "lexical-only until the models are present.")
 
     # Remove any previous build first (keeps user data) so re-installs are clean.
     clean_previous_install(os_name)
