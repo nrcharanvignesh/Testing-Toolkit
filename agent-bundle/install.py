@@ -174,6 +174,51 @@ def pip_args_offline(extra: list[str]) -> list[str]:
     ]
 
 
+def pip_args_online(extra: list[str]) -> list[str]:
+    """Online pip install, but still PREFER the bundled wheelhouse first.
+
+    Used only as a fallback when the offline wheelhouse does not contain wheels
+    for this OS/arch (e.g. macOS or Linux, or arm64). The wheelhouse is kept as
+    an extra --find-links so any matching bundled wheels are still reused, and
+    only the genuinely-missing ones are pulled from PyPI.
+    """
+    return [
+        "-m",
+        "pip",
+        "install",
+        f"--find-links={WHEELHOUSE}",
+        *extra,
+    ]
+
+
+def wheelhouse_supports(os_name: str, arch: str) -> bool:
+    """Heuristic: does the bundled wheelhouse contain wheels for this platform?
+
+    The bundle historically ships Windows/amd64 wheels only. Any binary
+    (non-pure-python) wheel encodes its platform in the filename, e.g.
+    `onnxruntime-1.17-cp311-cp311-win_amd64.whl`. If we find binary wheels but
+    none whose platform tag matches this OS/arch, an offline install will fail,
+    so callers should allow an online fallback.
+    """
+    if not WHEELHOUSE.is_dir():
+        return False
+    tag_os = {"windows": "win", "macos": "macosx", "linux": "linux"}.get(os_name, os_name)
+    tag_arch = {"amd64": ("amd64", "x86_64"), "arm64": ("arm64", "aarch64")}.get(
+        arch, (arch,)
+    )
+    binary_wheels = False
+    for whl in WHEELHOUSE.glob("*.whl"):
+        name = whl.name.lower()
+        # Pure-python wheels (`...-py3-none-any.whl`) work everywhere; ignore.
+        if name.endswith("-none-any.whl"):
+            continue
+        binary_wheels = True
+        if tag_os in name and any(a in name for a in tag_arch):
+            return True
+    # If there are no binary wheels at all, pure-python deps install anywhere.
+    return not binary_wheels
+
+
 def ensure_pip(python_exe: str) -> bool:
     """Make sure `python -m pip` works; bootstrap from the wheelhouse if not."""
     try:
@@ -209,10 +254,13 @@ def ensure_pip(python_exe: str) -> bool:
 # --------------------------------------------------------------------------
 # Install strategies
 # --------------------------------------------------------------------------
-def install_via_venv(base_python: str) -> str | None:
-    """Create a venv from a real Python and offline-install into it.
+def install_via_venv(base_python: str, online: bool = False) -> str | None:
+    """Create a venv from a real Python and install into it.
 
-    Returns the venv's python path on success, else None.
+    Offline-first: installs from the bundled wheelhouse. When `online` is True
+    (used as a fallback on platforms the wheelhouse does not cover) it also
+    allows pulling missing wheels from PyPI. Returns the venv's python path on
+    success, else None.
     """
     info("Creating an isolated environment (venv)...")
     try:
@@ -233,20 +281,23 @@ def install_via_venv(base_python: str) -> str | None:
         warn("pip is unavailable inside the venv.")
         return None
 
-    info("Installing packages offline from the bundled wheelhouse...")
-    r = subprocess.run(
-        [str(venv_py), *pip_args_offline(["-r", str(REQUIREMENTS)])],
-        text=True,
-    )
+    if online:
+        info("Installing packages (bundled wheels first, missing ones from PyPI)...")
+        args = pip_args_online(["-r", str(REQUIREMENTS)])
+    else:
+        info("Installing packages offline from the bundled wheelhouse...")
+        args = pip_args_offline(["-r", str(REQUIREMENTS)])
+    r = subprocess.run([str(venv_py), *args], text=True)
     if r.returncode != 0:
         return None
     return str(venv_py)
 
 
-def install_via_target(python_exe: str) -> str | None:
+def install_via_target(python_exe: str, online: bool = False) -> str | None:
     """Fallback: install into a plain lib dir and run with PYTHONPATH.
 
-    Works with embeddable/portable Pythons that cannot create venvs.
+    Works with embeddable/portable Pythons that cannot create venvs. Offline by
+    default; when `online` is True it also pulls missing wheels from PyPI.
     Returns the python path to launch with on success, else None.
     """
     info("Installing into a private library folder (portable mode)...")
@@ -255,12 +306,9 @@ def install_via_target(python_exe: str) -> str | None:
         return None
 
     LIB_DIR.mkdir(parents=True, exist_ok=True)
-    r = subprocess.run(
-        [python_exe, *pip_args_offline(
-            ["--target", str(LIB_DIR), "-r", str(REQUIREMENTS)]
-        )],
-        text=True,
-    )
+    extra = ["--target", str(LIB_DIR), "-r", str(REQUIREMENTS)]
+    args = pip_args_online(extra) if online else pip_args_offline(extra)
+    r = subprocess.run([python_exe, *args], text=True)
     if r.returncode != 0:
         return None
     return python_exe
@@ -640,30 +688,68 @@ def main() -> int:
     system_py = find_system_python()
     bundled_py = find_bundled_python(os_name, arch)
 
+    # Decide whether an online fallback is permitted. The bundle ships
+    # Windows/amd64 wheels, so on other OSes/arches the offline install can't
+    # satisfy binary deps; there we allow pip to pull the missing wheels from
+    # PyPI (bundled wheels are still preferred). Set TT_OFFLINE_ONLY=1 to force
+    # a strictly offline install (e.g. on an air-gapped network).
+    offline_only = os.environ.get("TT_OFFLINE_ONLY") == "1"
+    covered = wheelhouse_supports(os_name, arch)
+    allow_online = (not offline_only) and (not covered)
+    if covered:
+        info(f"Bundled wheelhouse covers {os_name}-{arch} (offline install).")
+    elif offline_only:
+        warn(
+            f"Wheelhouse may not cover {os_name}-{arch}, but TT_OFFLINE_ONLY=1 "
+            "is set; staying strictly offline."
+        )
+    else:
+        warn(
+            f"Bundled wheels do not cover {os_name}-{arch}; will pull any "
+            "missing wheels from PyPI as a fallback (needs internet)."
+        )
+
     if system_py:
         info(f"Found system Python: {system_py}")
         launch_python = install_via_venv(system_py)
+        # Offline venv failed on an uncovered platform -> retry allowing PyPI.
+        if not launch_python and allow_online:
+            info("Retrying venv install with online fallback...")
+            shutil.rmtree(VENV_DIR, ignore_errors=True)
+            launch_python = install_via_venv(system_py, online=True)
 
     if not launch_python and bundled_py:
         info(f"Using bundled Python: {bundled_py}")
         # Bundled runtimes are often embeddable -> use the --target strategy.
         launch_python = install_via_target(bundled_py)
+        if not launch_python and allow_online:
+            info("Retrying portable install with online fallback...")
+            launch_python = install_via_target(bundled_py, online=True)
         use_pythonpath = launch_python is not None
 
     if not launch_python and system_py:
         # venv path failed but we still have a real Python -> target install.
         info("Falling back to portable install with system Python...")
         launch_python = install_via_target(system_py)
+        if not launch_python and allow_online:
+            info("Retrying portable install with online fallback...")
+            launch_python = install_via_target(system_py, online=True)
         use_pythonpath = launch_python is not None
 
     if not launch_python:
-        error("Could not install the agent offline.")
-        if os_name != "windows":
+        error("Could not install the agent.")
+        if offline_only and not covered:
             error(
-                "This bundle currently ships Windows-only binaries. On "
-                f"{os_name} you must add runtime/{os_name}-{arch} and matching "
-                "wheels to the bundle, or install a local Python 3.9+ plus the "
-                "required packages for this platform."
+                f"TT_OFFLINE_ONLY=1 is set but the bundle has no {os_name}-{arch} "
+                f"wheels. Either add runtime/{os_name}-{arch} + matching wheels to "
+                "the bundle, or unset TT_OFFLINE_ONLY to allow a PyPI fallback."
+            )
+        elif os_name != "windows":
+            error(
+                f"The offline install failed on {os_name}-{arch} and the online "
+                "fallback could not reach PyPI. Install a local Python 3.9+ and "
+                "ensure this machine can reach the internet (or a private mirror), "
+                "then re-run."
             )
         else:
             error("Install Python 3.9+ (e.g. from the Microsoft Store) and re-run.")
