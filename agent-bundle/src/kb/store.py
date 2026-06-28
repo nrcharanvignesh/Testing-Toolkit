@@ -409,6 +409,10 @@ class KbSource:
     name: str
     mtime: float
     size: int
+    # Content SHA (short hex). Empty on indexes built before content-hash
+    # incremental indexing; the currency check treats a missing/empty sha as
+    # "needs rehash", which triggers exactly one rebuild on upgrade.
+    sha: str = ""
 
 
 @dataclass(slots=True)
@@ -528,18 +532,26 @@ def _scan_sources(kb_dir: Path) -> list[Path]:
     return dedup_twins(_raw_scan(kb_dir))[0]
 
 
-def _source_records(files: list[Path]) -> list[KbSource]:
+def _source_records(
+    files: list[Path], cache: dict | None = None,
+) -> list[KbSource]:
+    from kb.file_sig import file_sha
+
+    cache = cache if cache is not None else {"entries": {}}
     out: list[KbSource] = []
     for p in files:
         try:
             st = p.stat()
-            out.append(KbSource(name=p.name, mtime=st.st_mtime, size=st.st_size))
+            out.append(KbSource(
+                name=p.name, mtime=st.st_mtime, size=st.st_size,
+                sha=file_sha(p, cache),
+            ))
         except OSError:
-            out.append(KbSource(name=p.name, mtime=0.0, size=0))
+            out.append(KbSource(name=p.name, mtime=0.0, size=0, sha=""))
     return out
 
 
-def build_index(kb_dir: Path) -> KbIndex:
+def build_index(kb_dir: Path, cache: dict | None = None) -> KbIndex:
     """Extract + chunk every document in kb_dir deterministically."""
     files = _scan_sources(kb_dir)
     chunks: list[KbChunk] = []
@@ -552,9 +564,26 @@ def build_index(kb_dir: Path) -> KbIndex:
     gc.collect()
     return KbIndex(
         chunks=chunks,
-        sources=_source_records(files),
+        sources=_source_records(files, cache),
         built_at=time.time(),
     )
+
+
+def _current_source_set(
+    files: list[Path], cache: dict,
+) -> set[tuple[str, str, int]]:
+    """Set of (name, content-sha, size) for the current files, using the hash
+    cache so unchanged files are not re-hashed."""
+    from kb.file_sig import file_sha
+
+    current: set[tuple[str, str, int]] = set()
+    for p in files:
+        try:
+            size = int(p.stat().st_size)
+        except OSError:
+            size = 0
+        current.add((p.name, file_sha(p, cache), size))
+    return current
 
 
 def _index_is_current(index_path: Path, files: list[Path]) -> bool:
@@ -568,18 +597,26 @@ def _index_is_current(index_path: Path, files: list[Path]) -> bool:
     # files are byte-for-byte unchanged (so improved extraction takes effect).
     if int(data.get("extractor_version", 1)) != EXTRACTOR_VERSION:
         return False
+    # Compare on CONTENT (name, sha, size). An index predating content hashing
+    # has empty shas, so it won't match and rebuilds exactly once on upgrade.
     cached = {
-        (s.get("name"), round(float(s.get("mtime", 0)), 3),
-         int(s.get("size", 0)))
+        (s.get("name"), str(s.get("sha", "") or ""), int(s.get("size", 0)))
         for s in data.get("sources", [])
     }
-    current = set()
-    for p in files:
-        try:
-            st = p.stat()
-            current.add((p.name, round(st.st_mtime, 3), st.st_size))
-        except OSError:
-            current.add((p.name, 0.0, 0))
+    if any(not sha for _n, sha, _sz in cached):
+        return False
+    from kb.file_sig import (
+        hash_cache_path,
+        load_hash_cache,
+        prune_hash_cache,
+        save_hash_cache,
+    )
+
+    cache_path = hash_cache_path(index_path)
+    cache = load_hash_cache(cache_path)
+    current = _current_source_set(files, cache)
+    prune_hash_cache(cache, files)
+    save_hash_cache(cache_path, cache)
     return cached == current
 
 
@@ -601,6 +638,7 @@ def _load_index(index_path: Path) -> KbIndex:
             name=str(s.get("name", "")),
             mtime=float(s.get("mtime", 0.0) or 0.0),
             size=int(s.get("size", 0) or 0),
+            sha=str(s.get("sha", "") or ""),
         )
         for s in data.get("sources", [])
     ]
@@ -613,18 +651,23 @@ def _load_index(index_path: Path) -> KbIndex:
 def load_or_build_index(kb_dir: Path, index_path: Path) -> KbIndex:
     """Return a cached index if the documents are unchanged, otherwise
     rebuild and persist. Never raises on cache problems."""
+    from kb.file_sig import hash_cache_path, load_hash_cache, save_hash_cache
+
     files = _scan_sources(kb_dir)
     if _index_is_current(index_path, files):
         try:
             return _load_index(index_path)
         except (OSError, json.JSONDecodeError, ValueError):
             pass
-    index = build_index(kb_dir)
+    cache_path = hash_cache_path(index_path)
+    cache = load_hash_cache(cache_path)
+    index = build_index(kb_dir, cache)
     try:
         index_path.parent.mkdir(parents=True, exist_ok=True)
         index_path.write_text(
             json.dumps(index.to_dict(), ensure_ascii=True), encoding="utf-8"
         )
+        save_hash_cache(cache_path, cache)
     except OSError:
         pass
     return index

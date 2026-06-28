@@ -295,6 +295,14 @@ async def delete_document(project: str, name: str) -> dict:
             paths.index_path.unlink()
     except OSError:
         pass
+    # Drop the content-hash cache that sits beside the index so it can't carry
+    # stale digests into the next build.
+    try:
+        from kb.file_sig import hash_cache_path
+
+        hash_cache_path(paths.index_path).unlink(missing_ok=True)
+    except Exception:
+        pass
     try:
         if paths.hybrid_dir.exists():
             shutil.rmtree(paths.hybrid_dir, ignore_errors=True)

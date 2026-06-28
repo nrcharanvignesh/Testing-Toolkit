@@ -199,7 +199,10 @@ export function StatusBar() {
                       ? ` — ${fmtMem(gpu.mem_used_mb)} / ${fmtMem(
                           gpu.mem_total_mb
                         )} VRAM`
-                      : "")
+                      : "") +
+                  // The execution provider a model actually bound to (>= 2.3.0):
+                  // distinguishes a real GPU run from a CPU fallback.
+                  (gpu.ep ? ` — ${gpu.ep}` : "")
                 }
               />
             )}

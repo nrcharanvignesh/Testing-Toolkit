@@ -33,6 +33,43 @@ export const TC_BUTTON_LABEL: Record<TcType, string> = {
 // ---------------------------------------------------------------------------
 // Core responses
 // ---------------------------------------------------------------------------
+/** Best-effort hardware summary from the agent (>= 2.2.0). */
+export interface HealthHardware {
+  arch?: string;
+  chip?: string;
+  is_arm?: boolean;
+  is_unified_memory?: boolean;
+}
+
+/** What the loaded ONNX models actually bound to (>= 2.3.0). */
+export interface ModelRuntimeEntry {
+  model: string;
+  providers: string[] | null;
+  accelerated: boolean;
+  active_provider: string | null;
+}
+
+/** Compact feature map served by /capabilities and embedded in /health
+ *  (agent >= 2.3.0). Any field may be null when the probe could not run. */
+export interface AgentCapabilities {
+  dense_retrieval: boolean | null;
+  reranker: boolean | null;
+  model_bundle: boolean | null;
+  embedder_model_files: boolean | null;
+  reranker_model_files: boolean | null;
+  gpu_capable: boolean | null;
+  model_runtime: {
+    models?: Record<string, ModelRuntimeEntry>;
+    accelerated?: boolean;
+    active_provider?: string | null;
+  } | null;
+  ocr: boolean | null;
+  audio_transcription: boolean | null;
+  video: boolean | null;
+  incremental_hash_indexing: boolean | null;
+  updates_configured: boolean | null;
+}
+
 export interface HealthResponse {
   status: string;
   version: string;
@@ -40,6 +77,24 @@ export interface HealthResponse {
   machine: string;
   models_loaded: boolean;
   tls_mode?: string;
+  /** Present on agent >= 2.2.0. */
+  hardware?: HealthHardware;
+  /** Present on agent >= 2.3.0. */
+  capabilities?: AgentCapabilities;
+}
+
+/** One diagnostic check from /doctor (agent >= 2.3.0). */
+export interface DoctorCheck {
+  id: string;
+  label: string;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+  fix: string;
+}
+
+export interface DoctorReport {
+  status: "pass" | "warn" | "fail";
+  checks: DoctorCheck[];
 }
 
 export interface GpuMetrics {
@@ -52,6 +107,12 @@ export interface GpuMetrics {
    *  shares system RAM, so mem_total_mb is the shared pool, not separate VRAM.
    *  Optional: absent on older agents that predate unified-memory reporting. */
   unified_memory?: boolean;
+  /** The execution provider a model actually bound to, e.g.
+   *  "CoreMLExecutionProvider" / "CUDAExecutionProvider". Null until a model
+   *  loads (or if models run on CPU). Present on agent >= 2.3.0. */
+  ep?: string | null;
+  /** True once a loaded model is confirmed running off-CPU (>= 2.3.0). */
+  accelerated?: boolean;
 }
 
 /** Live system resource usage from the agent's `/metrics` endpoint. Any field
@@ -425,6 +486,27 @@ export const agent = {
    * so callers should treat a thrown error as "metrics unavailable". */
   async metrics(): Promise<MetricsResponse> {
     return agentFetch<MetricsResponse>("/metrics");
+  },
+
+  /** Agent capability map. Present on agent >= 2.3.0; older agents 404 here,
+   * so callers should treat a thrown error as "capabilities unavailable" and
+   * fall back to the `capabilities` field on /health when present. */
+  async capabilities(): Promise<AgentCapabilities | null> {
+    try {
+      return await agentFetch<AgentCapabilities>("/capabilities");
+    } catch {
+      return null;
+    }
+  },
+
+  /** Run agent self-diagnostics. Present on agent >= 2.3.0; returns null when
+   * the endpoint is missing (older agents 404). */
+  async doctor(): Promise<DoctorReport | null> {
+    try {
+      return await agentFetch<DoctorReport>("/doctor");
+    } catch {
+      return null;
+    }
   },
 
   async checkConnection(): Promise<AgentStatus> {

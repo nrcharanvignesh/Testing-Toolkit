@@ -172,6 +172,115 @@ def _build_text_embedding(text_embedding_cls: Any, model_name: str) -> Any:
     )
 
 
+# ---------------------------------------------------------------------
+# Runtime execution-provider telemetry
+# ---------------------------------------------------------------------
+# What execution provider(s) the loaded ONNX models ACTUALLY bound to, recorded
+# at build time. This is distinct from core.hardware capability detection: an
+# accelerator can be *present* yet the model still fall back to CPU (e.g. CoreML
+# rejected the graph). Diagnostics/metrics read this to show the truth, not the
+# theoretical capability. Keyed by role: "embedder" / "reranker".
+_RUNTIME: dict[str, dict[str, Any]] = {}
+
+
+def _probe_onnx_providers(obj: Any, _depth: int = 0,
+                          _seen: set[int] | None = None) -> list[str] | None:
+    """Best-effort discovery of the onnxruntime ``get_providers()`` of whatever
+    ONNX session a fastembed model wraps.
+
+    fastembed's internal layout (TextEmbedding -> worker model(s) -> ORT
+    InferenceSession) changes across versions and may hold a *list* of worker
+    models, so we walk a small, bounded graph of likely attributes rather than
+    hard-coding one path. Returns the active provider list (e.g.
+    ["CoreMLExecutionProvider", "CPUExecutionProvider"]) or None. Never raises.
+    """
+    if obj is None or _depth > 5:
+        return None
+    if _seen is None:
+        _seen = set()
+    oid = id(obj)
+    if oid in _seen:
+        return None
+    _seen.add(oid)
+
+    getp = getattr(obj, "get_providers", None)
+    if callable(getp):
+        try:
+            provs = getp()
+            if provs:
+                return [str(p) for p in provs]
+        except Exception:
+            pass
+
+    # A fastembed model can keep a list of per-thread worker models.
+    for seq_attr in ("models", "_models"):
+        seq = getattr(obj, seq_attr, None)
+        if isinstance(seq, (list, tuple)):
+            for item in seq:
+                r = _probe_onnx_providers(item, _depth + 1, _seen)
+                if r:
+                    return r
+
+    for name in ("model", "_model", "session", "_session", "onnx_session",
+                 "ort_session", "embedding", "encoder"):
+        child = getattr(obj, name, None)
+        if child is not None:
+            r = _probe_onnx_providers(child, _depth + 1, _seen)
+            if r:
+                return r
+
+    # Last resort: shallow scan of instance attributes for a nested session.
+    try:
+        for v in list(vars(obj).values())[:24]:
+            if hasattr(v, "get_providers") or hasattr(v, "__dict__"):
+                r = _probe_onnx_providers(v, _depth + 1, _seen)
+                if r:
+                    return r
+    except Exception:
+        pass
+    return None
+
+
+def record_model_runtime(role: str, model_name: str, model_obj: Any) -> None:
+    """Record the ACTUAL runtime backend for a loaded model (role =
+    'embedder' | 'reranker'). Captures the real ONNX providers so diagnostics
+    can report GPU-vs-CPU truthfully. Never raises."""
+    try:
+        provs = _probe_onnx_providers(model_obj)
+        accelerated = bool(
+            provs and any(p != "CPUExecutionProvider" for p in provs)
+        )
+        _RUNTIME[role] = {
+            "model": model_name,
+            "providers": provs,
+            "accelerated": accelerated,
+            # The active EP is the first one ORT lists (highest priority bound).
+            "active_provider": provs[0] if provs else None,
+        }
+    except Exception:
+        pass
+
+
+def model_runtime_info() -> dict[str, dict[str, Any]]:
+    """Snapshot of what the loaded models are actually running on. Empty until
+    at least one model has been built this process."""
+    return {role: dict(info) for role, info in _RUNTIME.items()}
+
+
+def runtime_accelerated() -> bool:
+    """True if ANY loaded model bound to a non-CPU execution provider."""
+    return any(i.get("accelerated") for i in _RUNTIME.values())
+
+
+def active_execution_provider() -> str | None:
+    """The accelerator EP a loaded model actually bound to (e.g.
+    'CoreMLExecutionProvider'), or None if everything is on CPU / unknown."""
+    for info in _RUNTIME.values():
+        if info.get("accelerated") and info.get("active_provider"):
+            return str(info["active_provider"])
+    return None
+
+
 class _FastEmbedEmbedder:
     """Wraps fastembed.TextEmbedding (ONNX, CPU)."""
 
@@ -180,6 +289,8 @@ class _FastEmbedEmbedder:
 
         self._model = _build_text_embedding(TextEmbedding, model_name)
         self.name = f"fastembed:{model_name}"
+        # Record the ACTUAL execution provider(s) this session bound to.
+        record_model_runtime("embedder", self.name, self._model)
         # Probe the dimension once from a trivial embedding.
         probe = np.asarray(list(self._model.embed(["probe"]))[0],
                            dtype=np.float32)

@@ -95,6 +95,16 @@ async def health() -> dict:
         }
     except Exception:
         arch = {"arch": platform.machine()}
+    # Capabilities: what this agent can actually do on this machine (dense
+    # retrieval, reranker, OCR, GPU/EP in use, updates configured, ...). Fail-
+    # safe and cheap (no model loads); omitted on error.
+    caps: dict = {}
+    try:
+        from core.diagnostics import capabilities
+
+        caps = capabilities()
+    except Exception:
+        caps = {}
     return {
         "status": "ok",
         "version": AGENT_VERSION,
@@ -102,7 +112,37 @@ async def health() -> dict:
         "machine": platform.node(),
         "models_loaded": models_loaded(),
         "hardware": arch,
+        "capabilities": caps,
     }
+
+
+@router.get("/capabilities")
+async def capabilities_route() -> dict:
+    """Standalone capabilities map (same content as health.capabilities)."""
+    try:
+        from core.diagnostics import capabilities
+
+        return capabilities()
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
+@router.get("/doctor")
+async def doctor_route() -> dict:
+    """Run agent self-diagnostics and return a pass/warn/fail report with
+    remediation for anything degraded. Never raises."""
+    try:
+        from core.diagnostics import run_doctor
+
+        return run_doctor()
+    except Exception as e:  # noqa: BLE001
+        return {
+            "status": "warn",
+            "checks": [{
+                "id": "doctor", "label": "Diagnostics", "status": "warn",
+                "detail": f"could not run: {type(e).__name__}: {e}", "fix": "",
+            }],
+        }
 
 
 @router.get("/version")
@@ -209,7 +249,9 @@ async def metrics() -> dict:
     except Exception:
         pass
 
-    # GPU — only reported when an accelerator is actually present/in use.
+    # GPU — reported when an accelerator is present OR a loaded model actually
+    # bound to a non-CPU execution provider. We distinguish capability (the GPU
+    # exists) from real usage (a model's ONNX session is running on it).
     try:
         from core.hardware import (
             gpu_available,
@@ -217,11 +259,34 @@ async def metrics() -> dict:
             is_unified_memory,
         )
 
-        if gpu_available():
+        # What the loaded models ACTUALLY run on (truth, not capability).
+        ep_in_use: str | None = None
+        models_accelerated = False
+        try:
+            from kb.embeddings import (
+                active_execution_provider,
+                runtime_accelerated,
+            )
+
+            ep_in_use = active_execution_provider()
+            models_accelerated = bool(runtime_accelerated())
+        except Exception:
+            pass
+
+        if gpu_available() or models_accelerated:
             unified = bool(is_unified_memory())
             gpu: dict = {
                 "name": gpu_device_name() or "GPU",
-                "in_use": True,
+                # in_use reflects REAL model binding when a model has loaded;
+                # before any model loads it falls back to capability so the UI
+                # still shows the accelerator exists.
+                "in_use": models_accelerated or gpu_available(),
+                # The execution provider a model actually bound to, e.g.
+                # "CoreMLExecutionProvider" / "CUDAExecutionProvider". None
+                # until a model loads (or if models are on CPU).
+                "ep": ep_in_use,
+                # True once we've confirmed a model is running off-CPU.
+                "accelerated": models_accelerated,
                 "util_percent": None,
                 "mem_used_mb": None,
                 "mem_total_mb": None,

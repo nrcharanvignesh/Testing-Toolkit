@@ -69,6 +69,14 @@ class _FastEmbedReranker:
 
         self._model = _build_cross_encoder(TextCrossEncoder, model_name)
         self.name = f"fastembed:{model_name}"
+        # Record the ACTUAL execution provider(s) this session bound to, so
+        # diagnostics report GPU-vs-CPU truthfully for the reranker too.
+        try:
+            from kb.embeddings import record_model_runtime
+
+            record_model_runtime("reranker", self.name, self._model)
+        except Exception:
+            pass
 
     def rerank(
         self, query: str, candidates: list[tuple[str, str]], top_k: int,

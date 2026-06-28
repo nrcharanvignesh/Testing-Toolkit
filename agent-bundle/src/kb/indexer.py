@@ -72,16 +72,24 @@ _PARTIAL_SUFFIX: Final[str] = ".partial.json"
 _SCHEMA: Final[int] = 1
 
 
-def _sig(name: str, mtime: float, size: int) -> str:
-    return f"{name}|{round(float(mtime), 3)}|{int(size)}"
+def _sig(name: str, sha: str) -> str:
+    """Content signature: name + content SHA. Independent of mtime, so a file
+    re-copied/re-synced with identical bytes keeps the same signature and is not
+    needlessly re-extracted."""
+    return f"{name}|{sha}"
 
 
-def _file_sig(p: Path) -> tuple[str, float, int]:
+def _file_record(p: Path, cache: dict) -> tuple[str, str, int, float]:
+    """(name, content-sha, size, mtime) using the hash cache (only re-hashes
+    when mtime/size change)."""
+    from kb.file_sig import file_sha
+
+    sha = file_sha(p, cache)
     try:
         st = p.stat()
-        return p.name, st.st_mtime, st.st_size
+        return p.name, sha, int(st.st_size), float(st.st_mtime)
     except OSError:
-        return p.name, 0.0, 0
+        return p.name, sha, 0, 0.0
 
 
 def partial_path_for(index_path: Path | str) -> Path:
@@ -272,6 +280,25 @@ def build_index_resumable(
     index_path = Path(index_path)
     partial = partial_path_for(index_path)
 
+    # Content-hash cache (path -> mtime/size/sha) shared with the currency
+    # check, so files are hashed at most once per change and signatures are
+    # content-based (mtime churn no longer forces re-extraction).
+    from kb.file_sig import (
+        hash_cache_path,
+        load_hash_cache,
+        prune_hash_cache,
+        save_hash_cache,
+    )
+
+    _hash_cache_path = hash_cache_path(index_path)
+    hash_cache = load_hash_cache(_hash_cache_path)
+
+    def _save_hash_cache() -> None:
+        try:
+            save_hash_cache(_hash_cache_path, hash_cache)
+        except Exception:
+            pass
+
     def _log(msg: str) -> None:
         if on_log is not None:
             try:
@@ -345,6 +372,8 @@ def build_index_resumable(
         try:
             _atomic_write_json(index_path, empty.to_dict())
             partial.unlink(missing_ok=True)
+            prune_hash_cache(hash_cache, files)
+            _save_hash_cache()
         except OSError:
             pass
         _prog(0, 0, 0.0)
@@ -354,8 +383,8 @@ def build_index_resumable(
     # Target signatures (name -> sig) for the current file set, in order.
     target_sigs: list[str] = []
     for p in files:
-        n, m, s = _file_sig(p)
-        target_sigs.append(_sig(n, m, s))
+        n, sha, _s, _m = _file_record(p, hash_cache)
+        target_sigs.append(_sig(n, sha))
     target_set = set(target_sigs)
 
     # Resume from a valid checkpoint: keep only chunks whose source file is
@@ -385,8 +414,8 @@ def build_index_resumable(
     # stay deterministic no matter what order they finish in.
     pending: list[tuple[int, Path, str]] = []
     for doc_index, p in enumerate(files):
-        n, m, s = _file_sig(p)
-        sig = _sig(n, m, s)
+        n, sha, _s, _m = _file_record(p, hash_cache)
+        sig = _sig(n, sha)
         if sig in done_sigs:
             continue
         pending.append((doc_index, p, sig))
@@ -436,6 +465,7 @@ def build_index_resumable(
         for doc_index, p, sig in pending:
             if should_stop is not None and should_stop():
                 _log("[WARN] KB indexing paused; will resume on next launch.")
+                _save_hash_cache()
                 return KbIndex(chunks=list(chunks), sources=[], built_at=0.0)
             file_start = time.monotonic()
             new_chunks = _process_one_file(
@@ -503,17 +533,20 @@ def build_index_resumable(
                 gc.collect()
 
         if stop_requested["flag"]:
+            _save_hash_cache()
             return KbIndex(chunks=list(chunks), sources=[], built_at=0.0)
 
     # Finalize: write the real index, drop the checkpoint.
-    sources = [
-        KbSource(name=p.name, mtime=_file_sig(p)[1], size=_file_sig(p)[2])
-        for p in files
-    ]
+    sources = []
+    for p in files:
+        name, sha, size, mtime = _file_record(p, hash_cache)
+        sources.append(KbSource(name=name, mtime=mtime, size=size, sha=sha))
     index = KbIndex(chunks=chunks, sources=sources, built_at=time.time())
     try:
         _atomic_write_json(index_path, index.to_dict())
         partial.unlink(missing_ok=True)
+        prune_hash_cache(hash_cache, files)
+        _save_hash_cache()
     except OSError:
         pass
     _log(f"[SUCCESS] KB index built: {len(chunks)} chunk(s) from {total} "

@@ -5,6 +5,7 @@ import { Modal } from "@/components/ui/modal";
 import { agent } from "@/lib/agent-client";
 import { useAppState } from "@/lib/app-state";
 import { InstallationSection } from "./InstallationSection";
+import { DiagnosticsSection } from "./DiagnosticsSection";
 import {
   ConnectionFields,
   toPayload,
@@ -90,6 +91,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     >
       <ConnectionFields values={values} setValues={setValues} />
       <InstallationSection />
+      <DiagnosticsSection />
     </Modal>
   );
 }
