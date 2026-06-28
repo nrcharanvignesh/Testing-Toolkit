@@ -82,6 +82,7 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
           tc_type: tcType,
           regen_feedback: isRegen ? feedback : "",
           base_payload: isRegen ? result?.payload ?? null : null,
+          fast_model: fastModel,
         },
         handlers
       );
@@ -131,7 +132,14 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
     setStatus("Creating test cases in Azure DevOps...");
     try {
       const res = await agent.pushPayload(
-        { project: currentProject, payload: result.payload },
+        {
+          project: currentProject,
+          payload: result.payload,
+          area_override: areaPath.trim(),
+          iteration_override: iterationPath.trim(),
+          inherit_paths: inherit,
+          test_category_field: testCategory.trim() || "Custom.TestCategory",
+        },
         handlers
       );
       setPushed(`Created ${res.n_ok} test case(s), ${res.n_failed} failed.`);

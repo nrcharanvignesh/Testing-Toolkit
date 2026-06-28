@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, FileText } from "lucide-react";
 import {
   agent,
+  TC_TYPES,
+  TC_DISPLAY_NAME,
+  type TcType,
   type WorkItemDetail,
   type ArtifactFile,
 } from "@/lib/agent-client";
@@ -251,10 +254,71 @@ function fmtTime(modified: number): string {
   )}:${pad(d.getMinutes())}`;
 }
 
-function kindLabel(kind: string): string {
-  if (kind === "testcases") return "Implementation";
-  if (kind === "packets") return "Packets";
-  return kind;
+const GENERAL_GROUP = "General";
+// Matches the desktop _Artifact name parser:
+//   testcases_<review|template>_[<phase>_][<board>_]<YYYYMMDD_HHMMSS>.xlsx
+const ARTIFACT_NAME_RE =
+  /^testcases_(review|template)_(?:(.*)_)?(\d{8}_\d{6})$/;
+
+interface ParsedArtifact {
+  file: ArtifactFile;
+  genKind: string; // "review" | "template" | "" (non-testcases)
+  phaseLabel: string; // "Implementation" | "SIT" | "UAT" | "Legacy" | "PDF"
+  board: string; // "" → General
+  group: string;
+  when: string; // "YYYY-MM-DD HH:MM"
+  stamp: string; // sortable
+}
+
+function parseStamp(stamp: string): string {
+  // 20260628_134501 → "2026-06-28 13:45"
+  const m = /^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/.exec(stamp);
+  if (!m) return stamp;
+  return `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}`;
+}
+
+function parseArtifact(file: ArtifactFile): ParsedArtifact {
+  const stem = file.name.replace(/\.[^.]+$/, "");
+  const m = ARTIFACT_NAME_RE.exec(stem);
+  if (!m) {
+    // Non-testcases output (e.g. a packaged PDF): show as Legacy/PDF.
+    const isPdf = /\.pdf$/i.test(file.name);
+    return {
+      file,
+      genKind: "",
+      phaseLabel: isPdf ? "PDF" : "Legacy",
+      board: "",
+      group: GENERAL_GROUP,
+      when: fmtTime(file.modified),
+      stamp: String(file.modified),
+    };
+  }
+  const genKind = m[1];
+  const middle = m[2] ?? "";
+  const stamp = m[3];
+  let phase = "";
+  let board = middle;
+  for (const t of TC_TYPES) {
+    if (middle === t) {
+      phase = t;
+      board = "";
+      break;
+    }
+    if (middle.startsWith(t + "_")) {
+      phase = t;
+      board = middle.slice(t.length + 1);
+      break;
+    }
+  }
+  return {
+    file,
+    genKind,
+    phaseLabel: phase ? TC_DISPLAY_NAME[phase as TcType] : "Legacy",
+    board,
+    group: board || GENERAL_GROUP,
+    when: parseStamp(stamp),
+    stamp,
+  };
 }
 
 /** Generated artifacts pane — desktop layout (O01-O04). */
@@ -270,6 +334,9 @@ function OutputsContent({
   const [files, setFiles] = useState<ArtifactFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<string>("");
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(
+    null
+  );
 
   const refresh = () => {
     if (!project) return;
@@ -286,17 +353,30 @@ function OutputsContent({
 
   useEffect(refresh, [project]);
 
-  const openSelected = () => {
-    if (!selected) return;
-    window.open(agent.artifactDownloadUrl(selected), "_blank", "noopener");
+  // Parse + sort by stamp descending, exactly like the desktop browser.
+  const parsed = useMemo(
+    () =>
+      files
+        .map(parseArtifact)
+        .sort((a, b) => (a.stamp < b.stamp ? 1 : a.stamp > b.stamp ? -1 : 0)),
+    [files]
+  );
+  const boardCount = useMemo(
+    () => new Set(parsed.map((p) => p.group)).size,
+    [parsed]
+  );
+
+  const openPath = (path: string) => {
+    if (!path) return;
+    window.open(agent.artifactDownloadUrl(path), "_blank", "noopener");
   };
 
-  const deleteSelected = async () => {
-    if (!selected) return;
+  const deletePath = async (path: string) => {
+    if (!path) return;
     try {
-      await agent.deleteArtifact(selected);
+      await agent.deleteArtifact(path);
       pushLog("SUCCESS", "Deleted artifact.");
-      setSelected("");
+      setSelected((cur) => (cur === path ? "" : cur));
       refresh();
     } catch (e) {
       pushLog("ERROR", `Delete failed: ${(e as Error).message}`);
@@ -311,28 +391,34 @@ function OutputsContent({
     );
 
   return (
-    <div className="flex h-full flex-col gap-2">
+    <div className="flex h-full flex-col gap-2" onClick={() => setMenu(null)}>
       <h3 className="text-sm font-bold text-[#edf0f5]">
         Generated artifacts{projectLabel ? ` - ${projectLabel}` : ""}
       </h3>
       <p className="text-xs text-[#8a8f99]">
-        {files.length} file(s) across 1 board(s).
+        {parsed.length} file(s) across {boardCount} board(s).
       </p>
 
       <div className="min-h-0 flex-1 overflow-auto rounded-[8px] border border-[#2d313c] bg-[#0d1017]">
-        {files.length === 0 ? (
+        {parsed.length === 0 ? (
           <p style={{ color: COLOR_MUTED }} className="p-3 text-sm">
-            No generated files yet. Generate test cases or package PDFs to see
-            artifacts here.
+            No generated files yet. Generate test cases and they will appear
+            here.
           </p>
         ) : (
-          files.map((f) => {
+          parsed.map((p) => {
+            const f = p.file;
             const isSel = f.path === selected;
             return (
               <button
                 key={f.path}
                 onClick={() => setSelected(f.path)}
-                onDoubleClick={openSelected}
+                onDoubleClick={() => openPath(f.path)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setSelected(f.path);
+                  setMenu({ x: e.clientX, y: e.clientY, path: f.path });
+                }}
                 className="block w-full truncate px-3 py-1.5 text-left text-sm"
                 style={{
                   background: isSel ? "#16466e" : "transparent",
@@ -341,7 +427,7 @@ function OutputsContent({
                 title={f.name}
               >
                 <span className="text-[#8a8f99]">▸ </span>
-                {`[${kindLabel(f.kind)}] ${fmtTime(f.modified)}  ${f.name}`}
+                {`[${p.phaseLabel}]  ${p.when}   ${p.genKind || f.kind}`}
               </button>
             );
           })
@@ -352,14 +438,14 @@ function OutputsContent({
         <button
           className="tt-btn-primary !px-4 !py-1.5 text-sm"
           disabled={!selected}
-          onClick={openSelected}
+          onClick={() => openPath(selected)}
         >
           Open
         </button>
         <button
           className="tt-btn-danger !px-4 !py-1.5 text-sm"
           disabled={!selected}
-          onClick={deleteSelected}
+          onClick={() => deletePath(selected)}
         >
           Delete
         </button>
@@ -371,6 +457,42 @@ function OutputsContent({
           Refresh
         </button>
       </div>
+
+      {menu && (
+        <div
+          className="fixed z-50 min-w-[180px] overflow-hidden rounded-md border border-[#2d313c] bg-[#1b1e26] py-1 shadow-xl"
+          style={{ left: menu.x, top: menu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ContextItem label="Open" onClick={() => { openPath(menu.path); setMenu(null); }} />
+          <div className="my-1 border-t border-[#2d313c]" />
+          <ContextItem
+            label="Delete"
+            danger
+            onClick={() => { deletePath(menu.path); setMenu(null); }}
+          />
+        </div>
+      )}
     </div>
+  );
+}
+
+function ContextItem({
+  label,
+  onClick,
+  danger,
+}: {
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="block w-full px-3 py-1.5 text-left text-sm transition-colors hover:bg-[#262a33]"
+      style={{ color: danger ? "#f87171" : "#dfe3ea" }}
+    >
+      {label}
+    </button>
   );
 }

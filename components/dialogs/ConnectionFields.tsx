@@ -73,13 +73,15 @@ export function useConnectionFields(initial?: Partial<ConnectionValues>) {
 
 export function toPayload(v: ConnectionValues): SaveSettingsPayload {
   const p: SaveSettingsPayload = {
-    base_url: v.base_url,
     model: v.model,
     fast_model: v.fast_model,
     fallback_model: v.fallback_model,
     organization: v.organization,
     project_prefix: v.project_prefix,
   };
+  // Base URL is masked like a secret (desktop T02): only send it when the user
+  // typed a fresh value, otherwise the backend keeps the stored URL.
+  if (v.base_url && v.base_url !== MASK) p.base_url = v.base_url;
   if (v.api_key && v.api_key !== MASK) p.api_key = v.api_key;
   if (v.pat && v.pat !== MASK) p.pat = v.pat;
   return p;
@@ -330,12 +332,10 @@ export function ConnectionFields({
         />
       </Field>
       <Field label="Base URL">
-        <input
-          type="text"
-          className="tt-input"
-          placeholder="https://your-llm-api-endpoint.com"
+        <MaskedField
           value={values.base_url}
-          onChange={(e) => set("base_url", e.target.value)}
+          placeholder="https://your-llm-api-endpoint.com"
+          onChange={(v) => set("base_url", v)}
         />
       </Field>
       <Field label="Model">

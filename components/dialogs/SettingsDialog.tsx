@@ -13,7 +13,7 @@ import {
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const { settings, setSettings, reloadProjects, pushLog } = useAppState();
   const { values, setValues } = useConnectionFields({
-    base_url: settings?.base_url ?? "",
+    base_url: settings?.base_url ? "************" : "",
     model: settings?.model ?? "",
     fast_model: settings?.fast_model ?? "",
     fallback_model: settings?.fallback_model ?? "",

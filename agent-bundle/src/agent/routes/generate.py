@@ -113,6 +113,7 @@ class StartRequest(BaseModel):
     manual_payload: dict[str, Any] | None = None
     regen_feedback: str = ""
     base_payload: dict[str, Any] | None = None
+    fast_model: bool = False
 
 
 async def _run_generate(job: Job, req: StartRequest) -> None:
@@ -175,6 +176,15 @@ async def _run_generate(job: Job, req: StartRequest) -> None:
             )
 
             primary, fast = model_pair()
+            # Fast mode (desktop parity): use the fast model as primary and
+            # skip the decompose + verify passes for a much quicker run.
+            enable_decompose = not req.fast_model
+            enable_verify = not req.fast_model
+            if req.fast_model:
+                primary = fast
+                job.log(f"[INFO] Fast mode: {primary} (no decompose/verify)")
+            else:
+                job.log(f"[INFO] Model: {primary} (retrieval: {fast})")
             system_prompt = ps.read_system_prompt(
                 req.project, req.tc_type or None
             )
@@ -198,6 +208,8 @@ async def _run_generate(job: Job, req: StartRequest) -> None:
                 stop_event=job.stop_event,
                 cache=cache,
                 retriever=retriever,
+                enable_decompose=enable_decompose,
+                enable_verify=enable_verify,
             )
             if not result.ok or result.payload is None:
                 raise RuntimeError(

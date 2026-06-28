@@ -541,6 +541,7 @@ export const agent = {
       manual_payload?: Record<string, unknown> | null;
       regen_feedback?: string;
       base_payload?: Record<string, unknown> | null;
+      fast_model?: boolean;
     },
     handlers: JobHandlers = {}
   ): Promise<GenerationResult> {
@@ -553,6 +554,7 @@ export const agent = {
         manual_payload: payload.manual_payload ?? null,
         regen_feedback: payload.regen_feedback ?? "",
         base_payload: payload.base_payload ?? null,
+        fast_model: payload.fast_model ?? false,
       }),
     });
     const snap = await pollJob(job_id, handlers);
@@ -582,6 +584,7 @@ export const agent = {
       area_override?: string;
       iteration_override?: string;
       inherit_paths?: boolean;
+      test_category_field?: string;
     },
     handlers: JobHandlers = {}
   ): Promise<CreatedResult> {
@@ -593,6 +596,7 @@ export const agent = {
         area_override: payload.area_override ?? "",
         iteration_override: payload.iteration_override ?? "",
         inherit_paths: payload.inherit_paths ?? true,
+        test_category_field: payload.test_category_field ?? "Custom.TestCategory",
       }),
     });
     const snap = await pollJob(job_id, handlers);

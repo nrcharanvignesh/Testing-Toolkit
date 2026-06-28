@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Trash2, X } from "lucide-react";
 import { useAppState, type LogLine } from "@/lib/app-state";
 
 const LEVEL_COLOR: Record<LogLine["level"], string> = {
@@ -12,36 +11,17 @@ const LEVEL_COLOR: Record<LogLine["level"], string> = {
 };
 
 export function LogPanel() {
-  const { log, clearLog, setLogVisible } = useAppState();
+  const { log } = useAppState();
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [log]);
 
+  // Desktop LogProgressPanel: no in-panel header or trash/close icons — just
+  // the scrolling log view (Hide lives in the action strip) — L02.
   return (
     <div className="tt-card flex h-44 flex-col overflow-hidden p-0">
-      <div className="flex items-center justify-between border-b border-[#1e2128] px-3 py-1.5">
-        <span className="text-xs font-semibold uppercase tracking-wide text-[#bfc4cc]">
-          Log / Progress
-        </span>
-        <div className="flex items-center gap-1">
-          <button
-            className="tt-btn-ghost h-7 w-7 !border-transparent !p-0"
-            title="Clear log"
-            onClick={clearLog}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-          <button
-            className="tt-btn-ghost h-7 w-7 !border-transparent !p-0"
-            title="Hide log"
-            onClick={() => setLogVisible(false)}
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
       <div className="min-h-0 flex-1 overflow-auto bg-[#0d1017] px-3 py-2 font-mono text-xs leading-relaxed">
         {log.length === 0 ? (
           <p className="text-[#5a5f6a]">No activity yet.</p>
