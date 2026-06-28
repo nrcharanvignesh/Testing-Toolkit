@@ -219,15 +219,32 @@ async def upload_document(
     project: str,
     file: UploadFile = File(...),
 ) -> dict:
-    """Upload a document to the project's kb/ folder."""
+    """Upload a document to the project's kb/ folder.
+
+    The body is streamed straight to disk on a worker thread via
+    shutil.copyfileobj instead of buffering the whole file in memory with
+    ``await file.read()``. That keeps memory flat and the write fast even for
+    large docs, and never blocks the event loop. No indexing happens here —
+    that is deferred to the explicit rebuild/auto-index on dialog close."""
+    import shutil
+
     project_dir = PROJECTS_DIR / project
     kb_dir = project_dir / "kb"
     kb_dir.mkdir(parents=True, exist_ok=True)
 
-    dest = kb_dir / file.filename
-    content = await file.read()
-    dest.write_bytes(content)
-    return {"ok": True, "path": str(dest), "size": len(content)}
+    # Basename-only so a crafted filename cannot escape kb/ via path traversal.
+    safe_name = Path(file.filename or "document").name
+    if not safe_name:
+        raise HTTPException(400, "Invalid file name")
+    dest = kb_dir / safe_name
+
+    def _save() -> int:
+        with dest.open("wb") as out:
+            shutil.copyfileobj(file.file, out, length=1024 * 1024)
+        return dest.stat().st_size
+
+    size = await asyncio.to_thread(_save)
+    return {"ok": True, "path": str(dest), "size": size}
 
 
 @router.get("/status/{project}")

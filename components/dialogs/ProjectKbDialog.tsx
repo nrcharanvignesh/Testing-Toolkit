@@ -242,7 +242,14 @@ function DocumentsSection({
 
     let okCount = 0;
     const fileArr = Array.from(files);
-    for (let i = 0; i < fileArr.length; i++) {
+
+    // Upload several files at once instead of strictly one-at-a-time: each file
+    // is an independent localhost copy, so a small worker pool removes the
+    // sequential round-trip stall that made big batches feel slow. Cap the
+    // concurrency so we don't open dozens of sockets for a huge drop.
+    const CONCURRENCY = Math.min(5, fileArr.length);
+    let next = 0;
+    const uploadOne = async (i: number) => {
       const f = fileArr[i];
       const id = items[i].id;
       patch(id, { status: "uploading", progress: 0 });
@@ -262,7 +269,14 @@ function DocumentsSection({
         patch(id, { status: "error", error: (e as Error).message });
         pushLog("ERROR", `Upload failed for ${f.name}: ${(e as Error).message}`);
       }
-    }
+    };
+    const worker = async () => {
+      while (next < fileArr.length) {
+        const i = next++;
+        await uploadOne(i);
+      }
+    };
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
     refresh();
     setBusy(false);
