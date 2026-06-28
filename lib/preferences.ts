@@ -3,8 +3,8 @@
 /**
  * preferences.ts
  * Small localStorage-backed store for persistent UI preferences:
- *   - panels: which layout regions are visible (nav, detail, log). First launch
- *     hides all three.
+ *   - panels: which layout regions are visible (nav, detail, log). The default
+ *     layout shows nav + detail and hides the log/progress bar.
  *   - sizes: pixel sizes for the free-hand resizable regions (nav width,
  *     detail-pane width, log-panel height).
  *   - tourCompleted: whether the first-run guided tour has run.
@@ -21,7 +21,7 @@ export type PanelKey = "nav" | "detail" | "log";
 export type SizeKey = "navWidth" | "detailWidth" | "logHeight";
 
 export interface UiPreferences {
-  /** true = visible. First launch hides nav, detail and log. */
+  /** true = visible. Default shows nav + detail, hides the log. */
   panels: Record<PanelKey, boolean>;
   /** pixel sizes for the resizable regions. */
   sizes: Record<SizeKey, number>;
@@ -43,12 +43,13 @@ export interface UiPreferences {
   pendingReinstall: boolean;
 }
 
-const KEY = "tt.ui.prefs.v2";
+const KEY = "tt.ui.prefs.v3";
 
-// First-time launch: every collapsible region starts hidden and the tour has
-// not run yet.
+// Default launch layout: the left-hand nav rail and the detail panel are shown,
+// the log/progress bar is hidden (progress is surfaced inline so users don't
+// have to rely on the log). The tour has not run yet.
 const DEFAULTS: UiPreferences = {
-  panels: { nav: false, detail: false, log: false },
+  panels: { nav: true, detail: true, log: false },
   sizes: { navWidth: 224, detailWidth: 440, logHeight: 180 },
   tourCompleted: false,
   pendingReindex: false,

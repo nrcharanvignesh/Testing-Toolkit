@@ -6,6 +6,86 @@ import { Modal } from "@/components/ui/modal";
 import { agent, type KbStatus } from "@/lib/agent-client";
 import { useAppState } from "@/lib/app-state";
 
+type UploadStatus = "queued" | "uploading" | "processing" | "done" | "error";
+
+interface UploadItem {
+  id: string;
+  name: string;
+  size: number;
+  /** 0..1 transfer fraction. */
+  progress: number;
+  status: UploadStatus;
+  error?: string;
+}
+
+/** Thin determinate/indeterminate progress bar. value=null => indeterminate. */
+function ProgressBar({
+  value,
+  color = "#5ba8ff",
+}: {
+  value: number | null;
+  color?: string;
+}) {
+  const indeterminate = value === null;
+  const pct = Math.round((value ?? 0) * 100);
+  return (
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#2d313c]">
+      <div
+        className={`h-full rounded-full transition-[width] duration-200 ease-out ${
+          indeterminate ? "tt-progress-indeterminate w-2/5" : ""
+        }`}
+        style={{
+          width: indeterminate ? undefined : `${pct}%`,
+          backgroundColor: color,
+        }}
+      />
+    </div>
+  );
+}
+
+function UploadRow({ item }: { item: UploadItem }) {
+  const labelByStatus: Record<UploadStatus, string> = {
+    queued: "Queued",
+    uploading: `${Math.round(item.progress * 100)}%`,
+    processing: "Processing...",
+    done: "Done",
+    error: "Failed",
+  };
+  const color =
+    item.status === "error"
+      ? "#e5484d"
+      : item.status === "done"
+        ? "#1aab5c"
+        : "#5ba8ff";
+  // Indeterminate while the agent processes the fully-uploaded bytes.
+  const value =
+    item.status === "queued"
+      ? 0
+      : item.status === "processing"
+        ? null
+        : item.status === "done"
+          ? 1
+          : item.progress;
+  return (
+    <div className="flex flex-col gap-1 px-0.5 py-0.5">
+      <div className="flex items-center gap-2 text-xs">
+        <FileText className="h-3.5 w-3.5 shrink-0 text-[#5ba8ff]" />
+        <span className="truncate text-[#bfc4cc]" title={item.name}>
+          {item.name}
+        </span>
+        <span
+          className="ml-auto shrink-0 font-mono"
+          style={{ color }}
+          title={item.error}
+        >
+          {labelByStatus[item.status]}
+        </span>
+      </div>
+      <ProgressBar value={value} color={color} />
+    </div>
+  );
+}
+
 export function ProjectKbDialog({ onClose }: { onClose: () => void }) {
   const { currentProject, displayName, pushLog } = useAppState();
   const projectLabel = currentProject ? displayName(currentProject) : "";
@@ -45,6 +125,8 @@ function DocumentsSection({
   const [busy, setBusy] = useState(false);
   const [indexing, setIndexing] = useState(false);
   const [indexProgress, setIndexProgress] = useState("");
+  const [indexPct, setIndexPct] = useState<number | null>(null);
+  const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -125,18 +207,56 @@ function DocumentsSection({
   };
 
   const upload = async (files: FileList | null) => {
-    if (!files || !project) return;
+    if (!files || !project || files.length === 0) return;
     setBusy(true);
-    try {
-      for (const f of Array.from(files)) {
-        await agent.kbUpload(project, f);
+
+    // Populate every file name up-front so the user sees the full batch the
+    // instant they pick it, then fill in per-file progress as we go.
+    const items: UploadItem[] = Array.from(files).map((f, i) => ({
+      id: `${Date.now()}-${i}-${f.name}`,
+      name: f.name,
+      size: f.size,
+      progress: 0,
+      status: "queued",
+    }));
+    setUploads(items);
+
+    const patch = (id: string, p: Partial<UploadItem>) =>
+      setUploads((prev) =>
+        prev.map((u) => (u.id === id ? { ...u, ...p } : u))
+      );
+
+    let okCount = 0;
+    const fileArr = Array.from(files);
+    for (let i = 0; i < fileArr.length; i++) {
+      const f = fileArr[i];
+      const id = items[i].id;
+      patch(id, { status: "uploading", progress: 0 });
+      try {
+        await agent.kbUploadProgress(project, f, (frac) => {
+          if (frac === null) return; // indeterminate — leave bar animating
+          // Cap the transfer bar at 99%; flip to "processing" on completion.
+          patch(id, {
+            progress: Math.min(0.99, frac),
+            status: frac >= 1 ? "processing" : "uploading",
+          });
+        });
+        patch(id, { status: "done", progress: 1 });
+        okCount += 1;
         pushLog("SUCCESS", `Uploaded ${f.name} to KB.`);
+      } catch (e) {
+        patch(id, { status: "error", error: (e as Error).message });
+        pushLog("ERROR", `Upload failed for ${f.name}: ${(e as Error).message}`);
       }
-      refresh();
-    } catch (e) {
-      pushLog("ERROR", `Upload failed: ${(e as Error).message}`);
-    } finally {
-      setBusy(false);
+    }
+
+    refresh();
+    setBusy(false);
+
+    // Auto-dismiss the progress list shortly after a fully successful batch;
+    // keep it on screen if anything failed so the user can read the error.
+    if (okCount === fileArr.length) {
+      setTimeout(() => setUploads([]), 2500);
     }
   };
 
@@ -144,6 +264,7 @@ function DocumentsSection({
     if (!project) return;
     setIndexing(true);
     setIndexProgress("Starting...");
+    setIndexPct(null);
     pushLog("INFO", "Rebuilding KB index...");
     const start = Date.now();
     const fmt = (s: number) => {
@@ -158,16 +279,19 @@ function DocumentsSection({
           const { current: done, total, stage } = p;
           if (!total || total <= 0) {
             setIndexProgress("Scanning...");
+            setIndexPct(null);
             return;
           }
           if (done >= total) {
             setIndexProgress("Finalizing...");
+            setIndexPct(1);
             return;
           }
           const elapsed = (Date.now() - start) / 1000;
           const pct = Math.round((100 * done) / Math.max(total, 1));
           const remaining = done > 0 ? (elapsed / done) * (total - done) : 0;
           const name = stage && stage !== "indexing" ? ` (${stage})` : "";
+          setIndexPct(done / total);
           setIndexProgress(
             `${done}/${total}${name} | ${fmt(elapsed)} / ${fmt(remaining)} - ${pct}%`
           );
@@ -176,10 +300,12 @@ function DocumentsSection({
         true // explicit "Rebuild KB index": always do a full rebuild
       );
       setIndexProgress("");
+      setIndexPct(null);
       pushLog("SUCCESS", `Indexed ${r.n_documents} doc(s), ${r.n_chunks} chunk(s).`);
       refresh();
     } catch (e) {
       setIndexProgress("");
+      setIndexPct(null);
       pushLog("ERROR", `Index failed: ${(e as Error).message}`);
     } finally {
       setIndexing(false);
@@ -294,10 +420,28 @@ function DocumentsSection({
         )}
       </div>
 
+      {uploads.length > 0 && (
+        <div className="flex flex-col gap-1.5 rounded-lg border border-[#2d313c] bg-[#13161d] p-2">
+          <div className="flex items-center justify-between px-0.5">
+            <span className="text-xs font-semibold text-[#bfc4cc]">
+              Uploading {uploads.filter((u) => u.status === "done").length}/
+              {uploads.length} file(s)
+            </span>
+          </div>
+          {uploads.map((u) => (
+            <UploadRow key={u.id} item={u} />
+          ))}
+        </div>
+      )}
+
       {indexing && (
-        <p className="font-mono text-xs leading-relaxed text-[#d69e2e]">
-          KB indexing {indexProgress}
-        </p>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between font-mono text-xs text-[#d69e2e]">
+            <span>Rebuilding index</span>
+            <span>{indexProgress}</span>
+          </div>
+          <ProgressBar value={indexPct} color="#d69e2e" />
+        </div>
       )}
 
       {status && !indexing && (

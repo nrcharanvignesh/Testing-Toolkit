@@ -522,6 +522,49 @@ export const agent = {
     }
   },
 
+  /**
+   * Upload a single KB document while reporting byte-level progress (0..1).
+   * Uses XMLHttpRequest because the fetch API cannot surface upload progress.
+   * onProgress(null) signals an indeterminate state (bytes total unknown).
+   */
+  kbUploadProgress(
+    project: string,
+    file: File,
+    onProgress?: (fraction: number | null) => void
+  ): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const xhr = new XMLHttpRequest();
+      xhr.open(
+        "POST",
+        `${AGENT_URL}/kb/upload/${encodeURIComponent(project)}`
+      );
+      xhr.upload.onprogress = (e) => {
+        if (!onProgress) return;
+        onProgress(e.lengthComputable ? e.loaded / e.total : null);
+      };
+      // Body fully sent; server is now writing/processing the file.
+      xhr.upload.onload = () => onProgress?.(1);
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          onProgress?.(1);
+          resolve();
+        } else {
+          reject(new Error(humanizeError(xhr.status, xhr.responseText || "")));
+        }
+      };
+      xhr.onerror = () =>
+        reject(
+          new Error(
+            "Could not reach the local agent. Make sure Testing Toolkit is running."
+          )
+        );
+      xhr.onabort = () => reject(new Error("Upload cancelled."));
+      xhr.send(formData);
+    });
+  },
+
   /** Remove a single KB document and invalidate the stored index. */
   async deleteKbDocument(project: string, name: string): Promise<void> {
     await agentFetch(
