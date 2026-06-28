@@ -423,15 +423,38 @@
     transition: width 0.2s ease;
   }
 
-  /* ---- Dialog overlay ---- */
+  /* ---- Dialog overlay ----
+   * NOTE: do NOT use backdrop-filter here. On portaled fixed overlays it
+   * causes intermittent paint failures in Chromium (the overlay + dialog
+   * stay in the DOM, hit-testable and opacity:1, but never composite). A
+   * slightly heavier solid scrim gives the same focus effect reliably. */
   .tt-overlay {
-    background: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(2px);
+    background: rgba(0, 0, 0, 0.62);
   }
   .tt-dialog {
     background: #0d1017;
     border: 1px solid #2d313c;
     border-radius: 16px;
+  }
+  /* One-shot entrance. Animation (not transition) so it settles and clears
+   * its own compositor layer — no persistent will-change that breaks paint. */
+  .tt-dialog-enter {
+    animation: tt-dialog-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @keyframes tt-dialog-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tt-dialog-enter {
+      animation: none;
+    }
   }
 
   /* ---- Status bar ---- */
