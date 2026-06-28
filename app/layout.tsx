@@ -15,7 +15,13 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Testing Toolkit",
-  description: "Enterprise test case generation and ADO integration",
+  description:
+    "Unified Azure DevOps toolkit: test case generation, bulk defect upload, and work-item PDF packaging.",
+};
+
+export const viewport = {
+  themeColor: "#0d1017",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({
@@ -27,8 +33,9 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+      style={{ background: "#0d1017" }}
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground">
+      <body className="h-full overflow-hidden bg-background text-foreground">
         <AgentProvider>{children}</AgentProvider>
       </body>
     </html>

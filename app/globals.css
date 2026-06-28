@@ -1,130 +1,512 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/* ============================================================
+ * Testing Toolkit - Material Design 3 / Apple HIG DARK THEME
+ * Faithful port of src/ui/theme.py (DARK_QSS).
+ *
+ * Surface hierarchy (darkest -> brightest):
+ *   Deepest:   #0d1017   (window bg, toolbars, rails)
+ *   Base:      #13161d   (inputs, lists, panels)
+ *   Container: #1a1d26   (cards, kanban cards)
+ *   High:      #252830   (buttons, interactive)
+ *   Highest:   #2f333d   (hover states)
+ *   Outline:   #2d313c   (all borders)
+ *
+ * Color roles:
+ *   Primary:   #5ba8ff   (focus rings, active tabs)
+ *   Action:    #0071e3   (Apple blue - button fill)
+ *   Success:   #1aab5c   (green - go/confirm)
+ *   Error:     #e53e3e   (red - destructive)
+ *   Text:      #edf0f5   (primary text)
+ * ============================================================ */
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warn: var(--warn);
+  --color-info: var(--info);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Desktop surface hierarchy (raw) */
+  --color-surface-deepest: #0d1017;
+  --color-surface-base: #13161d;
+  --color-surface-container: #1a1d26;
+  --color-surface-high: #252830;
+  --color-surface-highest: #2f333d;
+  --color-outline: #2d313c;
+  --color-outline-soft: #1e2128;
+  --color-action: #0071e3;
+  --color-action-hover: #0077ed;
+  --color-action-press: #005bb5;
+
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Dark-only app: tokens map directly to the desktop palette */
+  --background: #0d1017;
+  --foreground: #edf0f5;
+  --card: #1a1d26;
+  --card-foreground: #edf0f5;
+  --popover: #13161d;
+  --popover-foreground: #edf0f5;
+  --primary: #5ba8ff;
+  --primary-foreground: #ffffff;
+  --secondary: #252830;
+  --secondary-foreground: #edf0f5;
+  --muted: #13161d;
+  --muted-foreground: #8a8f99;
+  --accent: #1a1d26;
+  --accent-foreground: #edf0f5;
+  --destructive: #e53e3e;
+  --destructive-foreground: #ffffff;
+  --success: #1aab5c;
+  --warn: #f59e0b;
+  --info: #3b82f6;
+  --border: #2d313c;
+  --input: #2d313c;
+  --ring: #5ba8ff;
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
+    border-color: var(--border);
   }
   html {
-    @apply font-sans;
+    background: var(--background);
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans), "SF Pro Display", "Segoe UI Variable Display",
+      "Segoe UI", -apple-system, sans-serif;
+  }
+
+  /* macOS-style ultra-thin scrollbars (matches QSS) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #2d313c transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: #2d313c;
+    border-radius: 3px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: #4a4e58;
+  }
+}
+
+@layer components {
+  /* ---- role="card" ---- */
+  .tt-card {
+    background: #1a1d26;
+    border: 1px solid #2d313c;
+    border-radius: 14px;
+  }
+
+  /* ---- role="header" label ---- */
+  .tt-header {
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 11.5pt;
+    letter-spacing: 0.3px;
+  }
+
+  /* ---- Standard button ---- */
+  .tt-btn {
+    background: #252830;
+    color: #edf0f5;
+    border: 1px solid #3a3e4a;
+    border-radius: 10px;
+    padding: 7px 16px;
+    font-weight: 500;
+    transition: background 0.12s ease, border-color 0.12s ease;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .tt-btn:hover {
+    background: #2f333d;
+    border-color: #5ba8ff;
+  }
+  .tt-btn:active {
+    background: #181b22;
+  }
+  .tt-btn:disabled {
+    color: #4a4e58;
+    border-color: #252830;
+    cursor: not-allowed;
+  }
+
+  /* Primary (Apple blue) */
+  .tt-btn-primary {
+    background: #0071e3;
+    color: #ffffff;
+    border: none;
+    font-weight: 600;
+    padding: 8px 20px;
+    border-radius: 10px;
+  }
+  .tt-btn-primary:hover {
+    background: #0077ed;
+    border-color: transparent;
+  }
+  .tt-btn-primary:active {
+    background: #005bb5;
+  }
+  .tt-btn-primary:disabled {
+    background: #252830;
+    color: #4a4e58;
+    border: 1px solid #2d313c;
+  }
+
+  /* Success (green) */
+  .tt-btn-success {
+    background: #1aab5c;
+    color: #ffffff;
+    border: none;
+    font-weight: 600;
+    padding: 8px 20px;
+    border-radius: 10px;
+  }
+  .tt-btn-success:hover {
+    background: #22c46a;
+  }
+  .tt-btn-success:active {
+    background: #148a49;
+  }
+  .tt-btn-success:disabled {
+    background: #252830;
+    color: #4a4e58;
+    border: 1px solid #2d313c;
+  }
+
+  /* Danger (red) */
+  .tt-btn-danger {
+    background: #e53e3e;
+    color: #ffffff;
+    border: none;
+    font-weight: 600;
+    padding: 8px 20px;
+    border-radius: 10px;
+  }
+  .tt-btn-danger:hover {
+    background: #f05252;
+  }
+  .tt-btn-danger:active {
+    background: #c53030;
+  }
+
+  /* Ghost / footer-toggle */
+  .tt-btn-ghost {
+    background: transparent;
+    color: #8a8f99;
+    border: 1px solid #2d313c;
+    border-radius: 10px;
+    padding: 5px 12px;
+    font-weight: 500;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .tt-btn-ghost:hover {
+    background: #1a1d26;
+    color: #edf0f5;
+    border-color: #5ba8ff;
+  }
+  .tt-btn-ghost[data-active="true"] {
+    background: #0d1f3d;
+    color: #5ba8ff;
+    border-color: #153060;
+  }
+  .tt-btn-ghost:disabled {
+    color: #4a4e58;
+    cursor: not-allowed;
+  }
+
+  /* ---- Inputs ---- */
+  .tt-input {
+    background: #13161d;
+    border: 1px solid #2d313c;
+    border-radius: 10px;
+    padding: 6px 10px;
+    color: #edf0f5;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.12s ease, background 0.12s ease;
+  }
+  .tt-input::placeholder {
+    color: #5a5f6a;
+  }
+  .tt-input:focus {
+    border-color: #5ba8ff;
+    background: #161a22;
+  }
+  .tt-input:disabled {
+    color: #4a4e58;
+    border-color: #1e2128;
+  }
+  select.tt-input option {
+    background: #13161d;
+    color: #edf0f5;
+  }
+
+  /* ---- Left navigation rail ---- */
+  .tt-rail {
+    background: #0d1017;
+    border-right: 1px solid #1e2128;
+  }
+
+  /* ---- Lists ---- */
+  .tt-list-item {
+    padding: 5px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #bfc4cc;
+    transition: background 0.1s ease, color 0.1s ease;
+  }
+  .tt-list-item:hover {
+    background: #1a1d26;
+  }
+  .tt-list-item[data-selected="true"] {
+    background: #0071e3;
+    color: #ffffff;
+  }
+
+  /* ---- Kanban column ---- */
+  .tt-kanban-col {
+    background: #13161d;
+    border: 1px solid #1e2128;
+    border-radius: 12px;
+  }
+  .tt-kanban-col-head {
+    color: #bfc4cc;
+    font-weight: 700;
+    padding: 3px 4px 5px 4px;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .tt-lane {
+    color: #5ba8ff;
+    font-weight: 700;
+    background: #0d1f3d;
+    border: 1px solid #153060;
+    border-radius: 10px;
+    padding: 6px 12px;
+  }
+
+  /* ---- Work item card ---- */
+  .tt-wi-card {
+    background: #1a1d26;
+    border: 1px solid #2d313c;
+    border-left: 3px solid #2d313c;
+    border-radius: 10px;
+    transition: background 0.1s ease, border-color 0.1s ease;
+    cursor: pointer;
+  }
+  .tt-wi-card:hover {
+    background: #1f2330;
+    border-color: #5ba8ff;
+    border-left-color: #5ba8ff;
+  }
+  .tt-wi-card[data-selected="true"] {
+    background: #0d1f3d;
+    border-color: #0071e3;
+    border-left-color: #5ba8ff;
+  }
+  .tt-card-id {
+    color: #5ba8ff;
+    font-weight: 700;
+  }
+  .tt-card-title {
+    color: #edf0f5;
+  }
+  .tt-card-meta {
+    color: #7a7f8a;
+  }
+  .tt-state-pill {
+    background: #252830;
+    border: 1px solid #2d313c;
+    border-radius: 10px;
+    padding: 2px 10px;
+    font-size: 8pt;
+  }
+
+  /* ---- Tabs ---- */
+  .tt-tab {
+    background: #13161d;
+    color: #7a7f8a;
+    border: 1px solid #1e2128;
+    border-bottom: none;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    padding: 8px 18px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .tt-tab:hover {
+    background: #1a1d26;
+    color: #edf0f5;
+  }
+  .tt-tab[data-active="true"] {
+    background: #1a1d26;
+    color: #5ba8ff;
+    font-weight: 600;
+    border-color: #2d313c;
+  }
+
+  /* ---- Help banner ---- */
+  .tt-help {
+    background: #1a2540;
+    border: 1px solid #2a4070;
+    border-radius: 12px;
+  }
+  .tt-help-header {
+    color: #7abaff;
+    font-weight: 600;
+  }
+  .tt-help-body {
+    color: #b8d4f0;
+  }
+
+  /* ---- Progress bar ---- */
+  .tt-progress {
+    background: #13161d;
+    border: 1px solid #2d313c;
+    border-radius: 7px;
+    overflow: hidden;
+    height: 16px;
+  }
+  .tt-progress-chunk {
+    height: 100%;
+    background: linear-gradient(90deg, #0071e3, #5ba8ff);
+    border-radius: 6px;
+    transition: width 0.2s ease;
+  }
+
+  /* ---- Dialog overlay ---- */
+  .tt-overlay {
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+  }
+  .tt-dialog {
+    background: #0d1017;
+    border: 1px solid #2d313c;
+    border-radius: 16px;
+  }
+
+  /* ---- Status bar ---- */
+  .tt-statusbar {
+    background: #0d1017;
+    color: #7a7f8a;
+    border-top: 1px solid #1e2128;
+    font-size: 8.5pt;
+  }
+
+  /* ---- Checkbox (matches QCheckBox indicator) ---- */
+  .tt-check {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #4a4e58;
+    border-radius: 5px;
+    background: #13161d;
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.1s ease, border-color 0.1s ease;
+  }
+  .tt-check:hover {
+    border-color: #5ba8ff;
+  }
+  .tt-check:checked,
+  .tt-check:indeterminate {
+    background: #0071e3;
+    border-color: #0071e3;
+  }
+  .tt-check:checked::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 4px;
+    height: 8px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+  .tt-check:indeterminate::after {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 5px;
+    width: 8px;
+    height: 2px;
+    background: #fff;
+  }
+
+  /* ---- Rendered ADO HTML in detail pane ---- */
+  .tt-html :where(p, ul, ol) {
+    margin: 0 0 0.5rem 0;
+  }
+  .tt-html :where(ul, ol) {
+    padding-left: 1.25rem;
+    list-style: revert;
+  }
+  .tt-html a {
+    color: #5ba8ff;
+    text-decoration: underline;
+  }
+  .tt-html img {
+    max-width: 100%;
+    border-radius: 6px;
+    margin: 0.25rem 0;
+  }
+  .tt-html table {
+    border-collapse: collapse;
+  }
+  .tt-html td,
+  .tt-html th {
+    border: 1px solid #2d313c;
+    padding: 4px 8px;
   }
 }
