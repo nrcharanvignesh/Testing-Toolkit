@@ -12,7 +12,6 @@ export function ActionBar() {
     setGenerateCtx,
     logVisible,
     setLogVisible,
-    pushLog,
   } = useAppState();
 
   const count = selected.size;
@@ -24,13 +23,9 @@ export function ActionBar() {
         <button
           key={t}
           className="tt-btn-success !px-4 !py-1.5 text-sm"
-          disabled={!currentProject}
+          disabled={!hasSelection}
           title={`Generate ${TC_BUTTON_LABEL[t]} test cases for the ticked work items`}
           onClick={() => {
-            if (!hasSelection) {
-              pushLog("ERROR", "Tick one or more work items first.");
-              return;
-            }
             setGenerateCtx({ tcType: t });
             openDialog("generate");
           }}
