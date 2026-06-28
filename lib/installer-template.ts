@@ -55,7 +55,15 @@ export function buildWindowsInstaller(
 setlocal
 set "_TT_PS1=%TEMP%\\TestingToolkit_%RANDOM%%RANDOM%.ps1"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$marker='#PS'+'BEGIN'; $c=[IO.File]::ReadAllText('%~f0'); $start=$c.IndexOf([char]10, $c.IndexOf($marker)) + 1; [IO.File]::WriteAllText($env:_TT_PS1, $c.Substring($start), [Text.UTF8Encoding]::new($false))"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%_TT_PS1%"
+rem Relaunch the install hidden so there is no console window: the web app is
+rem the UI and shows live progress via the beacon. The hidden PowerShell
+rem deletes its own temp .ps1 when it finishes (it must outlive this cmd).
+if not "%TT_HIDDEN%"=="1" (
+  set "TT_HIDDEN=1"
+  start "" powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%_TT_PS1%"
+  exit /b 0
+)
+powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%_TT_PS1%"
 set "_TT_CODE=%ERRORLEVEL%"
 del "%_TT_PS1%" >nul 2>&1
 exit /b %_TT_CODE%
@@ -94,6 +102,115 @@ function Show-Bar($done, $total) {
   $bar = ('#' * $fill) + ('-' * ($w - $fill))
   Write-Host -NoNewline ("\`r    [{0}] {1,3:N0}%  ({2}/{3})   " -f $bar, ($frac * 100), $done, $total)
 }
+
+# --- Install progress beacon ---------------------------------------------
+# A tiny HTTP server on the agent port (127.0.0.1:7842) reports install
+# progress to the web app BEFORE the real agent exists. This bootstrap writes
+# its download progress to a shared file; the offline install.py writes the
+# clean/install/copy/start phases to the SAME file (TT_INSTALL_PROGRESS). The
+# beacon serves it at /install/progress and answers /health with 503
+# "installing" so the app never mistakes the beacon for a live agent. It frees
+# the port the moment install.py signals release_port (just before it starts
+# the agent). Written without an HttpListener so no URL-ACL/admin is needed.
+$ProgressPath = Join-Path $env:TEMP 'TestingToolkit-install-progress.json'
+
+function Set-TtProgress($phase, $message, $percent) {
+  try {
+    $o = [ordered]@{
+      phase   = $phase
+      message = $message
+      ts      = [int64]([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
+    }
+    if ($null -ne $percent) { $o['percent'] = [int][Math]::Round([double]$percent) }
+    $json = ($o | ConvertTo-Json -Compress)
+    [IO.File]::WriteAllText($ProgressPath, $json, (New-Object System.Text.UTF8Encoding($false)))
+  } catch {}
+}
+
+$beacon = {
+  param($progressPath)
+  $CRLF = [string][char]13 + [string][char]10
+  function Read-Prog($p) {
+    try { if (Test-Path -LiteralPath $p) { return [IO.File]::ReadAllText($p) } } catch {}
+    return '{}'
+  }
+  function Test-StopFlag($p) {
+    try {
+      $t = (Read-Prog $p)
+      if (-not $t) { return $false }
+      $c = $t.Replace(' ', '')
+      if ($c.Contains('"release_port":true')) { return $true }
+      if ($c.Contains('"phase":"done"')) { return $true }
+      if ($c.Contains('"phase":"error"')) { return $true }
+    } catch {}
+    return $false
+  }
+  $listener = $null
+  while (-not (Test-StopFlag $progressPath)) {
+    if ($null -eq $listener) {
+      try {
+        $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 7842)
+        $listener.Start()
+      } catch { $listener = $null; Start-Sleep -Milliseconds 500; continue }
+    }
+    try {
+      if (-not $listener.Pending()) { Start-Sleep -Milliseconds 150; continue }
+      $client = $listener.AcceptTcpClient()
+      $client.ReceiveTimeout = 2000
+      $stream = $client.GetStream()
+      $buf = [byte[]]::new(2048)
+      $read = 0
+      try { $read = $stream.Read($buf, 0, $buf.Length) } catch {}
+      $req = ''
+      if ($read -gt 0) { $req = [Text.Encoding]::ASCII.GetString($buf, 0, $read) }
+      $firstLine = $req
+      $nl = $req.IndexOf([char]10)
+      if ($nl -ge 0) { $firstLine = $req.Substring(0, $nl) }
+      $tokens = $firstLine.Trim().Split(' ')
+      $method = $tokens[0]
+      $target = '/'
+      if ($tokens.Length -ge 2) { $target = $tokens[1] }
+      $qi = $target.IndexOf('?')
+      $path = $target
+      if ($qi -ge 0) { $path = $target.Substring(0, $qi) }
+      $cors = 'Access-Control-Allow-Origin: *' + $CRLF + 'Access-Control-Allow-Methods: GET, OPTIONS' + $CRLF + 'Access-Control-Allow-Headers: *' + $CRLF + 'Cache-Control: no-store' + $CRLF
+      $status = '404 Not Found'
+      $ctype = ''
+      $bodyStr = ''
+      if ($method -eq 'OPTIONS') {
+        $status = '204 No Content'
+      } elseif ($path -eq '/install/progress') {
+        $status = '200 OK'; $ctype = 'application/json'; $bodyStr = (Read-Prog $progressPath)
+      } elseif ($path -eq '/health') {
+        $status = '503 Service Unavailable'; $ctype = 'application/json'; $bodyStr = '{"status":"installing"}'
+      }
+      $bb = [Text.Encoding]::UTF8.GetBytes($bodyStr)
+      $head = 'HTTP/1.1 ' + $status + $CRLF
+      if ($ctype) { $head = $head + 'Content-Type: ' + $ctype + $CRLF }
+      $head = $head + $cors + 'Content-Length: ' + [string]$bb.Length + $CRLF + 'Connection: close' + $CRLF + $CRLF
+      $hb = [Text.Encoding]::ASCII.GetBytes($head)
+      try {
+        $stream.Write($hb, 0, $hb.Length)
+        if ($bb.Length -gt 0) { $stream.Write($bb, 0, $bb.Length) }
+        $stream.Flush()
+      } catch {}
+      try { $stream.Close() } catch {}
+      try { $client.Close() } catch {}
+    } catch {}
+  }
+  if ($listener) { try { $listener.Stop() } catch {} }
+}
+
+# Start the beacon in a background runspace (best-effort).
+$beaconRs = $null; $beaconPs = $null
+try {
+  $beaconRs = [RunspaceFactory]::CreateRunspace()
+  $beaconRs.Open()
+  $beaconPs = [PowerShell]::Create()
+  $beaconPs.Runspace = $beaconRs
+  [void]$beaconPs.AddScript($beacon).AddArgument($ProgressPath)
+  [void]$beaconPs.BeginInvoke()
+} catch {}
 
 try {
   Write-Host ""
@@ -275,6 +392,7 @@ try {
   $failures = @()
   $total = $jobs.Count
   Show-Bar 0 $total
+  Set-TtProgress 'downloading' 'Downloading agent bundle' 5
   while ($pending.Count -gt 0) {
     for ($i = $pending.Count - 1; $i -ge 0; $i--) {
       $j = $pending[$i]
@@ -285,7 +403,12 @@ try {
         finally { $j.PS.Dispose() }
         $pending.RemoveAt($i)
         if ($r.Status -eq 'failed') { $failures += $r } else { $done++ }
-        Show-Bar ($done + $failures.Count) $total
+        $seen = $done + $failures.Count
+        Show-Bar $seen $total
+        # Map download completion onto the first ~55% of the overall bar; the
+        # offline install.py owns the remainder.
+        $pct = 5; if ($total -gt 0) { $pct = 5 + (55.0 * $seen / $total) }
+        Set-TtProgress 'downloading' ("Downloading agent bundle ({0}/{1} parts)" -f $seen, $total) $pct
       }
     }
     if ($pending.Count -gt 0) { Start-Sleep -Milliseconds 200 }
@@ -298,6 +421,7 @@ try {
   }
 
   Write-Step "Reassembling bundle"
+  Set-TtProgress 'extracting' 'Reassembling bundle' 61
   $zip = Join-Path $work $manifest.archive
   $out = [IO.File]::Create($zip)
   foreach ($p in ($parts | Sort-Object name)) {
@@ -312,6 +436,7 @@ try {
   Write-Host "    archive verified"
 
   Write-Step "Extracting"
+  Set-TtProgress 'extracting' 'Extracting files' 63
   $dest = Join-Path $scriptDir $manifest.extractTo
   if (Test-Path $dest) { Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue }
   Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force
@@ -323,6 +448,7 @@ try {
   # every code fix, pull the current source from the repo and lay it over the
   # extracted files. Best-effort: if it fails we fall back to bundled code.
   Write-Step "Applying latest agent code"
+  Set-TtProgress 'overlay' 'Applying latest agent code' 64
   try {
     $um = Invoke-RestMethod -Uri ($ApiBase + 'agent-update.json?ref=' + $Ref) -Headers $headers -UseBasicParsing
     $srcRef = $um.ref
@@ -357,11 +483,15 @@ try {
 
   Write-Step "Running offline installer"
   Write-Host "    (this part never touches the internet)"
+  Set-TtProgress 'installing_deps' 'Starting offline install' 65
   # Hand the auto-update settings to install.py so the agent can fetch future
   # patches on its own. These are read by write_update_config() in install.py.
   $env:TT_UPDATE_TOKEN = $Token
   $env:TT_UPDATE_REPO  = $Repo
   $env:TT_UPDATE_REF   = $Ref
+  # Share the progress file so install.py reports clean/install/copy/start into
+  # the same beacon (its default path matches $ProgressPath anyway).
+  $env:TT_INSTALL_PROGRESS = $ProgressPath
   Push-Location $dest
   & cmd /c ('"' + $installCmd + '"')
   $code = $LASTEXITCODE
@@ -374,14 +504,28 @@ try {
     Write-Host ("  Installer exited with code " + $code) -ForegroundColor Yellow
   }
 } catch {
+  Set-TtProgress 'error' ("Install failed: " + $_.Exception.Message)
   Write-Host ""
   Write-Host ("  ERROR: " + $_.Exception.Message) -ForegroundColor Red
   Write-Host ("  Debug log: " + $LogFile) -ForegroundColor Yellow
   Write-Host "  Nothing was installed. You can safely re-run this installer (finished parts are cached)."
 } finally {
+  # Stop the progress beacon (it usually exits on its own once install.py
+  # signals release_port, but force it down in case of an early failure).
+  try { if ($beaconPs) { $beaconPs.Stop() } } catch {}
+  try { if ($beaconRs) { $beaconRs.Close() } } catch {}
   if ($Transcribing) { try { Stop-Transcript | Out-Null } catch {} }
-  Write-Host ""
-  Read-Host "  Press Enter to close"
+  # Only prompt when we actually have a visible console. When relaunched hidden
+  # (TT_HIDDEN=1) the web app is the UI, so a Read-Host would hang invisibly.
+  if (-not ($env:TT_HIDDEN -eq '1')) {
+    Write-Host ""
+    Read-Host "  Press Enter to close"
+  } else {
+    # Hidden run owns its temp .ps1 (the cmd already exited) so clean it up.
+    try { Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue } catch {}
+  }
+}
+\`
 }
 `
 }
@@ -444,7 +588,9 @@ fi
 
 exec "$PY" - "$REPO" "$REF" "$TOKEN" "$FRESH" <<'TT_PYEOF'
 import sys, os, json, hashlib, tempfile, shutil, zipfile, subprocess, time, platform, datetime
+import threading
 import urllib.request, urllib.error
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 repo, ref, token = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -510,6 +656,91 @@ def _get(url, headers, timeout=900):
 
 def fetch(path):
     return _get(api + path + "?ref=" + ref, AUTH_HEADERS)
+
+# --- Install progress beacon ---------------------------------------------
+# A tiny HTTP server on the agent port (127.0.0.1:7842) that reports install
+# progress to the web app BEFORE the real agent exists. The bootstrap writes
+# download progress here; the offline install.py writes the install/clean/copy
+# phases to the SAME file (TT_INSTALL_PROGRESS, default below). The beacon
+# serves it at /install/progress and answers /health with 503 "installing" so
+# the app never mistakes the beacon for a live agent. It releases the port as
+# soon as install.py signals release_port (just before it starts the agent).
+PROGRESS_PATH = os.path.join(tempfile.gettempdir(), "TestingToolkit-install-progress.json")
+
+def write_progress(phase, message, percent=None):
+    try:
+        d = {"phase": phase, "message": message, "ts": int(time.time() * 1000)}
+        if percent is not None:
+            d["percent"] = max(0, min(100, int(round(percent))))
+        with open(PROGRESS_PATH, "w", encoding="utf-8") as f:
+            f.write(json.dumps(d))
+    except Exception:
+        pass
+
+_beacon_stop = threading.Event()
+
+class _BeaconHandler(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+    def _cors(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "*")
+        self.send_header("Cache-Control", "no-store")
+    def do_OPTIONS(self):
+        self.send_response(204); self._cors(); self.end_headers()
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        if path == "/install/progress":
+            body = b"{}"
+            try:
+                with open(PROGRESS_PATH, "rb") as f:
+                    body = f.read() or b"{}"
+            except Exception:
+                pass
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self._cors(); self.end_headers()
+            try: self.wfile.write(body)
+            except Exception: pass
+        elif path == "/health":
+            self.send_response(503)
+            self.send_header("Content-Type", "application/json")
+            self._cors(); self.end_headers()
+            try: self.wfile.write(b'{"status":"installing"}')
+            except Exception: pass
+        else:
+            self.send_response(404); self._cors(); self.end_headers()
+
+def _beacon_serve():
+    # Keep trying to bind: on a reinstall the OLD agent holds the port until
+    # install.py kills it, after which we grab it for the rest of the install.
+    while not _beacon_stop.is_set():
+        try:
+            httpd = HTTPServer(("127.0.0.1", 7842), _BeaconHandler)
+        except OSError:
+            time.sleep(0.5); continue
+        httpd.timeout = 0.5
+        while not _beacon_stop.is_set():
+            try: httpd.handle_request()
+            except Exception: pass
+        try: httpd.server_close()
+        except Exception: pass
+        return
+
+def _beacon_watch():
+    while not _beacon_stop.is_set():
+        try:
+            with open(PROGRESS_PATH) as f:
+                d = json.loads(f.read() or "{}")
+            if d.get("release_port") or d.get("phase") in ("done", "error"):
+                _beacon_stop.set(); break
+        except Exception:
+            pass
+        time.sleep(0.4)
+
+threading.Thread(target=_beacon_serve, daemon=True).start()
+threading.Thread(target=_beacon_watch, daemon=True).start()
 
 try:
     log("")
@@ -600,6 +831,7 @@ try:
     failures = []
     total = len(parts)
     show_bar(0, total)
+    write_progress("downloading", "Downloading agent bundle", 5)
     with ThreadPoolExecutor(max_workers=CONCURRENCY) as ex:
         futs = {ex.submit(download, p): p for p in parts}
         for fut in as_completed(futs):
@@ -608,7 +840,15 @@ try:
                 failures.append(r)
             else:
                 done += 1
-            show_bar(done + len(failures), total)
+            seen = done + len(failures)
+            show_bar(seen, total)
+            # Map download completion onto the first ~55% of the overall bar;
+            # the offline install.py owns the remainder.
+            write_progress(
+                "downloading",
+                "Downloading agent bundle (%d/%d parts)" % (seen, total),
+                5 + (55.0 * seen / total if total else 0),
+            )
     sys.stdout.write("\\n"); sys.stdout.flush()
     if failures:
         for f in failures:
@@ -618,6 +858,7 @@ try:
             "skipped when you re-run this installer. See the log: %s" % (len(failures), _log_path))
 
     step("Reassembling bundle")
+    write_progress("extracting", "Reassembling bundle", 61)
     zip_path = os.path.join(work, manifest["archive"])
     with open(zip_path, "wb") as out:
         for p in sorted(parts, key=lambda x: x["name"]):
@@ -628,6 +869,7 @@ try:
     log("    archive verified")
 
     step("Extracting")
+    write_progress("extracting", "Extracting files", 63)
     dest = os.path.join(work, manifest["extractTo"])
     with zipfile.ZipFile(zip_path) as z:
         z.extractall(dest)
@@ -638,6 +880,7 @@ try:
     # lay it over the extracted files so fixes ship without re-packing the
     # whole bundle. Best-effort: fall back to bundled code on any error.
     step("Applying latest agent code")
+    write_progress("overlay", "Applying latest agent code", 64)
     try:
         um = json.loads(fetch("agent-update.json").decode("utf-8"))
         src_ref = um.get("ref", ref)
@@ -672,11 +915,15 @@ try:
     install_py = os.path.join(dest, "install.py")
     step("Running offline installer")
     log("    (this part never touches the internet)")
+    write_progress("installing_deps", "Starting offline install", 65)
     # Pass the auto-update settings so the agent can fetch future patches.
     env = dict(os.environ)
     env["TT_UPDATE_TOKEN"] = token
     env["TT_UPDATE_REPO"] = repo
     env["TT_UPDATE_REF"] = ref
+    # Share the progress file so install.py reports clean/install/copy/start
+    # into the same beacon (its default path matches PROGRESS_PATH anyway).
+    env["TT_INSTALL_PROGRESS"] = PROGRESS_PATH
     if os.path.exists(install_sh):
         os.chmod(install_sh, 0o755)
         code = subprocess.call(["bash", install_sh], cwd=dest, env=env)
@@ -694,6 +941,7 @@ try:
         except Exception: pass
     sys.exit(code)
 except Exception as e:
+    write_progress("error", "Install failed: %s" % e)
     log("")
     log("  ERROR: %s" % e)
     log("  Debug log: %s" % _log_path)

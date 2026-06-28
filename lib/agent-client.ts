@@ -70,6 +70,27 @@ export interface MetricsResponse {
   gpu: GpuMetrics | null;
 }
 
+/**
+ * Live install/reinstall progress, served by the installer's temporary
+ * "beacon" HTTP server on the agent port (127.0.0.1:7842) BEFORE the real
+ * agent is up. The smart installer writes its download progress and the
+ * offline `install.py` writes the install/clean/copy/start phases to the same
+ * shared progress file, which the beacon serves at `/install/progress`. Absent
+ * (null) when no install is running.
+ */
+export interface InstallProgress {
+  /** downloading | extracting | overlay | cleaning | installing_deps |
+   *  copying | starting | done | error */
+  phase: string;
+  message: string;
+  /** 0-100 overall completion, when known. */
+  percent?: number;
+  /** Agent version being installed, when known. */
+  version?: string;
+  /** Epoch ms of this snapshot. */
+  ts?: number;
+}
+
 export interface SettingsResponse {
   configured: boolean;
   has_api_key: boolean;
@@ -408,6 +429,25 @@ export const agent = {
       return "connected";
     } catch {
       return "offline";
+    }
+  },
+
+  /**
+   * Live install/reinstall progress from the installer's temporary beacon on
+   * the agent port, shown while the real agent is not yet up. Returns null when
+   * nothing is serving it (no install in progress, or the beacon is between the
+   * old-agent shutdown and binding the port). Never throws.
+   */
+  async installProgress(): Promise<InstallProgress | null> {
+    try {
+      const res = await fetch(`${AGENT_URL}/install/progress`, {
+        // Keep it snappy: the beacon is local and we poll frequently.
+        cache: "no-store",
+      });
+      if (!res.ok) return null;
+      return (await res.json()) as InstallProgress;
+    } catch {
+      return null;
     }
   },
 

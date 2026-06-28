@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useAgent } from "@/lib/agent-context";
+import { useInstallProgress } from "@/lib/use-install-progress";
+import { InstallProgressBar } from "./InstallProgressBar";
 
 function getOS(): "windows" | "mac" | "linux" {
   if (typeof navigator === "undefined") return "windows";
@@ -44,6 +46,13 @@ export function OnboardingScreen({
   const [downloaded, setDownloaded] = useState(false);
   // Did we observe the old agent drop after the user started the reinstall?
   const sawDrop = useRef(false);
+
+  // Poll the installer's progress beacon once the user has the installer in
+  // hand (and isn't already connected on a first run). This drives a live
+  // progress bar while the agent itself is not yet reachable.
+  const installProgress = useInstallProgress(
+    downloaded && (reinstall || status !== "connected")
+  );
 
   useEffect(() => {
     setOS(getOS());
@@ -199,7 +208,7 @@ export function OnboardingScreen({
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col items-center gap-4"
           >
-            <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/30 px-6 py-4">
+            <div className="flex w-full items-center gap-3 rounded-xl border border-border/50 bg-muted/30 px-6 py-4">
               <motion.div
                 animate={{ y: [0, 4, 0] }}
                 transition={{ repeat: Infinity, duration: 1.5 }}
@@ -224,13 +233,20 @@ export function OnboardingScreen({
               </p>
             </div>
 
-            {/* Polling indicator */}
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <div className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
-              {reinstall
-                ? "Waiting for the agent to restart..."
-                : "Waiting for agent to connect..."}
-            </div>
+            {/* Live install progress (driven by the installer beacon). Shown
+                once the installer reports in; falls back to a waiting note. */}
+            {installProgress ? (
+              <div className="w-full">
+                <InstallProgressBar progress={installProgress} />
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+                {reinstall
+                  ? "Waiting for the agent to restart..."
+                  : "Waiting for agent to connect..."}
+              </div>
+            )}
 
             {/* Reinstall manual continue (enabled once the agent is back). */}
             {reinstall && (
