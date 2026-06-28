@@ -817,11 +817,34 @@ export const agent = {
 
   // -- Updates --
   async updateStatus(): Promise<UpdateStatus> {
-    return agentFetch<UpdateStatus>("/update/status");
+    try {
+      return await agentFetch<UpdateStatus>("/update/status");
+    } catch (e) {
+      // This agent build ships without the update routes — report it as simply
+      // "not configured" rather than surfacing a 404 as an error.
+      if (isAgent404(e)) {
+        return {
+          current: "unknown",
+          latest: null,
+          update_available: false,
+          configured: false,
+          reachable: true,
+          install_dir: "",
+        };
+      }
+      throw e;
+    }
   },
 
   async applyUpdate(): Promise<UpdateApplyResult> {
-    return agentFetch<UpdateApplyResult>("/update/apply", { method: "POST" });
+    try {
+      return await agentFetch<UpdateApplyResult>("/update/apply", {
+        method: "POST",
+      });
+    } catch (e) {
+      if (isAgent404(e)) return NOT_CONFIGURED_RESULT;
+      throw e;
+    }
   },
 
   /**
@@ -846,14 +869,34 @@ export const agent = {
       });
     } catch (e) {
       // Older agents have no dedicated reinstall route — fall back to apply.
-      if ((e as Error).message?.includes("Agent 404")) {
-        return agentFetch<UpdateApplyResult>("/update/apply", {
-          method: "POST",
-        });
+      if (isAgent404(e)) {
+        try {
+          return await agentFetch<UpdateApplyResult>("/update/apply", {
+            method: "POST",
+          });
+        } catch (e2) {
+          // No update routes at all on this agent build.
+          if (isAgent404(e2)) return NOT_CONFIGURED_RESULT;
+          throw e2;
+        }
       }
       throw e;
     }
   },
+};
+
+/** True when an agent request failed because the route does not exist (404). */
+function isAgent404(e: unknown): boolean {
+  return !!(e as Error)?.message?.includes("Agent 404");
+}
+
+/** Synthetic result used when the agent has no update/reinstall routes. */
+const NOT_CONFIGURED_RESULT: UpdateApplyResult = {
+  applied: false,
+  status: "not_configured",
+  current: "unknown",
+  latest: null,
+  restarting: false,
 };
 
 export interface ModelInfo {

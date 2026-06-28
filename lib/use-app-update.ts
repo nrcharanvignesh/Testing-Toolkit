@@ -130,24 +130,32 @@ export function useAppUpdate(pushLog?: Pushed) {
     // survive the reload even if the connection drops mid-flight.
     setTourCompletedPref(false);
     setPendingReindexPref(true);
+    // Undo the pre-staged intentions when a reinstall doesn't actually start,
+    // so we don't re-run onboarding or re-index on the next reload.
+    const abort = () => {
+      setTourCompletedPref(true);
+      setPendingReindexPref(false);
+      setPhase("idle");
+    };
     try {
       const r = await agent.reinstall();
       if (r.status === "not_configured") {
-        log("WARN", "Reinstall is not configured for this install.");
-        setPendingReindexPref(false);
-        setPhase("idle");
+        log(
+          "WARN",
+          "Reinstall isn't available on this agent build (no update routes). " +
+            "Nothing was changed."
+        );
+        abort();
         return false;
       }
       if (r.status === "unreachable") {
         log("WARN", "Could not reach the install server. Check your connection.");
-        setPendingReindexPref(false);
-        setPhase("idle");
+        abort();
         return false;
       }
       if (r.status === "failed") {
         log("ERROR", "Reinstall failed. The agent kept the current version.");
-        setPendingReindexPref(false);
-        setPhase("idle");
+        abort();
         return false;
       }
 
@@ -169,8 +177,7 @@ export function useAppUpdate(pushLog?: Pushed) {
       return true;
     } catch (e) {
       log("ERROR", `Reinstall failed: ${(e as Error).message}`);
-      setPendingReindexPref(false);
-      setPhase("idle");
+      abort();
       return false;
     }
   }, [log, waitForReconnect]);
