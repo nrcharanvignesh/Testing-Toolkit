@@ -116,6 +116,7 @@ def build_hybrid_index(
     embedder: Any | None = None,
     on_log: LogFn | None = None,
     should_stop: StopFn | None = None,
+    enforce_dense: bool = False,
 ) -> bool:
     """Build (or refresh) the hybrid index from chunk dicts. Each chunk dict
     needs keys: chunk_id, doc, title, text, and optional context.
@@ -185,6 +186,13 @@ def build_hybrid_index(
             dim = int(getattr(store, "dim", dim) or dim)
             _log(on_log, f"[SUCCESS] Dense vectors ready ({store.count()}).")
         except Exception as e:  # noqa: BLE001 - dense is optional
+            if enforce_dense:
+                # Enforced: do not degrade silently. Re-raise so the index job
+                # fails visibly and the cause (e.g. missing bundled model) is
+                # surfaced instead of producing a misleading lexical-only index.
+                _log(on_log, f"[ERROR] Dense embedding failed and dense is "
+                             f"enforced: {e!r}")
+                raise
             _log(on_log, f"[WARN] Dense embedding failed ({e!r}); using "
                          f"lexical-only retrieval.")
             dim = 0
@@ -482,6 +490,21 @@ def open_retriever(index_dir: Path | str) -> "HybridRetriever | None":
     """Open a built hybrid index for querying, or None if none exists."""
     r = HybridRetriever(index_dir)
     return r if r.is_available() else None
+
+
+def hybrid_has_dense(index_dir: Path | str) -> bool:
+    """True if the built hybrid index actually contains dense vectors (its
+    manifest reports dense=True with a positive dimension). Used to verify that
+    enforced dense indexing really produced vectors rather than a lexical-only
+    index."""
+    try:
+        p = Path(index_dir) / _MANIFEST_FILE
+        if not p.exists():
+            return False
+        man = json.loads(p.read_text(encoding="utf-8"))
+        return bool(man.get("dense", False)) and int(man.get("dim", 0)) > 0
+    except (OSError, json.JSONDecodeError, ValueError, TypeError):
+        return False
 
 
 def hybrid_index_is_current(

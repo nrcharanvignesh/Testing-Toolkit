@@ -242,18 +242,29 @@ def _build_hybrid_from_index(
     # Densify: split the coarse RLM chunks into fine retrieval windows so
     # lexical/dense retrieval is precise.
     chunks = densify_chunks(coarse)
+    # Dense indexing is ENFORCED by default (TT_ENFORCE_DENSE): we must build
+    # dense vectors with the bundled local model and must NOT silently fall back
+    # to lexical-only. Enforcement overrides any caller request to disable dense.
+    from kb.embeddings import dense_enforced
+
+    enforced = dense_enforced()
+    if enforced:
+        enable_dense = True
     # Whether dense vectors can actually be added now (cheap import check;
     # does not load the model). If dense is wanted and achievable but the
     # existing index is lexical-only, the currency check below returns False
-    # and we rebuild with vectors.
+    # and we rebuild with vectors. When enforced we always want dense.
     want_dense = False
     if enable_dense:
-        try:
-            from kb.embeddings import embedding_backend_available
+        if enforced:
+            want_dense = True
+        else:
+            try:
+                from kb.embeddings import embedding_backend_available
 
-            want_dense = bool(embedding_backend_available())
-        except Exception:
-            want_dense = False
+                want_dense = bool(embedding_backend_available())
+            except Exception:
+                want_dense = False
     # Skip rebuilding when the hybrid index already reflects this chunk set
     # (cheap manifest-only check); avoids redundant CPU on every reselect.
     # A forced rebuild bypasses this shortcut entirely.
@@ -272,7 +283,26 @@ def _build_hybrid_from_index(
     except Exception:
         pass
     embedder = None
-    if enable_dense:
+    if enable_dense and enforced:
+        # ENFORCED path: build BOTH local models (dense embedder + cross-encoder
+        # reranker) strictly. Any failure raises and is surfaced as a visible
+        # index-job error instead of a silent downgrade to lexical-only.
+        from kb.embeddings import get_text_embedder_strict
+        from kb.reranker import get_reranker_strict
+
+        embedder = get_text_embedder_strict()
+        # Verify the reranker can also load now, so "both local models" are
+        # guaranteed for retrieval; fail at index time if it cannot.
+        get_reranker_strict()
+        if on_log is not None:
+            try:
+                backend = getattr(embedder, "name", "local")
+                on_log(f"[SUCCESS] Dense indexing enforced: embedder "
+                       f"({backend}) + reranker ready; adding vectors "
+                       f"alongside BM25.")
+            except Exception:
+                pass
+    elif enable_dense:
         try:
             from kb.embeddings import get_text_embedder
 
@@ -305,10 +335,25 @@ def _build_hybrid_from_index(
                                "lexical (BM25) retrieval.")
             except Exception:
                 pass
-    build_hybrid_index(
+    ok = build_hybrid_index(
         p.hybrid_dir, chunks, embedder=embedder, on_log=on_log,
-        should_stop=should_stop,
+        should_stop=should_stop, enforce_dense=(enable_dense and enforced),
     )
+    # When enforced, confirm dense vectors actually landed in the manifest;
+    # otherwise raise so the failure is loud rather than a lexical-only index.
+    if ok and enable_dense and enforced and not (should_stop and should_stop()):
+        try:
+            from kb.retrieval import hybrid_has_dense
+
+            if not hybrid_has_dense(p.hybrid_dir):
+                raise RuntimeError(
+                    "Dense indexing is enforced but no dense vectors were "
+                    "written. The bundled embedding model may be missing; "
+                    "reinstall the agent (or set TT_ENFORCE_DENSE=0 to allow "
+                    "lexical-only retrieval)."
+                )
+        except ImportError:
+            pass
 
 
 def open_project_retriever(full_name: str) -> "Any | None":

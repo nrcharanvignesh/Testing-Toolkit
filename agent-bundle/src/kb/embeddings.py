@@ -22,11 +22,24 @@ ASCII-only; fully type-hinted.
 
 from __future__ import annotations
 
+import os
 from typing import Any, Final, Protocol
 
 import numpy as np
 
 from kb.model_bundle import bundled_models_dir
+
+
+def dense_enforced() -> bool:
+    """Whether dense indexing is ENFORCED (the default).
+
+    When enforced, the KB pipeline must build dense vectors with the bundled
+    local model; it must NOT silently fall back to lexical-only retrieval. Set
+    the environment variable ``TT_ENFORCE_DENSE=0`` to opt out (e.g. a
+    deliberately model-less, lexical-only deployment). Any other value - or an
+    unset variable - keeps enforcement ON.
+    """
+    return (os.environ.get("TT_ENFORCE_DENSE", "1").strip() or "1") != "0"
 
 # Recommended small CPU model (override via set_default_model if desired).
 DEFAULT_MODEL: Final[str] = "BAAI/bge-small-en-v1.5"
@@ -192,3 +205,25 @@ def get_text_embedder(model_name: str | None = None) -> "TextEmbedder | None":
         errs.append(f"sentence-transformers: {type(e).__name__}: {e}")
     _LAST_BUILD_ERROR = "; ".join(errs)
     return None
+
+
+def get_text_embedder_strict(model_name: str | None = None) -> "TextEmbedder":
+    """Like get_text_embedder() but RAISES instead of returning None.
+
+    Used when dense indexing is enforced: the caller wants a hard, visible
+    failure (surfaced in the index job log) rather than a silent downgrade to
+    lexical-only retrieval. The error message includes the backend status and
+    the last construction error (e.g. a missing bundled model file) so the
+    cause is actionable.
+    """
+    emb = get_text_embedder(model_name)
+    if emb is not None:
+        return emb
+    avail, reason = embedding_backend_status()
+    detail = last_build_error() or reason
+    raise RuntimeError(
+        "Dense indexing is enforced but the local embedding model could not "
+        "be initialized. " + detail + " (Ensure the bundled model files are "
+        "present; reinstall the agent to restore them, or set "
+        "TT_ENFORCE_DENSE=0 to allow lexical-only retrieval.)"
+    )

@@ -168,10 +168,19 @@ def _run_kb_index(job: "Job", project: str, force: bool = False) -> None:
         )
         docs = int(getattr(result, "n_docs", 0) or 0)
         chunks = len(getattr(result, "chunks", []) or [])
+        # Report dense status from the actual built hybrid manifest rather than
+        # an attribute the index object does not carry.
+        has_dense = False
+        try:
+            from kb.retrieval import hybrid_has_dense
+
+            has_dense = bool(hybrid_has_dense(ps.ensure_project(project).hybrid_dir))
+        except Exception:
+            has_dense = False
         job.finish({
             "n_documents": docs,
             "n_chunks": chunks,
-            "has_dense": bool(getattr(result, "has_dense", False)),
+            "has_dense": has_dense,
         })
         if chunks > 0:
             job.log(

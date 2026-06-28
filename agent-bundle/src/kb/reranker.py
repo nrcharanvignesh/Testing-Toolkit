@@ -98,6 +98,25 @@ def get_reranker(model_name: str | None = None) -> "Reranker | None":
         return None
 
 
+def get_reranker_strict(model_name: str | None = None) -> "Reranker":
+    """Like get_reranker() but RAISES instead of returning None.
+
+    Used when dense indexing is enforced so that BOTH local models (the dense
+    embedder and this cross-encoder reranker) are verified at index time. The
+    error message includes the underlying construction error so a missing
+    bundled model file is actionable.
+    """
+    try:
+        return _FastEmbedReranker(model_name or DEFAULT_RERANKER)
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(
+            "Dense indexing is enforced but the local reranker model could "
+            f"not be initialized: {type(e).__name__}: {e}. (Ensure the bundled "
+            "model files are present; reinstall the agent to restore them, or "
+            "set TT_ENFORCE_DENSE=0 to allow lexical-only retrieval.)"
+        ) from e
+
+
 # ---------------------------------------------------------------------
 # Optional: LLM-as-reranker (completions API only). Use on a SMALL
 # candidate set; it costs one API call. Returns ids best-first.
