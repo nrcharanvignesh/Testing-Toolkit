@@ -28,15 +28,33 @@ import argparse
 import json
 import os
 import platform
+import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 AGENT_PORT = 7842
 MIN_PY = (3, 9)
+
+# On Windows, suppress the console window for EVERY child process we spawn
+# (pip, venv, the agent itself). 0 elsewhere (accepted but ignored on POSIX),
+# so we can pass it unconditionally and keep the whole install windowless.
+CREATE_NO_WINDOW = 0x08000000
+_CF = CREATE_NO_WINDOW if os.name == "nt" else 0
+
+# Shared progress file the installer writes throughout the install. The smart
+# bootstrap installer points us at the SAME file (via TT_INSTALL_PROGRESS) and
+# serves it over http://127.0.0.1:7842/install/progress so the web app can show
+# a live progress bar even before the real agent is up.
+PROGRESS_PATH = Path(
+    os.environ.get("TT_INSTALL_PROGRESS")
+    or (Path(tempfile.gettempdir()) / "TestingToolkit-install-progress.json")
+)
 
 # --- Resolve bundle layout (everything is relative to this file) ----------
 BUNDLE_DIR = Path(__file__).resolve().parent
@@ -81,6 +99,96 @@ def ok(msg: str) -> None:
 
 
 # --------------------------------------------------------------------------
+# Install progress (relayed to the web app via the bootstrap's beacon)
+# --------------------------------------------------------------------------
+def _bundle_version() -> str:
+    """Best-effort read of the agent version that is ABOUT to be installed.
+
+    Read straight from the (possibly overlaid) source tree, since the agent
+    package is not importable yet during install.
+    """
+    try:
+        txt = (SRC_DIR / "agent" / "version.py").read_text(encoding="utf-8")
+        m = re.search(r'AGENT_VERSION\s*=\s*["\']([^"\']+)["\']', txt)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return ""
+
+
+def progress(phase: str, message: str, percent: float | None = None, **extra) -> None:
+    """Write a single progress snapshot to the shared progress file.
+
+    Never raises: progress reporting must never break an install.
+    """
+    try:
+        data: dict = {
+            "phase": phase,
+            "message": message,
+            "ts": int(time.time() * 1000),
+        }
+        if percent is not None:
+            data["percent"] = max(0, min(100, round(percent)))
+        v = _bundle_version()
+        if v:
+            data["version"] = v
+        data.update(extra)
+        PROGRESS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        PROGRESS_PATH.write_text(json.dumps(data), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _run(cmd, **kwargs):
+    """subprocess.run wrapper that is windowless on Windows."""
+    kwargs.setdefault("creationflags", _CF)
+    return subprocess.run(cmd, **kwargs)
+
+
+def _port_free(port: int) -> bool:
+    """True if nothing is listening on 127.0.0.1:port (i.e. it is free)."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(0.5)
+    try:
+        s.connect(("127.0.0.1", port))
+        s.close()
+        return False
+    except Exception:
+        return True
+
+
+def purge_stale_packages() -> None:
+    """Never reuse previously stored packages: clean them out before installing.
+
+    The agent is always rebuilt from the bundle's wheelhouse with pip's cache
+    disabled (--no-cache-dir), so no stale wheel or HTTP-cached package can be
+    reused. Here we additionally remove any prior environment and transient
+    model caches so a (re)install is guaranteed clean.
+    """
+    progress("cleaning", "Removing previously stored packages", 67)
+    info("Cleaning previously stored packages for a clean install...")
+    # Always rebuild the env from scratch - never reuse an old venv / lib dir.
+    for d in (VENV_DIR, LIB_DIR):
+        if d.exists():
+            info(f"  Removing stored environment: {d}")
+            shutil.rmtree(d, ignore_errors=True)
+    # Transient model cache fastembed may have written on a previous run (the
+    # old offline-failure source). The real models ship in the bundle.
+    transient = [
+        Path(tempfile.gettempdir()) / "fastembed_cache",
+        INSTALL_DIR / ".cache",
+    ]
+    for c in transient:
+        try:
+            if c.exists():
+                info(f"  Removing transient cache: {c}")
+                shutil.rmtree(c, ignore_errors=True)
+        except Exception:
+            pass
+
+
+# --------------------------------------------------------------------------
 # Platform detection
 # --------------------------------------------------------------------------
 def detect_platform() -> tuple[str, str]:
@@ -109,7 +217,7 @@ def detect_platform() -> tuple[str, str]:
 def _py_ok(exe: str) -> bool:
     """True if `exe` is a runnable Python >= MIN_PY."""
     try:
-        out = subprocess.run(
+        out = _run(
             [exe, "-c", "import sys;print('%d.%d' % sys.version_info[:2])"],
             capture_output=True,
             text=True,
@@ -151,7 +259,7 @@ def find_system_python() -> str | None:
         # `py` is a launcher; normalise to a real interpreter path.
         if Path(name).stem == "py":
             try:
-                real = subprocess.run(
+                real = _run(
                     [exe, "-3", "-c", "import sys;print(sys.executable)"],
                     capture_output=True,
                     text=True,
@@ -172,7 +280,16 @@ def find_system_python() -> str | None:
 # Quiet, non-interactive pip flags shared by every install command so the
 # console shows a clean summary instead of a per-wheel "Processing ..." flood.
 # Warnings and errors are still printed.
-_PIP_QUIET = ["--quiet", "--no-input", "--disable-pip-version-check"]
+#
+# --no-cache-dir GUARANTEES we never reuse a previously stored/cached package:
+# pip neither reads from nor writes to its wheel/HTTP cache, so every install
+# resolves fresh from the bundled wheelhouse (or PyPI on the online fallback).
+_PIP_QUIET = [
+    "--quiet",
+    "--no-input",
+    "--disable-pip-version-check",
+    "--no-cache-dir",
+]
 
 
 def pip_args_offline(extra: list[str]) -> list[str]:
@@ -236,7 +353,7 @@ def wheelhouse_supports(os_name: str, arch: str) -> bool:
 def ensure_pip(python_exe: str) -> bool:
     """Make sure `python -m pip` works; bootstrap from the wheelhouse if not."""
     try:
-        r = subprocess.run(
+        r = _run(
             [python_exe, "-m", "pip", "--version"],
             capture_output=True,
             text=True,
@@ -253,9 +370,9 @@ def ensure_pip(python_exe: str) -> bool:
         return False
     pip_whl = pip_wheels[-1]
     try:
-        r = subprocess.run(
+        r = _run(
             [python_exe, str(pip_whl / "pip"), "install", "--no-index",
-             f"--find-links={WHEELHOUSE}", str(pip_whl)],
+             "--no-cache-dir", f"--find-links={WHEELHOUSE}", str(pip_whl)],
             capture_output=True,
             text=True,
             timeout=120,
@@ -277,9 +394,12 @@ def install_via_venv(base_python: str, online: bool = False) -> str | None:
     success, else None.
     """
     info("Creating an isolated environment (venv)...")
+    # Never reuse a previously created venv - always start from a clean dir.
+    if VENV_DIR.exists():
+        shutil.rmtree(VENV_DIR, ignore_errors=True)
     try:
-        subprocess.run([base_python, "-m", "venv", str(VENV_DIR)],
-                       check=True, capture_output=True, text=True, timeout=180)
+        _run([base_python, "-m", "venv", str(VENV_DIR)],
+             check=True, capture_output=True, text=True, timeout=180)
     except Exception as exc:
         warn(f"venv creation failed: {exc}")
         return None
@@ -301,7 +421,8 @@ def install_via_venv(base_python: str, online: bool = False) -> str | None:
     else:
         info("Installing packages offline from the bundled wheelhouse (this can take a minute)...")
         args = pip_args_offline(["-r", str(REQUIREMENTS)])
-    r = subprocess.run([str(venv_py), *args], text=True)
+    progress("installing_deps", "Installing packages (clean, no cached wheels)", 78)
+    r = _run([str(venv_py), *args], text=True)
     if r.returncode != 0:
         return None
     return str(venv_py)
@@ -319,10 +440,14 @@ def install_via_target(python_exe: str, online: bool = False) -> str | None:
         warn("Could not bootstrap pip for the bundled runtime.")
         return None
 
+    # Never reuse a previously populated lib dir.
+    if LIB_DIR.exists():
+        shutil.rmtree(LIB_DIR, ignore_errors=True)
     LIB_DIR.mkdir(parents=True, exist_ok=True)
     extra = ["--target", str(LIB_DIR), "-r", str(REQUIREMENTS)]
     args = pip_args_online(extra) if online else pip_args_offline(extra)
-    r = subprocess.run([python_exe, *args], text=True)
+    progress("installing_deps", "Installing packages (clean, no cached wheels)", 78)
+    r = _run([python_exe, *args], text=True)
     if r.returncode != 0:
         return None
     return python_exe
@@ -348,8 +473,8 @@ PID_FILE = INSTALL_DIR / "agent.pid"
 def _kill_pid(pid: int) -> None:
     try:
         if os.name == "nt":
-            subprocess.run(["taskkill", "/F", "/PID", str(pid)],
-                           capture_output=True, text=True)
+            _run(["taskkill", "/F", "/PID", str(pid)],
+                 capture_output=True, text=True)
         else:
             os.kill(pid, signal.SIGTERM)
     except Exception:
@@ -380,21 +505,21 @@ def unregister_autostart(os_name: str) -> None:
     """Remove any existing login auto-start entry (best-effort)."""
     try:
         if os_name == "windows":
-            subprocess.run(["schtasks", "/end", "/tn", "TestingToolkitAgent"],
-                           capture_output=True, text=True)
-            subprocess.run(["schtasks", "/delete", "/tn", "TestingToolkitAgent", "/f"],
-                           capture_output=True, text=True)
+            _run(["schtasks", "/end", "/tn", "TestingToolkitAgent"],
+                 capture_output=True, text=True)
+            _run(["schtasks", "/delete", "/tn", "TestingToolkitAgent", "/f"],
+                 capture_output=True, text=True)
         elif os_name == "macos":
             plist = Path.home() / "Library/LaunchAgents/com.testingtoolkit.agent.plist"
-            subprocess.run(["launchctl", "unload", str(plist)],
-                           capture_output=True, text=True)
+            _run(["launchctl", "unload", str(plist)],
+                 capture_output=True, text=True)
             if plist.exists():
                 plist.unlink()
         else:
-            subprocess.run(
+            _run(
                 ["systemctl", "--user", "stop", "testingtoolkit-agent.service"],
                 capture_output=True, text=True)
-            subprocess.run(
+            _run(
                 ["systemctl", "--user", "disable", "testingtoolkit-agent.service"],
                 capture_output=True, text=True)
     except Exception:
@@ -481,7 +606,7 @@ def register_autostart(os_name: str, launch_python: str, use_pythonpath: bool) -
             # (a plain python.exe task pops a console window on every login).
             launch_pyw = windowless_python(launch_python)
             cmd = f'"{launch_pyw}" -m agent'
-            subprocess.run(
+            _run(
                 ["schtasks", "/create", "/tn", "TestingToolkitAgent",
                  "/tr", cmd, "/sc", "onlogon", "/rl", "limited", "/f"],
                 capture_output=True, text=True,
@@ -490,19 +615,19 @@ def register_autostart(os_name: str, launch_python: str, use_pythonpath: bool) -
             plist = Path.home() / "Library/LaunchAgents/com.testingtoolkit.agent.plist"
             plist.parent.mkdir(parents=True, exist_ok=True)
             plist.write_text(_macos_plist(launch_python, src_path))
-            subprocess.run(["launchctl", "unload", str(plist)],
-                           capture_output=True, text=True)
-            subprocess.run(["launchctl", "load", str(plist)],
-                           capture_output=True, text=True)
+            _run(["launchctl", "unload", str(plist)],
+                 capture_output=True, text=True)
+            _run(["launchctl", "load", str(plist)],
+                 capture_output=True, text=True)
         else:  # linux
             unit_dir = Path.home() / ".config/systemd/user"
             unit_dir.mkdir(parents=True, exist_ok=True)
             (unit_dir / "testingtoolkit-agent.service").write_text(
                 _linux_unit(launch_python, src_path)
             )
-            subprocess.run(["systemctl", "--user", "daemon-reload"],
-                           capture_output=True, text=True)
-            subprocess.run(
+            _run(["systemctl", "--user", "daemon-reload"],
+                 capture_output=True, text=True)
+            _run(
                 ["systemctl", "--user", "enable", "testingtoolkit-agent.service"],
                 capture_output=True, text=True,
             )
@@ -577,7 +702,7 @@ def _run_import_selftest(launch_python: str, env: dict, workdir: Path) -> str:
         "print('IMPORT_OK')"
     )
     try:
-        res = subprocess.run(
+        res = _run(
             [launch_python, "-c", probe],
             cwd=str(workdir), env=env,
             capture_output=True, text=True, timeout=120,
@@ -611,6 +736,7 @@ def start_agent(launch_python: str, use_pythonpath: bool) -> None:
 
     # --- Diagnostic: import self-test before the detached launch -----------
     info("Running agent self-test (import check)...")
+    progress("starting", "Verifying the agent", 96)
     err = _run_import_selftest(launch_python, env, workdir)
     if err:
         error("Agent self-test FAILED - the agent cannot import and will not start:")
@@ -623,8 +749,19 @@ def start_agent(launch_python: str, use_pythonpath: bool) -> None:
         except Exception:
             pass
         error(f"Full details saved to: {log_path}")
+        progress("error", "Agent failed its self-test; see the installer log", 96)
         return
     ok("Self-test passed (agent imports cleanly).")
+
+    # The install beacon (if any) is holding port 7842 to serve live progress.
+    # Signal it to release the port, then wait for it to actually free up so the
+    # real agent can bind it. The web app reads `release_port` and switches to
+    # polling /health for the real agent at this point.
+    progress("starting", "Starting the agent", 97, release_port=True)
+    for _ in range(20):
+        if _port_free(AGENT_PORT):
+            break
+        time.sleep(0.5)
 
     # --- Launch the agent, capturing its output to the log file -----------
     try:
@@ -640,12 +777,13 @@ def start_agent(launch_python: str, use_pythonpath: bool) -> None:
         if os.name == "nt":
             # CREATE_NO_WINDOW + pythonw.exe => no console window at all.
             run_python = windowless_python(launch_python)
-            kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+            kwargs["creationflags"] = CREATE_NO_WINDOW
         else:
             kwargs["start_new_session"] = True
         subprocess.Popen([run_python, "-m", "agent"], **kwargs)
     except Exception as exc:
         warn(f"Could not launch agent automatically: {exc}")
+        progress("error", f"Could not launch the agent: {exc}", 97)
         return
 
     # Poll the health endpoint without requiring any extra dependency.
@@ -659,9 +797,11 @@ def start_agent(launch_python: str, use_pythonpath: bool) -> None:
                 if resp.status == 200:
                     ok(f"Agent is running on localhost:{AGENT_PORT}")
                     ok("Return to your browser - it will connect automatically.")
+                    progress("done", "Agent is running", 100)
                     return
         except Exception:
             time.sleep(1)
+    progress("error", "Agent did not report healthy in time", 99)
     warn("Agent did not report healthy within 30s.")
     warn(
         "The agent imported fine but its HTTP server did not respond. "
@@ -734,8 +874,11 @@ def main() -> int:
              ". Installing anyway (TT_ENFORCE_DENSE=0); retrieval will be "
              "lexical-only until the models are present.")
 
+    progress("cleaning", "Preparing a clean install", 66)
     # Remove any previous build first (keeps user data) so re-installs are clean.
     clean_previous_install(os_name)
+    # Never reuse previously stored packages / caches.
+    purge_stale_packages()
 
     AGENT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -814,6 +957,7 @@ def main() -> int:
         return 1
 
     # --- Copy source + models --------------------------------------------
+    progress("copying", "Installing agent files", 91)
     info("Installing agent source...")
     copy_tree(SRC_DIR, AGENT_DIR / "src")
     info("Installing ONNX models...")
@@ -827,6 +971,9 @@ def main() -> int:
         register_autostart(os_name, launch_python, use_pythonpath)
     if not args.no_start:
         start_agent(launch_python, use_pythonpath)
+    else:
+        # Install-only mode: signal completion so any beacon can release 7842.
+        progress("done", "Installation complete", 100, release_port=True)
 
     print()
     ok("Installation complete.")
@@ -836,8 +983,18 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        sys.exit(main())
+        rc = main()
+        if rc != 0:
+            progress("error", "Installation failed; see the installer log", None,
+                     release_port=True)
+        sys.exit(rc)
     except KeyboardInterrupt:
         print()
         error("Interrupted.")
+        progress("error", "Installation was interrupted", None, release_port=True)
         sys.exit(130)
+    except Exception as exc:  # noqa: BLE001
+        error(f"Unexpected installer error: {exc}")
+        progress("error", f"Unexpected installer error: {exc}", None,
+                 release_port=True)
+        sys.exit(1)
