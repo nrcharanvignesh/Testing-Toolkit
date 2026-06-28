@@ -44,14 +44,17 @@ function Chip({
   warn,
   pulse,
   title,
+  color: colorOverride,
 }: {
   label: string;
-  ok: boolean;
+  ok?: boolean;
   warn?: boolean;
   pulse?: boolean;
   title?: string;
+  /** Explicit dot color; takes precedence over the ok/warn mapping. */
+  color?: string;
 }) {
-  const color = ok ? "#1aab5c" : warn ? "#f59e0b" : "#5a5f6a";
+  const color = colorOverride ?? (ok ? "#1aab5c" : warn ? "#f59e0b" : "#5a5f6a");
   return (
     <span className="flex items-center gap-1.5" title={title}>
       <Dot color={color} pulse={pulse} />
@@ -68,7 +71,7 @@ const KB_COLOR: Record<KbState, string> = {
 };
 
 export function StatusBar() {
-  const { status, health } = useAgent();
+  const { status } = useAgent();
   const {
     settings,
     kbState,
@@ -84,7 +87,6 @@ export function StatusBar() {
   const hasKey = !!settings?.has_api_key;
   const connected = status === "connected";
   const working = boardLoading || projectsLoading;
-  const hasTls = !!health?.tls_mode;
 
   // Live CPU/RAM/GPU usage (agent >= 1.8.0; gracefully absent on older agents).
   const metrics = useMetrics(connected);
@@ -195,10 +197,10 @@ export function StatusBar() {
           </div>
         )}
         <Chip
-          label="App"
-          ok={connected}
-          pulse={!connected}
-          title="Desktop agent connection"
+          label="LLM API"
+          ok={hasKey}
+          warn={!hasKey}
+          title={hasKey ? "LLM API key set" : "no API key (manual mode)"}
         />
         <Chip
           label="ADO"
@@ -207,21 +209,10 @@ export function StatusBar() {
           title="Azure DevOps status"
         />
         <Chip
-          label="API"
-          ok={hasKey}
-          warn={!hasKey}
-          title={hasKey ? "LLM API key set" : "no API key (manual mode)"}
-        />
-        <Chip
-          label="TLS"
-          ok={hasTls}
-          title={hasTls ? `TLS: ${health?.tls_mode}` : "TLS status"}
-        />
-        <Chip
-          label="Activity"
-          ok={connected}
-          pulse={working}
-          title="App activity"
+          label="KB"
+          color={KB_COLOR[kbState]}
+          pulse={kbState === "indexing"}
+          title={kbMessage || `Knowledge base: ${kbState}`}
         />
       </div>
     </footer>
