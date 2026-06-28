@@ -151,33 +151,31 @@ export function StatusBar() {
       <div className="flex items-center gap-4">
         {metrics && (
           <div className="flex items-center gap-3 border-r border-[#2d313c] pr-4">
-            {/* CPU, RAM and Data (ROM/disk) are always shown. */}
+            {/* CPU, RAM and Data are always shown — scoped to the app alone,
+                not the whole machine. RAM and Data are shown as actual amounts
+                (MB/GB), not percentages. */}
             <Metric
               label="CPU"
               value={
                 metrics.cpu_percent !== null ? `${metrics.cpu_percent}%` : "--"
               }
-              title="CPU usage"
+              title="CPU used by Testing Toolkit"
             />
             <Metric
               label="RAM"
-              value={
-                metrics.ram_percent !== null ? `${metrics.ram_percent}%` : "--"
-              }
-              title={`Memory: ${fmtMem(metrics.ram_used_mb)} / ${fmtMem(
-                metrics.ram_total_mb
-              )} used`}
+              value={fmtMem(metrics.proc_mem_mb)}
+              title={`Memory used by Testing Toolkit${
+                metrics.ram_total_mb !== null
+                  ? ` (system: ${fmtMem(metrics.ram_used_mb)} / ${fmtMem(
+                      metrics.ram_total_mb
+                    )})`
+                  : ""
+              }`}
             />
             <Metric
               label="Data"
-              value={
-                metrics.disk_percent !== null
-                  ? `${metrics.disk_percent}%`
-                  : "--"
-              }
-              title={`Disk storage: ${fmtMem(metrics.disk_used_mb)} / ${fmtMem(
-                metrics.disk_total_mb
-              )} used`}
+              value={fmtMem(metrics.app_data_mb)}
+              title="Disk space used by Testing Toolkit's data (workspace)"
             />
             {gpu?.in_use && (
               <Metric

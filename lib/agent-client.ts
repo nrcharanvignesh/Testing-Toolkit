@@ -53,12 +53,17 @@ export interface GpuMetrics {
 /** Live system resource usage from the agent's `/metrics` endpoint. Any field
  * may be null when the host can't report it. */
 export interface MetricsResponse {
+  /** The app's own CPU usage as a % of total machine capacity. */
   cpu_percent: number | null;
+  /** The app's own resident memory (RAM) in MB. */
+  proc_mem_mb: number | null;
+  /** Actual disk space the app's workspace directory occupies, in MB. */
+  app_data_mb: number | null;
+  /** System RAM context (whole machine), kept for tooltips / older agents. */
   ram_used_mb: number | null;
   ram_total_mb: number | null;
   ram_percent: number | null;
-  proc_mem_mb: number | null;
-  /** Disk ("Data" / ROM) usage for the workspace drive. Null on older agents. */
+  /** Whole-drive context, kept for tooltips / older agents. */
   disk_used_mb: number | null;
   disk_total_mb: number | null;
   disk_percent: number | null;
