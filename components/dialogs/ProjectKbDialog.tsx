@@ -133,7 +133,7 @@ function DocumentsSection({
   project: string;
   pushLog: (l: "INFO" | "SUCCESS" | "WARN" | "ERROR", t: string) => void;
 }) {
-  const { markKbDirty, clearKbDirty } = useAppState();
+  const { markKbDirty, clearKbDirty, indexKb } = useAppState();
   const [status, setStatus] = useState<KbStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [indexing, setIndexing] = useState(false);
@@ -213,9 +213,12 @@ function DocumentsSection({
     setSelectedDocs(new Set());
     pushLog(
       okCount ? "SUCCESS" : "WARN",
-      `Removed ${okCount}/${names.length} KB document(s). The index will rebuild on close.`
+      `Removed ${okCount}/${names.length} KB document(s). Re-indexing knowledge base...`
     );
-    if (okCount > 0) markKbDirty();
+    if (okCount > 0) {
+      markKbDirty();
+      void indexKb(project);
+    }
     refresh();
     setBusy(false);
   };
@@ -281,9 +284,15 @@ function DocumentsSection({
     refresh();
     setBusy(false);
 
-    // Any successful upload means the index is now stale — flag it so closing
-    // the window kicks off indexing automatically.
-    if (okCount > 0) markKbDirty();
+    // Any successful upload means the index is now stale. Kick off indexing
+    // immediately (app-level, so it keeps running even if this window is
+    // closed) instead of waiting for the dialog to close. markKbDirty stays as
+    // a fallback so the on-close handler still re-indexes if this is skipped.
+    if (okCount > 0) {
+      markKbDirty();
+      pushLog("INFO", "Upload complete — indexing knowledge base...");
+      void indexKb(project);
+    }
 
     // Auto-dismiss the progress list shortly after a fully successful batch;
     // keep it on screen if anything failed so the user can read the error.

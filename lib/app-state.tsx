@@ -12,6 +12,7 @@ import {
   useContext,
   useCallback,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -162,6 +163,13 @@ export function AppStateProvider({
   const markKbDirty = useCallback(() => setKbDirty(true), []);
   const clearKbDirty = useCallback(() => setKbDirty(false), []);
 
+  // Guard against overlapping index passes. If a new index is requested while
+  // one is running (e.g. more files uploaded mid-index), we don't start a
+  // second concurrent pass — we flag a rerun so exactly one more pass runs
+  // afterwards to pick up the newly added documents.
+  const indexingRef = useRef(false);
+  const rerunIndexRef = useRef(false);
+
   const [navVisible, setNavVisibleState] = useState<boolean>(
     () => getPreferences().panels.nav
   );
@@ -290,7 +298,7 @@ export function AppStateProvider({
     [currentProject, selectBoardInternal]
   );
 
-  const kickKbIndex = useCallback(
+  const runKbIndexOnce = useCallback(
     async (project: string) => {
       setKbState("indexing");
       setKbMessage("KB indexing... starting");
@@ -356,13 +364,34 @@ export function AppStateProvider({
     [pushLog]
   );
 
+  // Orchestrator: ensures only one index pass runs at a time. If another index
+  // is requested mid-pass, it schedules a single rerun afterwards so documents
+  // added during the current pass still get indexed.
+  const kickKbIndex = useCallback(
+    async (project: string) => {
+      if (!project) return;
+      if (indexingRef.current) {
+        rerunIndexRef.current = true;
+        return;
+      }
+      indexingRef.current = true;
+      try {
+        do {
+          rerunIndexRef.current = false;
+          await runKbIndexOnce(project);
+        } while (rerunIndexRef.current);
+      } finally {
+        indexingRef.current = false;
+      }
+    },
+    [runKbIndexOnce]
+  );
+
   // App-level KB index trigger. Lives in the provider (not the dialog) so an
-  // in-flight index keeps running after the KB window is closed. No-ops while
-  // an index is already running.
+  // in-flight index keeps running after the KB window is closed.
   const indexKb = useCallback(
     async (project: string) => {
       if (!project) return;
-      setKbDirty(false);
       await kickKbIndex(project);
     },
     [kickKbIndex]
