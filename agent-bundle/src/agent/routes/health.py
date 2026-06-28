@@ -53,6 +53,9 @@ async def metrics() -> dict:
         "ram_total_mb": None,
         "ram_percent": None,
         "proc_mem_mb": None,
+        "disk_used_mb": None,
+        "disk_total_mb": None,
+        "disk_percent": None,
         "gpu": None,
     }
 
@@ -83,6 +86,28 @@ async def metrics() -> dict:
         data["ram_used_mb"] = used
         if total > 0:
             data["ram_percent"] = round(used / total * 100, 1)
+    except Exception:
+        pass
+
+    # Disk ("Data" / ROM) usage for the drive that hosts the workspace, via the
+    # stdlib (no dependency). Falls back to home, then the filesystem root.
+    try:
+        import shutil
+
+        candidates = [
+            os.environ.get("TT_WORKSPACE_DIR"),
+            os.path.expanduser("~"),
+            os.path.abspath(os.sep),
+        ]
+        target = next((p for p in candidates if p and os.path.exists(p)), None)
+        if target:
+            usage = shutil.disk_usage(target)
+            total = int(usage.total / (1024 * 1024))
+            used = int(usage.used / (1024 * 1024))
+            data["disk_total_mb"] = total
+            data["disk_used_mb"] = used
+            if total > 0:
+                data["disk_percent"] = round(used / total * 100, 1)
     except Exception:
         pass
 

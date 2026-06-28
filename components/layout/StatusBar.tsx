@@ -151,29 +151,34 @@ export function StatusBar() {
       <div className="flex items-center gap-4">
         {metrics && (
           <div className="flex items-center gap-3 border-r border-[#2d313c] pr-4">
-            {metrics.cpu_percent !== null && (
-              <Metric
-                label="CPU"
-                value={`${metrics.cpu_percent}%`}
-                title="CPU usage"
-              />
-            )}
-            {metrics.ram_percent !== null && (
-              <Metric
-                label="RAM"
-                value={`${metrics.ram_percent}%`}
-                title={`Memory: ${fmtMem(metrics.ram_used_mb)} / ${fmtMem(
-                  metrics.ram_total_mb
-                )} used`}
-              />
-            )}
-            {metrics.proc_mem_mb !== null && (
-              <Metric
-                label="Mem"
-                value={fmtMem(metrics.proc_mem_mb)}
-                title="Memory used by the Testing Toolkit agent"
-              />
-            )}
+            {/* CPU, RAM and Data (ROM/disk) are always shown. */}
+            <Metric
+              label="CPU"
+              value={
+                metrics.cpu_percent !== null ? `${metrics.cpu_percent}%` : "--"
+              }
+              title="CPU usage"
+            />
+            <Metric
+              label="RAM"
+              value={
+                metrics.ram_percent !== null ? `${metrics.ram_percent}%` : "--"
+              }
+              title={`Memory: ${fmtMem(metrics.ram_used_mb)} / ${fmtMem(
+                metrics.ram_total_mb
+              )} used`}
+            />
+            <Metric
+              label="Data"
+              value={
+                metrics.disk_percent !== null
+                  ? `${metrics.disk_percent}%`
+                  : "--"
+              }
+              title={`Disk storage: ${fmtMem(metrics.disk_used_mb)} / ${fmtMem(
+                metrics.disk_total_mb
+              )} used`}
+            />
             {gpu?.in_use && (
               <Metric
                 label="GPU"
@@ -197,10 +202,10 @@ export function StatusBar() {
           </div>
         )}
         <Chip
-          label="LLM API"
+          label="AI"
           ok={hasKey}
           warn={!hasKey}
-          title={hasKey ? "LLM API key set" : "no API key (manual mode)"}
+          title={hasKey ? "AI API key set" : "no API key (manual mode)"}
         />
         <Chip
           label="ADO"

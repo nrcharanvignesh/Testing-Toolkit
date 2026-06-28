@@ -58,6 +58,10 @@ export interface MetricsResponse {
   ram_total_mb: number | null;
   ram_percent: number | null;
   proc_mem_mb: number | null;
+  /** Disk ("Data" / ROM) usage for the workspace drive. Null on older agents. */
+  disk_used_mb: number | null;
+  disk_total_mb: number | null;
+  disk_percent: number | null;
   gpu: GpuMetrics | null;
 }
 
