@@ -53,6 +53,8 @@ export interface SettingsResponse {
   base_url: string;
   project_prefix: string;
   tls_mode?: string;
+  /** Server-persisted: true once the first-run guided tour is done/skipped. */
+  tour_completed?: boolean;
 }
 
 export interface SaveSettingsPayload {
@@ -384,6 +386,15 @@ export const agent = {
     await agentFetch("/settings", {
       method: "POST",
       body: JSON.stringify(payload),
+    });
+  },
+
+  /** Persist guided-tour completion server-side (survives a localStorage wipe).
+   * Older agents without this route 404 — callers should ignore that. */
+  async setTourCompleted(completed: boolean): Promise<void> {
+    await agentFetch("/settings/tour", {
+      method: "POST",
+      body: JSON.stringify({ completed }),
     });
   },
 

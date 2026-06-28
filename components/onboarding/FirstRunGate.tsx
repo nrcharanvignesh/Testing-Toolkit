@@ -27,9 +27,26 @@ export function FirstRunGate({ children }: { children: ReactNode }) {
   const { prefs, setTourCompleted } = usePreferences();
   const [dismissed, setDismissed] = useState(false);
 
+  // The agent is the source of truth for tour completion: the browser
+  // localStorage copy gets wiped whenever the web origin/port changes between
+  // launches, which used to make the tour reappear on a simple refresh. Treat
+  // the tour as done if EITHER the server flag or the local cache says so.
+  const tourCompleted = settings?.tour_completed === true || prefs.tourCompleted;
+
   const showWizard = !settings?.configured && !dismissed;
   const setupDone = !!settings?.configured || dismissed;
-  const showTour = setupDone && !showWizard && !prefs.tourCompleted;
+  const showTour = setupDone && !showWizard && !tourCompleted;
+
+  // Persist completion to both the local cache (instant) and the agent
+  // (durable). Ignore a 404 from older agents that lack the /settings/tour
+  // route — the local cache still suppresses the tour for this session.
+  const completeTour = () => {
+    setTourCompleted(true);
+    setSettings(settings ? { ...settings, tour_completed: true } : settings);
+    agent.setTourCompleted(true).catch(() => {
+      /* older agent without the route — local cache is enough */
+    });
+  };
 
   return (
     <>
@@ -40,7 +57,7 @@ export function FirstRunGate({ children }: { children: ReactNode }) {
           onSkip={() => setDismissed(true)}
         />
       )}
-      {showTour && <GuidedTour onDone={() => setTourCompleted(true)} />}
+      {showTour && <GuidedTour onDone={completeTour} />}
     </>
   );
 }

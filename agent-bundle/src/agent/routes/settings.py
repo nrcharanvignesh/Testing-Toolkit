@@ -18,6 +18,7 @@ class SettingsResponse(BaseModel):
     fallback_model: str
     base_url: str
     project_prefix: str
+    tour_completed: bool
 
 
 class SaveSettingsRequest(BaseModel):
@@ -35,6 +36,7 @@ class SaveSettingsRequest(BaseModel):
 async def get_settings() -> SettingsResponse:
     from core.settings_store import (
         get_setting,
+        get_tour_completed,
         has_api_key,
         is_configured,
         load_pat_value,
@@ -55,6 +57,7 @@ async def get_settings() -> SettingsResponse:
         fallback_model=get_setting(KEY_FALLBACK_MODEL),
         base_url=get_setting(KEY_BASE_URL),
         project_prefix=get_setting(KEY_PREFIX),
+        tour_completed=get_tour_completed(),
     )
 
 
@@ -98,6 +101,20 @@ async def save_settings(req: SaveSettingsRequest) -> dict:
             raise HTTPException(500, "Failed to save PAT")
 
     return {"ok": True}
+
+
+class TourRequest(BaseModel):
+    completed: bool = True
+
+
+@router.post("/tour")
+async def set_tour(req: TourRequest) -> dict:
+    """Persist whether the first-run guided tour has been completed/skipped, so
+    it does not reappear on refresh even if the browser localStorage is wiped."""
+    from core.settings_store import set_tour_completed
+
+    set_tour_completed(req.completed)
+    return {"ok": True, "tour_completed": req.completed}
 
 
 # ---------------------------------------------------------------------------
