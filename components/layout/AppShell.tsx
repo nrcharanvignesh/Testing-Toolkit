@@ -32,7 +32,7 @@ export function AppShell() {
     reindexAllKbs,
     pushLog,
   } = useAppState();
-  const { check, apply } = useAppUpdate(pushLog);
+  const { check, apply, ensureConfigured } = useAppUpdate(pushLog);
   const bootstrapped = useRef(false);
   const reindexed = useRef(false);
   const autoUpdated = useRef(false);
@@ -94,8 +94,14 @@ export function AppShell() {
   //      is out of date with the shipped patch → BLOCK with AgentUpdateRequired.
   // Nothing happens (no noise, no block) when already up to date.
   const runUpdateCheck = useCallback(async () => {
-    const s = await check();
+    let s = await check();
     if (!s) return; // check failed (offline / unreachable) — leave as-is
+    // If this install never got an update token (token-less / older install),
+    // bridge one from the SSO-protected web app so it can self-update without a
+    // reinstall. This is what makes updates fully autonomous for everyone.
+    if (!s.configured) {
+      s = (await ensureConfigured(s)) ?? s;
+    }
     if (!s.update_available) {
       // Up to date per the manifest. If a stale handshake block is showing for
       // an out-of-date agent it stays; otherwise nothing to do.
@@ -115,7 +121,18 @@ export function AppShell() {
       "Agent changes require a reinstall to take effect. Pausing the app."
     );
     setUpdateBlocked(s);
-  }, [check, apply, pushLog]);
+  }, [check, apply, ensureConfigured, pushLog]);
+
+  // Self-heal auto-update config as soon as the agent connects, once per load.
+  // This bridges a read-only update token to token-less / older installs so the
+  // agent's own background poller can take over — independent of whether a
+  // manifest check runs this session. Fully autonomous, no reinstall, no prompt.
+  const configHealed = useRef(false);
+  useEffect(() => {
+    if (status !== "connected" || configHealed.current) return;
+    configHealed.current = true;
+    void ensureConfigured();
+  }, [status, ensureConfigured]);
 
   // When to run the manifest check: configured sessions check on every refresh.
   // On top of that, the FIRST LAUNCH OF EACH DAY always checks regardless of

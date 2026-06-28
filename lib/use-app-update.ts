@@ -49,6 +49,44 @@ export function useAppUpdate(pushLog?: Pushed) {
     }
   }, [log]);
 
+  /**
+   * Make auto-update self-sufficient: if the agent isn't configured for updates
+   * (token-less / older install), fetch the read-only update token from the
+   * SSO-protected web app and hand it to the agent's /update/config. This is the
+   * key to fully autonomous updates — afterwards the agent's own 60s poller and
+   * the on-refresh check both work, with no reinstall and no human step.
+   * Returns the (possibly refreshed) status. Always best-effort.
+   */
+  const ensureConfigured = useCallback(
+    async (current?: UpdateStatus | null): Promise<UpdateStatus | null> => {
+      const s = current ?? (await check());
+      if (!s || s.configured) return s; // already self-updating, or can't tell
+      try {
+        const res = await fetch("/api/agent-update/config", {
+          cache: "no-store",
+        });
+        if (!res.ok) return s; // web app has no token configured server-side
+        const cfg = await res.json();
+        if (!cfg?.token) return s;
+        const healed = await agent.configureUpdate({
+          token: cfg.token,
+          repo: cfg.repo,
+          ref: cfg.ref,
+          manifest_url: cfg.manifest_url,
+        });
+        if (healed) {
+          setStatus(healed);
+          log("INFO", "Auto-update enabled for this install.");
+          return healed;
+        }
+      } catch {
+        // Network / agent hiccup — leave as-is; we retry on the next check.
+      }
+      return s;
+    },
+    [check, log]
+  );
+
   /** Wait until the agent answers /health again after a restart. */
   const waitForReconnect = useCallback(async (timeoutMs = 60000) => {
     const start = Date.now();
@@ -143,6 +181,7 @@ export function useAppUpdate(pushLog?: Pushed) {
     status,
     check,
     apply,
+    ensureConfigured,
     busy: phase !== "idle" && phase !== "done",
   };
 }

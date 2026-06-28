@@ -41,6 +41,10 @@ from agent.version import AGENT_VERSION
 CHECK_INTERVAL_SEC: int = 60
 MANIFEST_URL: str = ""
 _stop_event = threading.Event()
+# Whether the background poll thread is already running, so configure() can be
+# called repeatedly (and after a token-less start) without spawning duplicates.
+_loop_started: bool = False
+_loop_lock = threading.Lock()
 
 # Baked-in defaults so a config that only carries a token (or an older config
 # missing manifest_url) can still resolve where to look for updates. These match
@@ -128,11 +132,61 @@ def _auth_headers() -> dict[str, str]:
 
 
 def start_update_loop(manifest_url: str) -> None:
-    """Start the background update checker thread."""
-    global MANIFEST_URL
+    """Start the background update checker thread (idempotent)."""
+    global MANIFEST_URL, _loop_started
     MANIFEST_URL = manifest_url
-    t = threading.Thread(target=_update_loop, daemon=True, name="updater")
-    t.start()
+    with _loop_lock:
+        if _loop_started:
+            return
+        _loop_started = True
+        _stop_event.clear()
+        t = threading.Thread(target=_update_loop, daemon=True, name="updater")
+        t.start()
+
+
+def configure(
+    token: str,
+    *,
+    repo: str = "",
+    ref: str = "",
+    manifest_url: str = "",
+) -> dict[str, Any]:
+    """Enable/repair auto-update at runtime without a reinstall.
+
+    The web app (which is authenticated to the SSO-protected deployment) hands
+    the agent a read-only update token via this path, so token-less installs can
+    start self-updating immediately — no reinstall, no human step. Writes/merges
+    ``update.json``, points the poller at the manifest, and starts the
+    background loop if it was never started (token-less boot). Idempotent and
+    best-effort; returns the refreshed update status.
+    """
+    token = (token or "").strip()
+    if not token:
+        return check_for_update()
+
+    cfg = _load_config()
+    cfg["token"] = token
+    cfg["repo"] = (repo or cfg.get("repo") or DEFAULT_REPO).strip()
+    cfg["ref"] = (ref or cfg.get("ref") or DEFAULT_REF).strip()
+    cfg["manifest_url"] = (
+        (manifest_url or cfg.get("manifest_url") or "").strip()
+        or _manifest_url_for(cfg["repo"], cfg["ref"])
+    )
+
+    try:
+        path = _config_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(cfg))
+        try:
+            os.chmod(path, 0o600)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # Point the poller at the (now-known) manifest and make sure it is running.
+    start_update_loop(cfg["manifest_url"])
+    return check_for_update()
 
 
 def _update_loop() -> None:

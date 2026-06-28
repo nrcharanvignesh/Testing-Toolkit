@@ -975,7 +975,33 @@ export const agent = {
       throw e;
     }
   },
+
+  /**
+   * Hand the local agent a read-only update token so a token-less install can
+   * start self-updating without a reinstall. Returns the refreshed update
+   * status (now `configured:true`), or null when this agent build predates the
+   * /update/config route (404) so callers can no-op gracefully.
+   */
+  async configureUpdate(cfg: AgentUpdateConfig): Promise<UpdateStatus | null> {
+    try {
+      return await agentFetch<UpdateStatus>("/update/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cfg),
+      });
+    } catch (e) {
+      if (isAgent404(e)) return null;
+      throw e;
+    }
+  },
 };
+
+export interface AgentUpdateConfig {
+  token: string;
+  repo?: string;
+  ref?: string;
+  manifest_url?: string;
+}
 
 /** True when an agent request failed because the route does not exist (404). */
 function isAgent404(e: unknown): boolean {

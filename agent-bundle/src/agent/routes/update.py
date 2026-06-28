@@ -6,7 +6,9 @@ version and trigger a patch on demand ("Check for updates" / Settings).
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from typing import Any
+
+from fastapi import APIRouter, Body
 
 from agent import updater
 
@@ -17,6 +19,22 @@ router = APIRouter()
 async def update_status() -> dict:
     """Current vs. available version. Non-destructive."""
     return updater.check_for_update()
+
+
+@router.post("/config")
+async def update_config(payload: dict[str, Any] = Body(default={})) -> dict:
+    """Enable/repair auto-update at runtime (no reinstall required).
+
+    The web app forwards a read-only update token (which it can read because it
+    is authenticated to the SSO-protected deployment) so a token-less install
+    can begin self-updating immediately. Returns the refreshed update status.
+    """
+    return updater.configure(
+        str(payload.get("token", "")),
+        repo=str(payload.get("repo", "")),
+        ref=str(payload.get("ref", "")),
+        manifest_url=str(payload.get("manifest_url", "")),
+    )
 
 
 @router.post("/apply")
