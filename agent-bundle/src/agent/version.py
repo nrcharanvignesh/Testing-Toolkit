@@ -1,3 +1,3 @@
 """Single source of truth for agent version."""
-AGENT_VERSION = "1.0.0"
+AGENT_VERSION = "1.1.0"
 AGENT_PORT = 7842
