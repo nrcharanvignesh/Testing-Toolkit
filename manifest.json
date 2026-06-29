@@ -2,9 +2,9 @@
   "version": 1,
   "archive": "bundle.zip",
   "extractTo": "Testing-Toolkit",
-  "totalSize": 479057615,
-  "sha256": "6a4bdb82dea2e0b42373263f979e620f163b683f71379b192da2b8e03b8eaf68",
-  "partCount": 10,
+  "totalSize": 626942735,
+  "sha256": "9957ddc3e8c8d76b6ecb19aa4d9634440d85cb53c1c0d743fee1bc63a961e986",
+  "partCount": 13,
   "parts": [
     {
       "name": "bundle.zip.001",
@@ -19,42 +19,57 @@
     {
       "name": "bundle.zip.003",
       "size": 50331648,
-      "sha256": "ecbaf921181ddbf108e43af6788afa85d9599e1af7557c438b9155960a3b8d33"
+      "sha256": "ddfd20e16d4711f180dae453ca0d947bccb10907bce85be82c666be0093f9bdb"
     },
     {
       "name": "bundle.zip.004",
       "size": 50331648,
-      "sha256": "211f70739aa7aabd037630e05cd5331a6f2e1453962e6d632c6b479728a0ffad"
+      "sha256": "7e97177d0086e5d2c58e1daf2cdbf38eab0458d6a115721212709594e6bd2021"
     },
     {
       "name": "bundle.zip.005",
       "size": 50331648,
-      "sha256": "e6dc2b8a94a8f0a4f065c4e67752515106eb8592c75fc55a32bb79d919a6548f"
+      "sha256": "affbd555dd30c53b4f3d74499ab2756e27c1012e612a51a8d17516dd70ae23dc"
     },
     {
       "name": "bundle.zip.006",
       "size": 50331648,
-      "sha256": "895a981bab26c8e4e1799bba8753bd5f9e4462370fb8f3ceeedb4dad0233f165"
+      "sha256": "8be51d6acd0a27fd55f48247f6becca06aab8c2759a8d9985324afcd5831edf6"
     },
     {
       "name": "bundle.zip.007",
       "size": 50331648,
-      "sha256": "edc492bdcf6cde002bc185862e958a92e92c892ca2ddf71b80374abfd0bc2746"
+      "sha256": "2fe79ff55031855a093869cf39e6b2c9b899e8acd0cc036284ad6322b79ef109"
     },
     {
       "name": "bundle.zip.008",
       "size": 50331648,
-      "sha256": "2cba343c6249fb095bdbedb1cd6125b039c612e8dc92f4383cfcb59843e0d0cc"
+      "sha256": "a6d4d4c93308048b92761c3a5a7aed3674fa87e2c61677c6359290a8ff11dac7"
     },
     {
       "name": "bundle.zip.009",
       "size": 50331648,
-      "sha256": "5c83f0cf4ee7f935fb62fdaa373f110a41b475dcc51661ca5d7259e580ee6e20"
+      "sha256": "90acd6bd47841a01b320e0702a8e229daca9c04626dfb74c4d6ab48921b267f8"
     },
     {
       "name": "bundle.zip.010",
-      "size": 26072783,
-      "sha256": "19a1e90aead38ee1005493bcab8acea492ea5c07bd357438761d22bc9a6ad6fe"
+      "size": 50331648,
+      "sha256": "e954e01a74d35a3a076ad2de0ec0caaec7dd4d9a312c26b20374f8c8e46c7ae4"
+    },
+    {
+      "name": "bundle.zip.011",
+      "size": 50331648,
+      "sha256": "71dadc77fdfb7c0b719a22c2bb6cc546d4bb944829a2fe78d63b814d4c5594b6"
+    },
+    {
+      "name": "bundle.zip.012",
+      "size": 50331648,
+      "sha256": "b4c3b2019f8872d01c8a16b0fbfb1611a5dda6c97e2364db97587348df312302"
+    },
+    {
+      "name": "bundle.zip.013",
+      "size": 22962959,
+      "sha256": "012bc353ba225ae78a82fc1b738d08beff380e84e34469279bf882ea05112954"
     }
   ]
 }
