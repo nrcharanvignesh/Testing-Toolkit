@@ -34,6 +34,23 @@ import {
 } from "./preferences";
 
 export type KbState = "none" | "indexing" | "ready" | "error";
+
+export type KbUploadStatus =
+  | "queued"
+  | "uploading"
+  | "processing"
+  | "done"
+  | "error";
+
+export interface KbUploadItem {
+  id: string;
+  name: string;
+  size: number;
+  /** 0..1 transfer fraction. */
+  progress: number;
+  status: KbUploadStatus;
+  error?: string;
+}
 export type DialogId =
   | "settings"
   | "generate"
@@ -112,6 +129,19 @@ interface AppStateValue {
   /** Re-index every project's KB sequentially (used after a reinstall). */
   reindexAllKbs: () => Promise<void>;
 
+  // kb uploads (app-level so the batch survives the KB dialog closing and is
+  // reflected in the status bar)
+  /** The current/last upload batch (per project, see kbUploadProject). */
+  kbUploads: KbUploadItem[];
+  /** True while a batch is actively transferring. */
+  kbUploading: boolean;
+  /** Which project the current upload batch belongs to. */
+  kbUploadProject: string;
+  /** Upload files into a project's KB at app level; auto-indexes when done. */
+  uploadKbFiles: (project: string, files: File[]) => Promise<void>;
+  /** Clear the visible upload batch (e.g. after the user dismisses it). */
+  clearKbUploads: () => void;
+
   // nav
   navVisible: boolean;
   setNavVisible: (v: boolean) => void;
@@ -168,6 +198,14 @@ export function AppStateProvider({
 
   const markKbDirty = useCallback(() => setKbDirty(true), []);
   const clearKbDirty = useCallback(() => setKbDirty(false), []);
+
+  // KB upload batch state lives here (not in the dialog) so it persists when
+  // the KB window is closed/reopened mid-upload and so the status bar can show
+  // an "Uploading X/Y" indicator.
+  const [kbUploads, setKbUploads] = useState<KbUploadItem[]>([]);
+  const [kbUploading, setKbUploading] = useState(false);
+  const [kbUploadProject, setKbUploadProject] = useState("");
+  const clearKbUploads = useCallback(() => setKbUploads([]), []);
 
   // Guard against overlapping index passes. If a new index is requested while
   // one is running (e.g. more files uploaded mid-index), we don't start a
@@ -394,6 +432,81 @@ export function AppStateProvider({
     [kickKbIndex]
   );
 
+  // App-level KB upload. Lives in the provider (not the KB dialog) so the batch
+  // keeps running and stays visible after the window is closed/reopened, drives
+  // the status-bar "Uploading X/Y" indicator, and auto-starts indexing once the
+  // whole batch finishes.
+  const uploadKbFiles = useCallback(
+    async (project: string, files: File[]) => {
+      if (!project || files.length === 0) return;
+
+      const items: KbUploadItem[] = files.map((f, i) => ({
+        id: `${Date.now()}-${i}-${f.name}`,
+        name: f.name,
+        size: f.size,
+        progress: 0,
+        status: "queued",
+      }));
+      setKbUploadProject(project);
+      setKbUploads(items);
+      setKbUploading(true);
+
+      const patch = (id: string, p: Partial<KbUploadItem>) =>
+        setKbUploads((prev) => prev.map((u) => (u.id === id ? { ...u, ...p } : u)));
+
+      let okCount = 0;
+
+      // Small worker pool: each file is an independent localhost copy, so a few
+      // parallel transfers remove the sequential round-trip stall on big drops.
+      const CONCURRENCY = Math.min(5, files.length);
+      let next = 0;
+      const uploadOne = async (i: number) => {
+        const f = files[i];
+        const id = items[i].id;
+        patch(id, { status: "uploading", progress: 0 });
+        try {
+          await agent.kbUploadProgress(project, f, (frac) => {
+            if (frac === null) return; // indeterminate — leave bar animating
+            patch(id, {
+              progress: Math.min(0.99, frac),
+              status: frac >= 1 ? "processing" : "uploading",
+            });
+          });
+          patch(id, { status: "done", progress: 1 });
+          okCount += 1;
+          pushLog("SUCCESS", `Uploaded ${f.name} to KB.`);
+        } catch (e) {
+          patch(id, { status: "error", error: (e as Error).message });
+          pushLog("ERROR", `Upload failed for ${f.name}: ${(e as Error).message}`);
+        }
+      };
+      const worker = async () => {
+        while (next < files.length) {
+          const i = next++;
+          await uploadOne(i);
+        }
+      };
+      await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+
+      setKbUploading(false);
+
+      // Any successful upload means the index is now stale — kick off indexing
+      // immediately (it runs here at app level, so it survives the dialog).
+      if (okCount > 0) {
+        markKbDirty();
+        pushLog("INFO", "Upload complete — indexing knowledge base...");
+        void kickKbIndex(project);
+      }
+
+      // Auto-dismiss the batch shortly after a fully successful upload; keep it
+      // on screen if anything failed so the user can read the error.
+      if (okCount === files.length) {
+        setTimeout(() => setKbUploads([]), 2500);
+      }
+    },
+    [pushLog, markKbDirty, kickKbIndex]
+  );
+
   const reindexAllKbs = useCallback(async () => {
     setLogVisible(true);
     pushLog(
@@ -519,6 +632,11 @@ export function AppStateProvider({
       clearKbDirty,
       indexKb,
       reindexAllKbs,
+      kbUploads,
+      kbUploading,
+      kbUploadProject,
+      uploadKbFiles,
+      clearKbUploads,
       navVisible,
       setNavVisible,
       dialog,
@@ -557,6 +675,11 @@ export function AppStateProvider({
       clearKbDirty,
       indexKb,
       reindexAllKbs,
+      kbUploads,
+      kbUploading,
+      kbUploadProject,
+      uploadKbFiles,
+      clearKbUploads,
       navVisible,
       dialog,
       openDialog,

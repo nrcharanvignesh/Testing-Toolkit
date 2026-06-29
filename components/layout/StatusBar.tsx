@@ -77,6 +77,8 @@ export function StatusBar() {
     kbState,
     kbMessage,
     kbProgress,
+    kbUploads,
+    kbUploading,
     boardLoading,
     projectsLoading,
     logVisible,
@@ -94,8 +96,17 @@ export function StatusBar() {
 
   const toggleLogs = () => setLogVisible(!logVisible);
 
+  // Aggregate upload progress for the status-bar indicator.
+  const uploadTotal = kbUploads.length;
+  const uploadDone = kbUploads.filter((u) => u.status === "done").length;
+  const uploadFrac =
+    uploadTotal > 0
+      ? kbUploads.reduce((s, u) => s + (u.status === "done" ? 1 : u.progress), 0) /
+        uploadTotal
+      : 0;
+
   // Left side: activity label + KB status (green when ready), matching desktop.
-  const activity = working ? "Working" : "Idle";
+  const activity = kbUploading ? "Uploading" : working ? "Working" : "Idle";
   const kbReady = kbState === "ready";
 
   return (
@@ -116,13 +127,33 @@ export function StatusBar() {
     >
       <div className="flex items-center gap-2">
         <span className="text-[#8a8f99]">{activity}</span>
-        <span
-          title={kbMessage}
-          style={{ color: kbReady ? "#1aab5c" : KB_COLOR[kbState] }}
-          className="font-medium"
-        >
-          {kbMessage}
-        </span>
+        {kbUploading ? (
+          <>
+            <span className="font-medium text-[#5ba8ff]">
+              Uploading {uploadDone}/{uploadTotal} file(s)
+            </span>
+            <span
+              className="h-1.5 w-28 overflow-hidden rounded-full bg-[#2d313c]"
+              aria-label="Knowledge base upload progress"
+            >
+              <span
+                className="block h-full rounded-full bg-[#5ba8ff] transition-[width] duration-200 ease-out"
+                style={{ width: `${Math.round(uploadFrac * 100)}%` }}
+              />
+            </span>
+            <span className="tabular-nums text-[#8a8f99]">
+              {Math.round(uploadFrac * 100)}%
+            </span>
+          </>
+        ) : (
+          <span
+            title={kbMessage}
+            style={{ color: kbReady ? "#1aab5c" : KB_COLOR[kbState] }}
+            className="font-medium"
+          >
+            {kbMessage}
+          </span>
+        )}
         {kbState === "indexing" && (
           <>
             <span

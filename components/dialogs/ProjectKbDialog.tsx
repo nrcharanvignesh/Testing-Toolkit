@@ -133,15 +133,30 @@ function DocumentsSection({
   project: string;
   pushLog: (l: "INFO" | "SUCCESS" | "WARN" | "ERROR", t: string) => void;
 }) {
-  const { markKbDirty, clearKbDirty, indexKb } = useAppState();
+  const {
+    markKbDirty,
+    clearKbDirty,
+    indexKb,
+    kbUploads,
+    kbUploading,
+    kbUploadProject,
+    uploadKbFiles,
+    clearKbUploads,
+  } = useAppState();
   const [status, setStatus] = useState<KbStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [indexing, setIndexing] = useState(false);
   const [indexProgress, setIndexProgress] = useState("");
   const [indexPct, setIndexPct] = useState<number | null>(null);
-  const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // The upload batch is stored at app level so it survives this dialog being
+  // closed/reopened mid-upload — only show the batch that belongs to this
+  // project.
+  const uploads: UploadItem[] =
+    kbUploadProject === project ? kbUploads : [];
+  const uploadingHere = kbUploading && kbUploadProject === project;
 
   const refresh = () => {
     if (!project) return;
@@ -154,6 +169,15 @@ function DocumentsSection({
   useEffect(refresh, [project]);
 
   const docs = status?.documents ?? [];
+
+  // Refresh the persisted document list as each upload completes so files show
+  // up ASAP (instead of only after the whole batch finishes). Re-fetch whenever
+  // the number of finished uploads changes.
+  const doneCount = uploads.filter((u) => u.status === "done").length;
+  useEffect(() => {
+    if (doneCount > 0) refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doneCount]);
 
   // Drop selections that no longer exist after a refresh/removal.
   useEffect(() => {
@@ -225,80 +249,14 @@ function DocumentsSection({
 
   const upload = async (files: FileList | null) => {
     if (!files || !project || files.length === 0) return;
-    setBusy(true);
-
-    // Populate every file name up-front so the user sees the full batch the
-    // instant they pick it, then fill in per-file progress as we go.
-    const items: UploadItem[] = Array.from(files).map((f, i) => ({
-      id: `${Date.now()}-${i}-${f.name}`,
-      name: f.name,
-      size: f.size,
-      progress: 0,
-      status: "queued",
-    }));
-    setUploads(items);
-
-    const patch = (id: string, p: Partial<UploadItem>) =>
-      setUploads((prev) =>
-        prev.map((u) => (u.id === id ? { ...u, ...p } : u))
-      );
-
-    let okCount = 0;
+    // Hand the batch to app-level state: it shows the files immediately, keeps
+    // running (and visible) if this window is closed/reopened, drives the
+    // status-bar "Uploading X/Y" indicator, and auto-starts indexing when the
+    // batch finishes. Reset the file input so the same files can be re-picked.
     const fileArr = Array.from(files);
-
-    // Upload several files at once instead of strictly one-at-a-time: each file
-    // is an independent localhost copy, so a small worker pool removes the
-    // sequential round-trip stall that made big batches feel slow. Cap the
-    // concurrency so we don't open dozens of sockets for a huge drop.
-    const CONCURRENCY = Math.min(5, fileArr.length);
-    let next = 0;
-    const uploadOne = async (i: number) => {
-      const f = fileArr[i];
-      const id = items[i].id;
-      patch(id, { status: "uploading", progress: 0 });
-      try {
-        await agent.kbUploadProgress(project, f, (frac) => {
-          if (frac === null) return; // indeterminate — leave bar animating
-          // Cap the transfer bar at 99%; flip to "processing" on completion.
-          patch(id, {
-            progress: Math.min(0.99, frac),
-            status: frac >= 1 ? "processing" : "uploading",
-          });
-        });
-        patch(id, { status: "done", progress: 1 });
-        okCount += 1;
-        pushLog("SUCCESS", `Uploaded ${f.name} to KB.`);
-      } catch (e) {
-        patch(id, { status: "error", error: (e as Error).message });
-        pushLog("ERROR", `Upload failed for ${f.name}: ${(e as Error).message}`);
-      }
-    };
-    const worker = async () => {
-      while (next < fileArr.length) {
-        const i = next++;
-        await uploadOne(i);
-      }
-    };
-    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
-
+    if (fileRef.current) fileRef.current.value = "";
+    await uploadKbFiles(project, fileArr);
     refresh();
-    setBusy(false);
-
-    // Any successful upload means the index is now stale. Kick off indexing
-    // immediately (app-level, so it keeps running even if this window is
-    // closed) instead of waiting for the dialog to close. markKbDirty stays as
-    // a fallback so the on-close handler still re-indexes if this is skipped.
-    if (okCount > 0) {
-      markKbDirty();
-      pushLog("INFO", "Upload complete — indexing knowledge base...");
-      void indexKb(project);
-    }
-
-    // Auto-dismiss the progress list shortly after a fully successful batch;
-    // keep it on screen if anything failed so the user can read the error.
-    if (okCount === fileArr.length) {
-      setTimeout(() => setUploads([]), 2500);
-    }
   };
 
   const reindex = async () => {
@@ -360,10 +318,11 @@ function DocumentsSection({
         <h4 className="mr-auto text-sm font-bold text-[#edf0f5]">Documents</h4>
         <button
           className="tt-btn-primary !px-3 !py-1.5 text-xs"
-          disabled={busy || !project}
+          disabled={busy || uploadingHere || !project}
           onClick={() => fileRef.current?.click()}
         >
-          <Upload className="h-3.5 w-3.5" /> Add files...
+          <Upload className="h-3.5 w-3.5" />{" "}
+          {uploadingHere ? "Uploading..." : "Add files..."}
         </button>
         <button
           className="tt-btn-ghost !px-3 !py-1.5 text-xs"
@@ -434,7 +393,9 @@ function DocumentsSection({
       >
         {docs.length === 0 ? (
           <p className="px-2 py-1.5 text-sm text-muted-foreground">
-            No documents uploaded yet.
+            {uploadingHere
+              ? "Uploading documents — they will appear here as each file finishes..."
+              : "No documents uploaded yet."}
           </p>
         ) : (
           docs.map((d) => {
@@ -466,9 +427,18 @@ function DocumentsSection({
         <div className="flex flex-col gap-1.5 rounded-lg border border-[#2d313c] bg-[#13161d] p-2">
           <div className="flex items-center justify-between px-0.5">
             <span className="text-xs font-semibold text-[#bfc4cc]">
-              Uploading {uploads.filter((u) => u.status === "done").length}/
+              {uploadingHere ? "Uploading" : "Uploaded"}{" "}
+              {uploads.filter((u) => u.status === "done").length}/
               {uploads.length} file(s)
             </span>
+            {!uploadingHere && (
+              <button
+                className="text-xs text-[#8a8f99] hover:text-[#bfc4cc]"
+                onClick={clearKbUploads}
+              >
+                Dismiss
+              </button>
+            )}
           </div>
           {uploads.map((u) => (
             <UploadRow key={u.id} item={u} />
