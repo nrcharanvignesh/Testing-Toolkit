@@ -714,6 +714,40 @@ export const agent = {
   },
 
   /**
+   * Extract plain text from one or more files for the Regenerate-with-feedback
+   * "Attach files" control. The agent reuses its KB extractor, so PDF / DOCX /
+   * XLSX / PPTX / images (OCR) / legacy office formats all work. Returns one
+   * entry per file; a file that couldn't be read comes back with `error` set
+   * and empty text instead of failing the whole batch.
+   */
+  async extractAttachments(
+    files: File[]
+  ): Promise<
+    { name: string; chars: number; text: string; truncated?: boolean; error?: string }[]
+  > {
+    const formData = new FormData();
+    for (const f of files) formData.append("files", f);
+    const res = await fetch(`${AGENT_URL}/generate/extract`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(humanizeError(res.status, body));
+    }
+    const data = (await res.json()) as {
+      files: {
+        name: string;
+        chars: number;
+        text: string;
+        truncated?: boolean;
+        error?: string;
+      }[];
+    };
+    return data.files ?? [];
+  },
+
+  /**
    * Upload a single KB document while reporting byte-level progress (0..1).
    * Uses XMLHttpRequest because the fetch API cannot surface upload progress.
    * onProgress(null) signals an indeterminate state (bytes total unknown).

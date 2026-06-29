@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -101,6 +101,79 @@ async def build_dump(req: DumpRequest) -> dict[str, Any]:
     dump = build_work_item_dump(details)
     prompt = ps.read_system_prompt(req.project, req.tc_type or None)
     return {"dump": dump, "system_prompt": prompt, "n_items": len(details)}
+
+
+# ---------------------------------------------------------------------
+# Attachment text extraction (regenerate-with-feedback on web)
+# ---------------------------------------------------------------------
+# Guard rails so a huge attachment can't blow up the prompt / memory.
+_MAX_ATTACH_BYTES = 25 * 1024 * 1024          # 25 MB per file
+_MAX_ATTACH_TEXT = 60_000                       # chars kept per file
+
+
+@router.post("/extract")
+async def extract_attachments(
+    files: list[UploadFile] = File(...),
+) -> dict[str, Any]:
+    """Extract plain text from uploaded files so the web "Attach files" control
+    in the Regenerate-with-feedback card can fold real document context into a
+    regeneration. Reuses the SAME extractor the KB indexer uses, so PDF / DOCX /
+    XLSX / PPTX / images (OCR) / legacy office formats are all supported.
+
+    Returns one entry per file: {name, chars, text, truncated, error}. Never
+    raises for a single bad file — it reports an empty extraction instead so one
+    unreadable attachment doesn't fail the whole batch."""
+    import tempfile
+
+    from kb.store import extract_text
+
+    out: list[dict[str, Any]] = []
+    for f in files:
+        name = f.filename or "attachment"
+        suffix = Path(name).suffix.lower()
+        try:
+            content = await f.read()
+        except Exception as e:  # noqa: BLE001
+            out.append({"name": name, "chars": 0, "text": "", "error": str(e)})
+            continue
+        if len(content) > _MAX_ATTACH_BYTES:
+            out.append(
+                {
+                    "name": name,
+                    "chars": 0,
+                    "text": "",
+                    "error": f"File too large ({len(content) // (1024 * 1024)} MB; max 25 MB)",
+                }
+            )
+            continue
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp.write(content)
+                tmp_path = Path(tmp.name)
+            text = await asyncio.to_thread(extract_text, tmp_path)
+        except Exception as e:  # noqa: BLE001
+            out.append({"name": name, "chars": 0, "text": "", "error": str(e)})
+            continue
+        finally:
+            if tmp_path is not None:
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        text = (text or "").strip()
+        truncated = len(text) > _MAX_ATTACH_TEXT
+        if truncated:
+            text = text[:_MAX_ATTACH_TEXT] + " ...(truncated)"
+        out.append(
+            {
+                "name": name,
+                "chars": len(text),
+                "text": text,
+                "truncated": truncated,
+            }
+        )
+    return {"files": out}
 
 
 # ---------------------------------------------------------------------

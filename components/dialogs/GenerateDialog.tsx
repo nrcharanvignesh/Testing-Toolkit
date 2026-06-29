@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, FileText, X } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import {
   agent,
@@ -14,6 +14,15 @@ import {
 import { useAppState } from "@/lib/app-state";
 
 const MAX_ITERATIONS = 10;
+
+/** A reference file attached to a regeneration; `text` is the extracted body
+ *  the agent reads from the uploaded document. */
+type Attachment = {
+  name: string;
+  chars: number;
+  text: string;
+  truncated?: boolean;
+};
 
 export function GenerateDialog({ onClose }: { onClose: () => void }) {
   const {
@@ -46,6 +55,11 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
   const [testCategory, setTestCategory] = useState("");
   const [inherit, setInherit] = useState(true);
   const [fastModel, setFastModel] = useState(false);
+
+  // Files attached to a regeneration. Their extracted text is folded into the
+  // feedback prompt at regen time (see run()). Persisted at dialog scope so it
+  // survives RegenerateSection re-renders.
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
 
   // When opened from "Load and Regenerate with feedback", the dialog loads an
   // existing artifact's payload up front and recovers its work item ids so the
@@ -120,6 +134,16 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
       "INFO",
       `Generating ${phase} test cases for ${ids.length} work item(s)...`
     );
+    // Fold any attached files' extracted text into the regen feedback so the
+    // model sees real document context alongside the typed instructions.
+    const regenFeedback =
+      isRegen && attachments.length
+        ? feedback.trim() +
+          "\n\n=== ATTACHED REFERENCE FILES ===\n" +
+          attachments
+            .map((a) => `--- FILE: ${a.name} ---\n${a.text}`)
+            .join("\n\n")
+        : feedback;
     try {
       const res = await agent.generate(
         {
@@ -127,7 +151,7 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
           wi_ids: ids,
           tc_type: tcType,
           board: currentBoard?.label ?? "",
-          regen_feedback: isRegen ? feedback : "",
+          regen_feedback: isRegen ? regenFeedback : "",
           base_payload: isRegen ? result?.payload ?? null : null,
           fast_model: fastModel,
         },
@@ -136,6 +160,7 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
       setResult(res);
       if (isRegen) setIteration((i) => i + 1);
       setFeedback("");
+      if (isRegen) setAttachments([]);
       setStatus(`Generated ${res.n_test_cases} test case(s). Review, then push.`);
       pushLog("SUCCESS", `Generated ${res.n_test_cases} test case(s).`);
     } catch (e) {
@@ -397,6 +422,9 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
                 busy={busy}
                 fastModel={fastModel}
                 setFastModel={setFastModel}
+                attachments={attachments}
+                setAttachments={setAttachments}
+                pushLog={pushLog}
                 onRegenerate={() => run(true)}
               />
             )}
@@ -430,6 +458,9 @@ function RegenerateSection({
   busy,
   fastModel,
   setFastModel,
+  attachments,
+  setAttachments,
+  pushLog,
   onRegenerate,
 }: {
   pushed: string;
@@ -439,9 +470,62 @@ function RegenerateSection({
   busy: boolean;
   fastModel: boolean;
   setFastModel: (v: boolean) => void;
+  attachments: Attachment[];
+  setAttachments: React.Dispatch<React.SetStateAction<Attachment[]>>;
+  pushLog: (level: "INFO" | "SUCCESS" | "WARN" | "ERROR", t: string) => void;
   onRegenerate: () => void;
 }) {
   const atLimit = iteration >= MAX_ITERATIONS;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [extracting, setExtracting] = useState(false);
+
+  const onPickFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files ?? []);
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!picked.length) return;
+    setExtracting(true);
+    try {
+      const results = await agent.extractAttachments(picked);
+      const good: Attachment[] = [];
+      for (const r of results) {
+        if (r.error || !r.text) {
+          pushLog(
+            "WARN",
+            `Attachment skipped: ${r.name}${r.error ? ` (${r.error})` : " (no readable text)"}`
+          );
+          continue;
+        }
+        good.push({
+          name: r.name,
+          chars: r.chars,
+          text: r.text,
+          truncated: r.truncated,
+        });
+        pushLog(
+          "INFO",
+          `Attached ${r.name} (${r.chars.toLocaleString()} chars${r.truncated ? ", truncated" : ""}).`
+        );
+      }
+      if (good.length) {
+        // De-dupe by name: a re-attached file replaces the previous version.
+        setAttachments((prev) => {
+          const names = new Set(good.map((g) => g.name));
+          return [...prev.filter((p) => !names.has(p.name)), ...good];
+        });
+      }
+    } catch (err) {
+      pushLog("ERROR", `Attachment extraction failed: ${(err as Error).message}`);
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const removeAttachment = (name: string) =>
+    setAttachments((prev) => prev.filter((a) => a.name !== name));
+
+  const canRegen =
+    !busy && !atLimit && (!!feedback.trim() || attachments.length > 0);
+
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-[#2d313c] bg-[#13161d] p-3">
       <h4 className="text-sm font-bold text-[#edf0f5]">Regenerate with feedback</h4>
@@ -456,14 +540,45 @@ function RegenerateSection({
         onChange={(e) => setFeedback(e.target.value)}
         disabled={iteration >= MAX_ITERATIONS || busy}
       />
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {attachments.map((a) => (
+            <span
+              key={a.name}
+              className="flex items-center gap-1.5 rounded-md border border-[#2d313c] bg-[#1b1f28] px-2 py-1 text-xs text-[#bfc4cc]"
+              title={`${a.chars.toLocaleString()} characters${a.truncated ? " (truncated)" : ""}`}
+            >
+              <FileText className="h-3.5 w-3.5 shrink-0 text-[#6aa1ff]" />
+              <span className="max-w-48 truncate">{a.name}</span>
+              <button
+                type="button"
+                className="text-[#8a8f99] hover:text-[#edf0f5]"
+                onClick={() => removeAttachment(a.name)}
+                disabled={busy}
+                aria-label={`Remove ${a.name}`}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       {pushed && <p className="text-sm text-[#22c46a]">{pushed}</p>}
       <div className="flex items-center justify-between">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={onPickFiles}
+        />
         <button
           className="tt-btn-ghost !px-3 !py-1.5 text-xs"
-          disabled
-          title="Attach files (desktop only)"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={busy || atLimit || extracting}
+          title="Attach reference files (PDF, DOCX, XLSX, PPTX, images, text). Their text is added to your feedback."
         >
-          Attach files...
+          {extracting ? "Reading files..." : "Attach files..."}
         </button>
         <div className="flex items-center gap-3">
           <label
@@ -482,7 +597,7 @@ function RegenerateSection({
           <button
             className="tt-btn-primary !px-4 !py-1.5 text-sm"
             onClick={onRegenerate}
-            disabled={busy || !feedback.trim() || atLimit}
+            disabled={!canRegen}
           >
             Regenerate
           </button>
