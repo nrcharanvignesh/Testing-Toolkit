@@ -182,9 +182,9 @@ def progress(phase: str, message: str, percent: float | None = None, **extra) ->
     """Print a single progress line to the console.
 
     The installer runs in a visible terminal, so progress is shown to the user
-    directly on stdout (there is no install beacon / shared progress file). The
-    extra kwargs (e.g. release_port) are accepted for call-site compatibility
-    and ignored. Never raises: progress reporting must never break an install.
+    directly on stdout (there is no install beacon / shared progress file). Any
+    extra kwargs are accepted for forward-compatibility and ignored. Never
+    raises: progress reporting must never break an install.
     """
     try:
         if percent is not None:
@@ -864,11 +864,10 @@ def start_agent(launch_python: str, use_pythonpath: bool) -> None:
         return
     ok("Self-test passed (agent imports cleanly).")
 
-    # The install beacon (if any) is holding port 7842 to serve live progress.
-    # Signal it to release the port, then wait for it to actually free up so the
-    # real agent can bind it. The web app reads `release_port` and switches to
-    # polling /health for the real agent at this point.
-    progress("starting", "Starting the agent", 97, release_port=True)
+    # On a reinstall the OLD agent may still be holding port 7842. Wait for it
+    # to actually free up so the new agent can bind it. The web app polls
+    # /health for the real agent at this point.
+    progress("starting", "Starting the agent", 97)
     for _ in range(20):
         if _port_free(AGENT_PORT):
             break
@@ -1103,8 +1102,8 @@ def main() -> int:
     if not args.no_start:
         start_agent(launch_python, use_pythonpath)
     else:
-        # Install-only mode: signal completion so any beacon can release 7842.
-        progress("done", "Installation complete", 100, release_port=True)
+        # Install-only mode (agent not started here).
+        progress("done", "Installation complete", 100)
 
     print()
     ok("Installation complete.")
@@ -1119,8 +1118,7 @@ if __name__ == "__main__":
         rc = main()
         if rc != 0:
             error(f"Installer exited with code {rc}.")
-            progress("error", "Installation failed; see the installer log", None,
-                     release_port=True)
+            progress("error", "Installation failed; see the installer log", None)
         else:
             trace("installer finished successfully (exit 0)")
         _close_logging()
@@ -1128,14 +1126,13 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print()
         error("Interrupted.")
-        progress("error", "Installation was interrupted", None, release_port=True)
+        progress("error", "Installation was interrupted", None)
         _close_logging()
         sys.exit(130)
     except Exception as exc:  # noqa: BLE001
         error(f"Unexpected installer error: {exc}")
         # Record the full traceback so an unexpected crash is fully diagnosable.
         _log_line("FATAL", "Unhandled exception:\n" + _tb.format_exc())
-        progress("error", f"Unexpected installer error: {exc}", None,
-                 release_port=True)
+        progress("error", f"Unexpected installer error: {exc}", None)
         _close_logging()
         sys.exit(1)
