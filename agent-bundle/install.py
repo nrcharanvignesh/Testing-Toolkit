@@ -259,11 +259,29 @@ def purge_stale_packages() -> None:
         Path(tempfile.gettempdir()) / "fastembed_cache",
         INSTALL_DIR / ".cache",
     ]
+
+    def _contains(parent: Path, child: Path) -> bool:
+        """True if `child` is `parent` itself or lives somewhere under it."""
+        try:
+            child.resolve().relative_to(parent.resolve())
+            return True
+        except Exception:
+            return False
+
     for c in transient:
         try:
-            if c.exists():
-                info(f"  Removing transient cache: {c}")
-                shutil.rmtree(c, ignore_errors=True)
+            if not c.exists():
+                continue
+            # CRITICAL: the bundle we are installing FROM can live under
+            # INSTALL_DIR/.cache (BUNDLE_DIR = .../.cache/Testing-Toolkit).
+            # Never delete a directory that holds the active bundle, or we wipe
+            # requirements.txt / the wheelhouse / the bundled runtime's pip
+            # mid-install and every pip step then fails.
+            if _contains(c, BUNDLE_DIR):
+                info(f"  Skipping cache that holds the active bundle: {c}")
+                continue
+            info(f"  Removing transient cache: {c}")
+            shutil.rmtree(c, ignore_errors=True)
         except Exception:
             pass
 
