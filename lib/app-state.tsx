@@ -354,6 +354,41 @@ export function AppStateProvider({
     [currentProject, selectBoardInternal]
   );
 
+  // Live progress/log handlers + terminal-state handling shared by a fresh
+  // index run and a reattach to an in-flight one.
+  const kbJobHandlers = useCallback(
+    () => ({
+      onLog: (line: string) => pushLog(agentLogLevel(line), line),
+      onProgress: (p: { current: number; total: number }) => {
+        const { current: done, total } = p;
+        setKbMessage("Indexing");
+        if (!total || total <= 0) {
+          setKbProgress(null);
+          return;
+        }
+        setKbProgress(done >= total ? 1 : done / total);
+      },
+    }),
+    [pushLog]
+  );
+
+  const finalizeKbIndex = useCallback(
+    (res: { n_chunks: number; n_documents: number }) => {
+      if (res.n_chunks > 0) {
+        setKbState("ready");
+        setKbMessage(
+          `KB ready (${res.n_documents} docs, ${res.n_chunks} chunks)`
+        );
+      } else {
+        setKbState("none");
+        setKbMessage("KB: no files uploaded");
+      }
+      setKbProgress(null);
+      setKbDirty(false);
+    },
+    []
+  );
+
   const runKbIndexOnce = useCallback(
     async (project: string) => {
       setKbState("indexing");
@@ -367,36 +402,18 @@ export function AppStateProvider({
           setKbProgress(null);
           return;
         }
-        const res = await agent.kbIndex(project, {
-          onLog: (line) => pushLog(agentLogLevel(line), line),
-          onProgress: (p) => {
-            const { current: done, total } = p;
-            setKbMessage("Indexing");
-            if (!total || total <= 0) {
-              setKbProgress(null);
-              return;
-            }
-            setKbProgress(done >= total ? 1 : done / total);
-          },
-        });
-        if (res.n_chunks > 0) {
-          setKbState("ready");
-          setKbMessage(
-            `KB ready (${res.n_documents} docs, ${res.n_chunks} chunks)`
-          );
-        } else {
-          setKbState("none");
-          setKbMessage("KB: no files uploaded");
-        }
-        setKbProgress(null);
-        setKbDirty(false);
+        // The agent dedupes: if an index is already running for this project
+        // (e.g. started before this tab opened), this reattaches to it instead
+        // of starting a second pass.
+        const res = await agent.kbIndex(project, kbJobHandlers());
+        finalizeKbIndex(res);
       } catch {
         setKbState("error");
         setKbMessage("KB index error (see log)");
         setKbProgress(null);
       }
     },
-    [pushLog]
+    [kbJobHandlers, finalizeKbIndex]
   );
 
   // Orchestrator: ensures only one index pass runs at a time. If another index
@@ -424,6 +441,11 @@ export function AppStateProvider({
 
   // App-level KB index trigger. Lives in the provider (not the dialog) so an
   // in-flight index keeps running after the KB window is closed.
+  // App-level so an in-flight index keeps running after the KB window is closed.
+  // The agent runs indexing as a DETACHED task, so it also keeps running if the
+  // whole web app is closed. On reopen, restoring the last project re-kicks the
+  // index, and the agent dedupes — returning the still-running job so the web
+  // reattaches to its live progress instead of starting a second pass.
   const indexKb = useCallback(
     async (project: string) => {
       if (!project) return;

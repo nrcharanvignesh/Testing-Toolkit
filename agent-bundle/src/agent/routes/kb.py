@@ -198,20 +198,42 @@ def _run_kb_index(job: "Job", project: str, force: bool = False) -> None:
 async def index_project(req: IndexRequest) -> dict:
     """Start a background KB indexing run and return its job id. Poll
     /jobs/{job_id} for live per-file progress and logs, exactly like the
-    desktop worker + footer. Mirrors MainWindow._kick_kb_index."""
-    from agent.jobs import JOBS, Job
+    desktop worker + footer. Mirrors MainWindow._kick_kb_index.
+
+    The run is a detached asyncio task, so it KEEPS GOING after the browser is
+    closed. If an index for this project is already running we return that same
+    job id instead of starting a duplicate, so a reopened browser (or a second
+    auto-index trigger) simply reattaches to the in-flight run."""
+    from agent.jobs import JOBS
 
     project_dir = PROJECTS_DIR / req.project
     kb_dir = project_dir / "kb"
     if not kb_dir.exists():
         raise HTTPException(404, f"No kb/ folder found for project '{req.project}'")
 
-    job = JOBS.create("kb_index")
+    # Dedupe: reuse an in-flight index for this project (unless a forced full
+    # rebuild was explicitly requested).
+    existing = JOBS.find_active("kb_index", req.project)
+    if existing is not None and not req.force:
+        return {"job_id": existing.id, "reused": True}
+
+    job = JOBS.create("kb_index", project=req.project)
     job.log("[INFO] Starting KB indexing...")
     asyncio.create_task(
         asyncio.to_thread(_run_kb_index, job, req.project, req.force)
     )
     return {"job_id": job.id}
+
+
+@router.get("/index/active/{project}")
+async def active_index_job(project: str) -> dict:
+    """Return the id of an in-flight KB index job for ``project`` (if any) so a
+    reopened browser can reattach to indexing that is still running in the agent
+    after the web app was closed. ``job_id`` is null when nothing is running."""
+    from agent.jobs import JOBS
+
+    job = JOBS.find_active("kb_index", project)
+    return {"job_id": job.id if job else None}
 
 
 @router.post("/upload/{project}")

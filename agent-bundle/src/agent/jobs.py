@@ -32,7 +32,8 @@ _MAX_LOG_LINES: Final[int] = 6000
 @dataclass(slots=True)
 class Job:
     id: str
-    kind: str                       # generate | push | defects_upload
+    kind: str                       # generate | push | defects_upload | kb_index
+    project: str = ""               # owning project (for reattach lookups)
     state: str = "running"          # running | done | error | stopped
     logs: list[str] = field(default_factory=list)
     progress_stage: str = ""
@@ -82,6 +83,7 @@ class Job:
         return {
             "id": self.id,
             "kind": self.kind,
+            "project": self.project,
             "state": self.state,
             "logs": self.logs[log_offset:],
             "log_count": len(self.logs),
@@ -99,14 +101,29 @@ class JobManager:
     def __init__(self) -> None:
         self._jobs: dict[str, Job] = {}
 
-    def create(self, kind: str) -> Job:
+    def create(self, kind: str, project: str = "") -> Job:
         self._gc()
-        job = Job(id=uuid.uuid4().hex[:12], kind=kind)
+        job = Job(id=uuid.uuid4().hex[:12], kind=kind, project=project)
         self._jobs[job.id] = job
         return job
 
     def get(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)
+
+    def find_active(self, kind: str, project: str = "") -> Job | None:
+        """Return the most recent still-running job of ``kind`` (optionally
+        scoped to ``project``). Used so a reopened browser can reattach to an
+        index that is still running in the agent after the web app was closed."""
+        candidates = [
+            j
+            for j in self._jobs.values()
+            if j.kind == kind
+            and j.state == "running"
+            and (not project or j.project == project)
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda j: j.created_at)
 
     def _gc(self) -> None:
         now = time.time()

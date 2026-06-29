@@ -385,6 +385,28 @@ async function pollJob(jobId: string, h: JobHandlers = {}): Promise<JobSnapshot>
   }
 }
 
+/** Poll a KB index job to completion and normalize its result. Shared by
+ *  kbIndex (start) and attachKbIndex (reattach to an in-flight run). */
+async function attachAndParseIndexJob(
+  jobId: string,
+  handlers: JobHandlers = {}
+): Promise<{ n_chunks: number; n_documents: number; has_dense?: boolean }> {
+  const snap = await pollJob(jobId, handlers);
+  if (snap.state === "error") {
+    throw new Error(snap.error || "KB indexing failed");
+  }
+  const r = snap.result as {
+    n_chunks?: number;
+    n_documents?: number;
+    has_dense?: boolean;
+  };
+  return {
+    n_chunks: r.n_chunks ?? 0,
+    n_documents: r.n_documents ?? 0,
+    has_dense: r.has_dense,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Adapters: real backend shapes -> UI shapes
 // ---------------------------------------------------------------------------
@@ -667,25 +689,15 @@ export const agent = {
   ): Promise<{ n_chunks: number; n_documents: number; has_dense?: boolean }> {
     // Background job mirroring the desktop _kick_kb_index worker: returns a job
     // id we poll for live per-file progress + logs, then read the final result.
+    // The agent runs the job detached, so it KEEPS RUNNING if this tab closes.
+    // The agent dedupes: if an index for this project is already running it
+    // returns that same job id, so we just reattach to it.
     // force=true does a whole rebuild (ignores the "index is current" shortcut).
     const { job_id } = await agentFetch<{ job_id: string }>("/kb/index", {
       method: "POST",
       body: JSON.stringify({ project, force }),
     });
-    const snap = await pollJob(job_id, handlers);
-    if (snap.state === "error") {
-      throw new Error(snap.error || "KB indexing failed");
-    }
-    const r = snap.result as {
-      n_chunks?: number;
-      n_documents?: number;
-      has_dense?: boolean;
-    };
-    return {
-      n_chunks: r.n_chunks ?? 0,
-      n_documents: r.n_documents ?? 0,
-      has_dense: r.has_dense,
-    };
+    return attachAndParseIndexJob(job_id, handlers);
   },
 
   async kbUpload(project: string, file: File): Promise<void> {
