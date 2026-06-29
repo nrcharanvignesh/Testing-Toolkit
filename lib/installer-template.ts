@@ -227,7 +227,13 @@ $Repo  = '${psRepo}'
 $Ref   = '${psRef}'
 $Token = '${psToken}'
 $ApiBase = 'https://api.github.com/repos/' + $Repo + '/contents/'
-$Concurrency = 4
+# Serial by default: corporate proxies / DLP / AV abort large PARALLEL long-lived
+# downloads (the classic 'connection was aborted by the software in your host
+# machine'), which stalled installs near 5%. One stream at a time is far more
+# reliable through such middleboxes. Power users can still parallelize via
+# TT_CONCURRENCY. Combined with byte-range resume (below), a killed transfer
+# resumes instead of restarting the whole 48 MB part.
+$Concurrency = 1
 if ($env:TT_CONCURRENCY -match '^[1-9][0-9]*$') { $Concurrency = [int]$env:TT_CONCURRENCY }
 $MaxRetries  = 6
 # Fresh install: ignore any previously downloaded parts and pull everything
@@ -425,8 +431,11 @@ try {
     $log = New-Object System.Collections.Generic.List[string]
     function LL($m) { [void]$log.Add(((Get-Date).ToString('HH:mm:ss.fff') + '  ' + $m)) }
     $shaLower = $sha.ToLower()
+    # Bytes accumulate in a .part file so a transfer killed mid-stream by a proxy
+    # RESUMES from where it left off (HTTP Range) instead of restarting 48 MB.
+    $part = $dest + '.part'
 
-    # Resume: a previously downloaded, checksum-valid part is reused as-is.
+    # Resume: a previously completed, checksum-valid part is reused as-is.
     if (Test-Path $dest) {
       try {
         $h0 = (Get-FileHash -Algorithm SHA256 -LiteralPath $dest).Hash.ToLower()
@@ -434,16 +443,20 @@ try {
           LL 'cached copy valid; skipping download'
           return [pscustomobject]@{ Name = $name; Status = 'cached'; Bytes = (Get-Item $dest).Length; Attempts = 0; Ms = 0; Redirect = $false; Log = $log }
         }
-        LL 'stale cached copy; re-downloading'
+        LL 'stale cached copy; removing'
         Remove-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue
       } catch {}
     }
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     for ($try = 1; $try -le $maxRetries; $try++) {
-      $client = $null; $client2 = $null; $resp = $null; $fs = $null; $stream = $null
+      $client = $null; $resp = $null; $fs = $null; $stream = $null; $req = $null
       $usedRedirect = $false
       try {
+        # Resume from however many bytes are already in the .part file.
+        $have = 0
+        if (Test-Path $part) { try { $have = (Get-Item $part).Length } catch { $have = 0 } }
+
         $handler = New-Object System.Net.Http.HttpClientHandler
         # Do NOT auto-follow: GitHub redirects >1 MB blobs to storage and the
         # Authorization header must be dropped before we follow.
@@ -457,13 +470,20 @@ try {
         } catch { LL ('proxy detect failed: ' + $_.Exception.Message) }
 
         $client = New-Object System.Net.Http.HttpClient($handler)
-        $client.Timeout = [TimeSpan]::FromMinutes(15)
-        [void]$client.DefaultRequestHeaders.TryAddWithoutValidation('Authorization', 'Bearer ' + $token)
-        [void]$client.DefaultRequestHeaders.TryAddWithoutValidation('Accept', 'application/vnd.github.raw')
-        [void]$client.DefaultRequestHeaders.TryAddWithoutValidation('User-Agent', 'TestingToolkit-Installer')
+        $client.Timeout = [TimeSpan]::FromMinutes(30)
 
-        LL ('attempt ' + $try + ': GET ' + $url)
-        $resp = $client.GetAsync($url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        $req = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Get, $url)
+        [void]$req.Headers.TryAddWithoutValidation('Authorization', 'Bearer ' + $token)
+        [void]$req.Headers.TryAddWithoutValidation('Accept', 'application/vnd.github.raw')
+        [void]$req.Headers.TryAddWithoutValidation('User-Agent', 'TestingToolkit-Installer')
+        if ($have -gt 0) {
+          [void]$req.Headers.TryAddWithoutValidation('Range', 'bytes=' + $have + '-')
+          LL ('attempt ' + $try + ': resume from ' + [int]($have / 1KB) + ' KB  ' + $url)
+        } else {
+          LL ('attempt ' + $try + ': GET ' + $url)
+        }
+
+        $resp = $client.SendAsync($req, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
         $code = [int]$resp.StatusCode
         LL ('status ' + $code)
 
@@ -480,29 +500,60 @@ try {
             $h2.Proxy = [System.Net.WebRequest]::GetSystemWebProxy()
             $h2.Proxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials
           } catch {}
-          $client2 = New-Object System.Net.Http.HttpClient($h2)
-          $client2.Timeout = [TimeSpan]::FromMinutes(15)
-          [void]$client2.DefaultRequestHeaders.TryAddWithoutValidation('User-Agent', 'TestingToolkit-Installer')
-          $resp = $client2.GetAsync($loc, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
-          LL ('redirected status ' + [int]$resp.StatusCode)
+          $client = New-Object System.Net.Http.HttpClient($h2)
+          $client.Timeout = [TimeSpan]::FromMinutes(30)
+          # Re-issue with the Range header so the (range-capable) storage backend
+          # serves only the missing tail when we are resuming.
+          $req2 = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Get, $loc)
+          [void]$req2.Headers.TryAddWithoutValidation('User-Agent', 'TestingToolkit-Installer')
+          if ($have -gt 0) { [void]$req2.Headers.TryAddWithoutValidation('Range', 'bytes=' + $have + '-') }
+          $resp = $client.SendAsync($req2, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+          $code = [int]$resp.StatusCode
+          LL ('redirected status ' + $code)
         }
 
         if (-not $resp.IsSuccessStatusCode) { throw ('HTTP ' + [int]$resp.StatusCode) }
         $len = $resp.Content.Headers.ContentLength
         if ($len) { LL ('content-length ' + [int]($len / 1KB) + ' KB') }
 
+        # Append only when the server honored our Range (206). If it ignored the
+        # Range and sent the whole body (200), start the .part over from zero.
+        $base = 0
+        if ($have -gt 0 -and $code -eq 206) {
+          LL 'server honored range (206); appending to .part'
+          $base = $have
+          $fs = [IO.File]::Open($part, [IO.FileMode]::Append, [IO.FileAccess]::Write)
+        } else {
+          if ($have -gt 0) { LL ('server ignored range (HTTP ' + $code + '); restarting part from 0') }
+          if (Test-Path $part) { Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue }
+          $fs = [IO.File]::Create($part)
+        }
+
         $stream = $resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
-        $fs = [IO.File]::Create($dest)
         $stream.CopyTo($fs, 1MB)
         $fs.Close(); $fs = $null
         $stream.Dispose(); $stream = $null
         $resp.Dispose(); $resp = $null
-        if ($client2) { $client2.Dispose(); $client2 = $null }
-        if ($client) { $client.Dispose(); $client = $null }
+        $client.Dispose(); $client = $null
 
-        $bytes = (Get-Item $dest).Length
-        $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $dest).Hash.ToLower()
-        if ($actual -ne $shaLower) { throw ('checksum mismatch (got ' + $actual.Substring(0, 12) + '..., expected ' + $shaLower.Substring(0, 12) + '...)') }
+        $bytes = (Get-Item $part).Length
+        # Verify the transfer was COMPLETE. A proxy that kills the connection can
+        # yield a short read without throwing; treat that as a (resumable) error
+        # so we KEEP the .part and resume next attempt, rather than failing the
+        # checksum and discarding it. Only a complete-but-wrong file is corrupt.
+        if ($len) {
+          $expected = $base + [int64]$len
+          if ($bytes -lt $expected) { throw ('incomplete read: got ' + $bytes + ' of ' + $expected + ' bytes') }
+        }
+        $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $part).Hash.ToLower()
+        if ($actual -ne $shaLower) {
+          # The accumulated bytes are corrupt (proxy mangled them, or a 200 was
+          # appended onto a partial). Discard and start clean next attempt.
+          LL ('checksum mismatch (got ' + $actual.Substring(0, 12) + '..., expected ' + $shaLower.Substring(0, 12) + '...); discarding .part')
+          Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue
+          throw 'checksum mismatch'
+        }
+        Move-Item -LiteralPath $part -Destination $dest -Force
         $sw.Stop()
         LL ('OK ' + [int]($bytes / 1KB) + ' KB in ' + [int]$sw.Elapsed.TotalSeconds + 's')
         return [pscustomobject]@{ Name = $name; Status = 'ok'; Bytes = $bytes; Attempts = $try; Ms = $sw.Elapsed.TotalMilliseconds; Redirect = $usedRedirect; Log = $log }
@@ -511,12 +562,13 @@ try {
         if ($fs) { try { $fs.Close() } catch {} }
         if ($stream) { try { $stream.Dispose() } catch {} }
         if ($resp) { try { $resp.Dispose() } catch {} }
-        if ($client2) { try { $client2.Dispose() } catch {} }
         if ($client) { try { $client.Dispose() } catch {} }
-        if (Test-Path $dest) { Remove-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue }
+        # IMPORTANT: keep the .part file (unless it was checksum-corrupt, removed
+        # above) so the NEXT attempt resumes instead of restarting the whole part.
         if ($try -eq $maxRetries) {
           $sw.Stop()
-          return [pscustomobject]@{ Name = $name; Status = 'failed'; Bytes = 0; Attempts = $try; Ms = $sw.Elapsed.TotalMilliseconds; Redirect = $usedRedirect; Error = $_.Exception.Message; Log = $log }
+          $have2 = 0; if (Test-Path $part) { try { $have2 = (Get-Item $part).Length } catch {} }
+          return [pscustomobject]@{ Name = $name; Status = 'failed'; Bytes = $have2; Attempts = $try; Ms = $sw.Elapsed.TotalMilliseconds; Redirect = $usedRedirect; Error = $_.Exception.Message; Log = $log }
         }
         Start-Sleep -Seconds ([Math]::Min(30, [Math]::Pow(2, $try)))
       }
@@ -946,7 +998,12 @@ AUTH_HEADERS = {
     "User-Agent": "TestingToolkit-Installer",
 }
 MAX_RETRIES = 6
-CONCURRENCY = int(os.environ.get("TT_CONCURRENCY") or "4")
+# Serial by default (see the PowerShell worker): corporate proxies / DLP / AV
+# abort large PARALLEL long-lived downloads, which stalled installs near 5%.
+# One stream at a time is far more reliable; power users can opt into parallel
+# via TT_CONCURRENCY. Paired with byte-range resume so a killed transfer
+# continues instead of restarting the whole part.
+CONCURRENCY = int(os.environ.get("TT_CONCURRENCY") or "1")
 # Trace logging is ON by default (the file always gets full detail). Set
 # TT_VERBOSE=0 only to quiet the on-console debug echo.
 VERBOSE = os.environ.get("TT_VERBOSE") != "0"
@@ -1037,6 +1094,41 @@ def _get(url, headers, timeout=900):
     req = urllib.request.Request(url, headers=headers)
     with _opener.open(req, timeout=timeout) as r:
         return r.read()
+
+def _get_to_file(url, headers, part_path, resume_from, timeout=1800):
+    # Stream the response straight to disk (no buffering 48 MB in RAM) and, when
+    # we already have bytes, ask for only the missing tail via HTTP Range so a
+    # proxy-killed transfer RESUMES. The redirect handler preserves the Range
+    # header onto the (range-capable) storage backend and strips Authorization.
+    h = dict(headers)
+    if resume_from > 0:
+        h["Range"] = "bytes=%d-" % resume_from
+    req = urllib.request.Request(url, headers=h)
+    with _opener.open(req, timeout=timeout) as r:
+        code = r.getcode()
+        clen = r.headers.get("Content-Length")
+        clen = int(clen) if (clen and clen.isdigit()) else None
+        # Append only when the server honored the Range (206). If it ignored it
+        # and sent the whole body (200), start the .part over from zero.
+        if resume_from > 0 and code == 206:
+            mode = "ab"; base = resume_from
+            dbg("server honored range (206); appending to .part")
+        else:
+            if resume_from > 0:
+                dbg("server ignored range (HTTP %s); restarting part from 0" % code)
+            mode = "wb"; base = 0
+        with open(part_path, mode) as f:
+            shutil.copyfileobj(r, f, 1 << 20)
+        # Verify the transfer was COMPLETE. A proxy that kills the connection can
+        # yield a short read without raising; treat that as a (resumable) error so
+        # the caller KEEPS the .part and resumes - rather than failing the
+        # checksum and discarding it. Only a complete-but-wrong file is 'corrupt'.
+        if clen is not None:
+            expected = base + clen
+            actual = os.path.getsize(part_path)
+            if actual < expected:
+                raise IOError("incomplete read: got %d of %d bytes" % (actual, expected))
+        return code
 
 def fetch(path):
     return _get(api + path + "?ref=" + ref, AUTH_HEADERS)
@@ -1202,8 +1294,11 @@ try:
 
     def download(p):
         dest = os.path.join(parts_dir, p["name"])
+        # Bytes accumulate in a .part file so a transfer killed mid-stream by a
+        # proxy RESUMES from where it left off instead of restarting 48 MB.
+        part = dest + ".part"
         want = p["sha256"].lower()
-        # Resume: reuse a previously downloaded, checksum-valid part.
+        # Resume: reuse a previously completed, checksum-valid part.
         if os.path.exists(dest):
             try:
                 if sha256_file(dest) == want:
@@ -1216,22 +1311,29 @@ try:
         last = ""
         for attempt in range(1, MAX_RETRIES + 1):
             try:
-                dbg("%s attempt %d: GET %s" % (p["name"], attempt, url))
-                data = _get(url, AUTH_HEADERS)
-                got = hashlib.sha256(data).hexdigest().lower()
+                have = os.path.getsize(part) if os.path.exists(part) else 0
+                if have > 0:
+                    dbg("%s attempt %d: resume from %d KB  %s" % (p["name"], attempt, have // 1024, url))
+                else:
+                    dbg("%s attempt %d: GET %s" % (p["name"], attempt, url))
+                _get_to_file(url, AUTH_HEADERS, part, have, timeout=1800)
+                got = sha256_file(part)
                 if got != want:
+                    # Accumulated bytes are corrupt; discard and start clean next try.
+                    dbg("%s checksum mismatch (got %s..., expected %s...); discarding .part" % (p["name"], got[:12], want[:12]))
+                    try: os.remove(part)
+                    except Exception: pass
                     raise ValueError("checksum mismatch (got %s..., expected %s...)" % (got[:12], want[:12]))
-                with open(dest, "wb") as f:
-                    f.write(data)
-                return {"name": p["name"], "status": "ok", "bytes": len(data), "attempts": attempt, "secs": time.time() - t0}
+                os.replace(part, dest)
+                return {"name": p["name"], "status": "ok", "bytes": os.path.getsize(dest), "attempts": attempt, "secs": time.time() - t0}
             except Exception as e:
                 last = str(e)
                 dbg("%s attempt %d failed: %s" % (p["name"], attempt, last))
-                if os.path.exists(dest):
-                    try: os.remove(dest)
-                    except Exception: pass
+                # Keep the .part file (unless checksum-corrupt, removed above) so
+                # the NEXT attempt resumes instead of restarting the whole part.
                 if attempt == MAX_RETRIES:
-                    return {"name": p["name"], "status": "failed", "error": last, "attempts": attempt, "bytes": 0, "secs": time.time() - t0}
+                    have2 = os.path.getsize(part) if os.path.exists(part) else 0
+                    return {"name": p["name"], "status": "failed", "error": last, "attempts": attempt, "bytes": have2, "secs": time.time() - t0}
                 time.sleep(min(30, 2 ** attempt))
 
     done = 0
