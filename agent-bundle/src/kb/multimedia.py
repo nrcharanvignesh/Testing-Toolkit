@@ -339,8 +339,34 @@ def _transcribe_audio_whisper(
                 compute = "float16"
         except Exception:
             pass
-        _log(on_log, f"[INFO] Transcribing '{path.name}' with faster-whisper ({device})...")
-        model = WhisperModel("base", device=device, compute_type=compute)
+
+        # Prefer the bundled CTranslate2 model so transcription runs FULLY
+        # OFFLINE (no Hugging Face download). model_bundle resolves the same
+        # roots as the fastembed cache (TT_MODELS_DIR, install/source layouts).
+        # Fall back to the "base" model id (online download) only when the
+        # bundled folder is absent.
+        model_ref = "base"
+        local_only = False
+        try:
+            from kb.model_bundle import bundled_whisper_model_dir
+            bundled = bundled_whisper_model_dir()
+            if bundled:
+                model_ref = bundled
+                local_only = True
+        except Exception:
+            pass
+
+        if local_only:
+            _log(on_log, f"[INFO] Transcribing '{path.name}' with faster-whisper "
+                         f"({device}, bundled offline model)...")
+            model = WhisperModel(
+                model_ref, device=device, compute_type=compute,
+                local_files_only=True,
+            )
+        else:
+            _log(on_log, f"[INFO] Transcribing '{path.name}' with faster-whisper "
+                         f"({device}, downloading model)...")
+            model = WhisperModel(model_ref, device=device, compute_type=compute)
         segments, info = model.transcribe(
             str(path),
             beam_size=1,

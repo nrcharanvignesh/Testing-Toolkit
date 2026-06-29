@@ -374,6 +374,59 @@ async def push_test_cases_from_xlsx(req: PushXlsxRequest) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------
+# Load an existing reviewer Excel back into a payload (for regeneration)
+# ---------------------------------------------------------------------
+class LoadXlsxRequest(BaseModel):
+    xlsx_path: str
+
+
+@router.post("/load-xlsx")
+async def load_test_cases_from_xlsx(req: LoadXlsxRequest) -> dict[str, Any]:
+    """Read an existing reviewer .xlsx artifact back into a payload.
+
+    Backs the web "Load and Regenerate with feedback" right-click action
+    (desktop parity): the UI loads a previously generated artifact and then
+    regenerates it with reviewer feedback. The work item ids are recovered
+    from each story's parent_work_item_id so the regeneration can re-fetch
+    work item detail. Constrained to the workspace so a crafted path cannot
+    read arbitrary files off the user's machine.
+    """
+    from core.app_config import WORKSPACE
+    from testgen.testcase_excel import ExcelParseError, xlsx_to_payload
+
+    path = Path(req.xlsx_path).resolve()
+    root = Path(WORKSPACE).resolve()
+    if root not in path.parents and path != root:
+        raise HTTPException(403, "Path outside workspace")
+    if not path.exists() or not path.is_file():
+        raise HTTPException(404, f"Artifact not found: {req.xlsx_path}")
+    try:
+        payload, _warnings = xlsx_to_payload(path)
+    except ExcelParseError as e:
+        raise HTTPException(400, f"Could not read artifact: {e}")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Could not read artifact: {e}")
+
+    stories = payload.get("stories") or []
+    wi_ids: list[int] = []
+    seen: set[int] = set()
+    for s in stories:
+        sid = s.get("parent_work_item_id")
+        if isinstance(sid, int) and sid not in seen:
+            seen.add(sid)
+            wi_ids.append(sid)
+    n_tcs = sum(len(s.get("test_cases") or []) for s in stories)
+    return {
+        "payload": payload,
+        "n_test_cases": n_tcs,
+        "n_stories": len(stories),
+        "xlsx_path": str(path),
+        "xlsx_name": path.name,
+        "wi_ids": wi_ids,
+    }
+
+
+# ---------------------------------------------------------------------
 # Reviewer Excel download
 # ---------------------------------------------------------------------
 @router.get("/excel/{job_id}")

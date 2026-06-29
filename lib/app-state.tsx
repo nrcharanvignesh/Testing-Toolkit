@@ -54,6 +54,9 @@ export interface LogLine {
 interface GenerateContext {
   tcType: "" | "implementation" | "sit" | "uat";
   xlsxPath?: string;
+  /** When set, the Generate dialog loads this artifact's payload on open so
+   *  it can be regenerated with feedback ("Load and Regenerate with feedback"). */
+  loadArtifactPath?: string;
 }
 
 interface AppStateValue {

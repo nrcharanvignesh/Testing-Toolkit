@@ -1,8 +1,10 @@
 # =====================================================================
 # Testing Toolkit Agent - Web API Dependencies (no GUI)
 # =====================================================================
-# Slim subset for the FastAPI local agent. Excludes PySide6, multimedia
-# (faster-whisper, ffmpeg, opencv), and build tools.
+# Slim subset for the FastAPI local agent. Excludes PySide6 and build tools.
+# Audio/video transcription (faster-whisper + bundled ffmpeg) is now INCLUDED
+# and enabled by default; the required wheels ship in the wheelhouse and the
+# whisper model ships under models/faster-whisper-base for fully-offline use.
 #
 # Install offline:  pip install --no-index --find-links=../wheelhouse -r requirements-agent.txt
 # Install online:   pip install -r requirements-agent.txt
@@ -51,3 +53,13 @@ lancedb>=0.6
 # --- OCR (scanned PDFs) ---
 rapidocr-onnxruntime>=1.3
 PyMuPDF>=1.24
+
+# --- Audio/video transcription (enabled by default, fully offline) ---
+# faster-whisper transcribes audio + video audio tracks; imageio-ffmpeg ships
+# a self-contained ffmpeg binary so no system ffmpeg is required. Both wheels
+# (and ctranslate2 / tokenizers / av deps) are in the bundled wheelhouse, and
+# the CTranslate2 model ships under models/faster-whisper-base, so indexing
+# media works with no network access. multimedia.py loads the model with
+# local_files_only=True from that bundled folder.
+faster-whisper>=1.0
+imageio-ffmpeg>=0.5

@@ -913,6 +913,21 @@ export const agent = {
     return `${AGENT_URL}/generate/excel/${jobId}`;
   },
 
+  /**
+   * Load an existing reviewer .xlsx artifact back into a payload so it can be
+   * regenerated with feedback ("Load and Regenerate with feedback"). The
+   * returned wi_ids are recovered from the artifact so the regeneration can
+   * re-fetch work item detail.
+   */
+  async loadArtifact(
+    xlsxPath: string
+  ): Promise<GenerationResult & { wi_ids: number[] }> {
+    return agentFetch("/generate/load-xlsx", {
+      method: "POST",
+      body: JSON.stringify({ xlsx_path: xlsxPath }),
+    });
+  },
+
   // -- Defects --
   /** Parse uploaded defect documents (multipart) into structured records. */
   async parseDefects(

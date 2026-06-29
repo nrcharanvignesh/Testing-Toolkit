@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import {
@@ -46,11 +46,56 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
   const [inherit, setInherit] = useState(true);
   const [fastModel, setFastModel] = useState(false);
 
+  // When opened from "Load and Regenerate with feedback", the dialog loads an
+  // existing artifact's payload up front and recovers its work item ids so the
+  // regeneration can re-fetch detail (the board selection may be empty).
+  const [loadedIds, setLoadedIds] = useState<number[]>([]);
+  const [loadingArtifact, setLoadingArtifact] = useState(
+    !!generateCtx.loadArtifactPath
+  );
+
   const tcType = generateCtx.tcType as TcType | "";
   const phase = tcType ? TC_DISPLAY_NAME[tcType] : "Test case";
   const projectLabel = currentProject ? displayName(currentProject) : "";
   const titleText = `Generate ${phase} TC - ${projectLabel}`;
-  const ids = [...selected].sort((a, b) => a - b);
+  const ids = loadedIds.length
+    ? loadedIds
+    : [...selected].sort((a, b) => a - b);
+
+  // Load the artifact payload once on open (regeneration entry point).
+  useEffect(() => {
+    const path = generateCtx.loadArtifactPath;
+    if (!path) return;
+    let cancelled = false;
+    setMode("auto");
+    setLoadingArtifact(true);
+    setStatus("Loading artifact...");
+    agent
+      .loadArtifact(path)
+      .then((res) => {
+        if (cancelled) return;
+        setResult(res);
+        setLoadedIds(res.wi_ids ?? []);
+        setStatus(
+          `Loaded ${res.n_test_cases} test case(s) from ${res.xlsx_name}. ` +
+            "Add feedback below and Regenerate."
+        );
+        pushLog(
+          "SUCCESS",
+          `Loaded artifact ${res.xlsx_name} (${res.n_test_cases} TC).`
+        );
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setStatus(`Could not load artifact: ${(e as Error).message}`);
+        pushLog("ERROR", `Load artifact failed: ${(e as Error).message}`);
+      })
+      .finally(() => !cancelled && setLoadingArtifact(false));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generateCtx.loadArtifactPath]);
 
   const appendLog = (line: string) => setRunLog((prev) => [...prev, line]);
   const handlers = {
@@ -180,9 +225,13 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
             <button
               className="tt-btn-success"
               onClick={() => run(false)}
-              disabled={busy || !ids.length}
+              disabled={busy || loadingArtifact || !ids.length}
             >
-              {busy ? "Generating..." : "AI Generate"}
+              {busy
+                ? "Generating..."
+                : loadingArtifact
+                  ? "Loading..."
+                  : "AI Generate"}
             </button>
           )}
           <button

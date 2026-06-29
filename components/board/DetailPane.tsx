@@ -368,6 +368,7 @@ const ARTIFACT_NAME_RE =
 interface ParsedArtifact {
   file: ArtifactFile;
   genKind: string; // "review" | "template" | "" (non-testcases)
+  tcType: TcType | ""; // raw phase: implementation | sit | uat | "" (none)
   phaseLabel: string; // "Implementation" | "SIT" | "UAT" | "Legacy" | "PDF"
   board: string; // "" → General
   group: string;
@@ -391,6 +392,7 @@ function parseArtifact(file: ArtifactFile): ParsedArtifact {
     return {
       file,
       genKind: "",
+      tcType: "",
       phaseLabel: isPdf ? "PDF" : "Legacy",
       board: "",
       group: GENERAL_GROUP,
@@ -418,6 +420,7 @@ function parseArtifact(file: ArtifactFile): ParsedArtifact {
   return {
     file,
     genKind,
+    tcType: (phase as TcType) || "",
     phaseLabel: phase ? TC_DISPLAY_NAME[phase as TcType] : "Legacy",
     board,
     group: board || GENERAL_GROUP,
@@ -436,12 +439,13 @@ function OutputsContent({
   projectLabel: string;
   pushLog: (level: "INFO" | "SUCCESS" | "WARN" | "ERROR", t: string) => void;
 }) {
+  const { openDialog, setGenerateCtx } = useAppState();
   const [files, setFiles] = useState<ArtifactFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<string>("");
-  const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(
-    null
-  );
+  const [menu, setMenu] = useState<
+    { x: number; y: number; art: ParsedArtifact } | null
+  >(null);
 
   const refresh = () => {
     if (!project) return;
@@ -488,6 +492,17 @@ function OutputsContent({
     }
   };
 
+  // Right-click actions (desktop parity): load an artifact back into the
+  // Generate dialog for regeneration with feedback, or push it to ADO.
+  const loadRegen = (art: ParsedArtifact) => {
+    setGenerateCtx({ tcType: art.tcType, loadArtifactPath: art.file.path });
+    openDialog("generate");
+  };
+  const uploadToAdo = (art: ParsedArtifact) => {
+    setGenerateCtx({ tcType: art.tcType, xlsxPath: art.file.path });
+    openDialog("upload");
+  };
+
   if (!project)
     return (
       <p style={{ color: COLOR_MUTED }} className="text-sm">
@@ -522,7 +537,7 @@ function OutputsContent({
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setSelected(f.path);
-                  setMenu({ x: e.clientX, y: e.clientY, path: f.path });
+                  setMenu({ x: e.clientX, y: e.clientY, art: p });
                 }}
                 className="block w-full truncate px-3 py-1.5 text-left text-sm"
                 style={{
@@ -565,16 +580,45 @@ function OutputsContent({
 
       {menu && (
         <div
-          className="fixed z-50 min-w-[180px] overflow-hidden rounded-md border border-[#2d313c] bg-[#1b1e26] py-1 shadow-xl"
+          className="fixed z-50 min-w-[210px] overflow-hidden rounded-md border border-[#2d313c] bg-[#1b1e26] py-1 shadow-xl"
           style={{ left: menu.x, top: menu.y }}
           onClick={(e) => e.stopPropagation()}
         >
-          <ContextItem label="Open" onClick={() => { openPath(menu.path); setMenu(null); }} />
+          <ContextItem
+            label="Open"
+            onClick={() => {
+              openPath(menu.art.file.path);
+              setMenu(null);
+            }}
+          />
+          {/* Regeneration + ADO upload only apply to reviewer test-case
+              workbooks, not packaged PDFs / legacy outputs. */}
+          {menu.art.genKind && (
+            <>
+              <ContextItem
+                label="Load and Regenerate with feedback"
+                onClick={() => {
+                  loadRegen(menu.art);
+                  setMenu(null);
+                }}
+              />
+              <ContextItem
+                label="Upload to ADO"
+                onClick={() => {
+                  uploadToAdo(menu.art);
+                  setMenu(null);
+                }}
+              />
+            </>
+          )}
           <div className="my-1 border-t border-[#2d313c]" />
           <ContextItem
             label="Delete"
             danger
-            onClick={() => { deletePath(menu.path); setMenu(null); }}
+            onClick={() => {
+              deletePath(menu.art.file.path);
+              setMenu(null);
+            }}
           />
         </div>
       )}
