@@ -110,10 +110,25 @@ class StartRequest(BaseModel):
     project: str
     wi_ids: list[int] = []
     tc_type: str = ""
+    board: str = ""
     manual_payload: dict[str, Any] | None = None
     regen_feedback: str = ""
     base_payload: dict[str, Any] | None = None
     fast_model: bool = False
+
+
+def _board_token(board: str) -> str:
+    """Filesystem-safe, underscore-free board token for artifact names.
+
+    Underscores are the field delimiters in the generated artifact name
+    (review_<phase>_<board>_<stamp>.xlsx), so collapse every run of
+    non-alphanumeric characters to a single hyphen. The web Outputs parser
+    reverses hyphens back to spaces when it displays "Board Name - timestamp".
+    """
+    import re
+
+    token = re.sub(r"[^A-Za-z0-9]+", "-", (board or "").strip()).strip("-")
+    return token[:60]
 
 
 async def _run_generate(job: Job, req: StartRequest) -> None:
@@ -218,10 +233,19 @@ async def _run_generate(job: Job, req: StartRequest) -> None:
             payload = result.payload
 
         # Write the reviewer Excel into the project's generated/ folder.
+        # Name: review_<phase>_<board>_<YYYYMMDD_HHMMSS>.xlsx  (board optional)
+        # so the web Outputs tab can show "Board Name - timestamp" and offer
+        # the regenerate/upload actions (it keys off the review_ prefix).
         paths.generated_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        infix = req.tc_type or "general"
-        xlsx_path = paths.generated_dir / f"review_{infix}_{stamp}.xlsx"
+        phase = req.tc_type or "general"
+        board_tok = _board_token(req.board)
+        fname = (
+            f"review_{phase}_{board_tok}_{stamp}.xlsx"
+            if board_tok
+            else f"review_{phase}_{stamp}.xlsx"
+        )
+        xlsx_path = paths.generated_dir / fname
         await asyncio.to_thread(payload_to_xlsx, payload, xlsx_path)
 
         n_tcs = sum(

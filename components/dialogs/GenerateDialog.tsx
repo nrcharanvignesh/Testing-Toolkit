@@ -19,6 +19,7 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
   const {
     selected,
     boardView,
+    currentBoard,
     currentProject,
     displayName,
     generateCtx,
@@ -125,6 +126,7 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
           project: currentProject,
           wi_ids: ids,
           tc_type: tcType,
+          board: currentBoard?.label ?? "",
           regen_feedback: isRegen ? feedback : "",
           base_payload: isRegen ? result?.payload ?? null : null,
           fast_model: fastModel,
@@ -156,6 +158,7 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
           project: currentProject,
           wi_ids: ids,
           tc_type: tcType,
+          board: currentBoard?.label ?? "",
           manual_payload: payload,
         },
         handlers

@@ -360,9 +360,15 @@ function fmtTime(modified: number): string {
 }
 
 const GENERAL_GROUP = "General";
-// Matches the desktop _Artifact name parser:
-//   testcases_<review|template>_[<phase>_][<board>_]<YYYYMMDD_HHMMSS>.xlsx
+// The agent writes reviewer workbooks as:
+//   review_<phase>_[<board>_]<YYYYMMDD_HHMMSS>.xlsx
+// where <phase> is implementation|sit|uat|general and <board> is an optional
+// hyphen-joined board token (no underscores — underscore is the delimiter).
 const ARTIFACT_NAME_RE =
+  /^review_([a-z]+)_(?:(.+)_)?(\d{8}_\d{6})$/i;
+// Legacy desktop name kept for back-compat with older artifacts:
+//   testcases_<review|template>_[<phase>_][<board>_]<YYYYMMDD_HHMMSS>.xlsx
+const LEGACY_NAME_RE =
   /^testcases_(review|template)_(?:(.*)_)?(\d{8}_\d{6})$/;
 
 interface ParsedArtifact {
@@ -383,49 +389,79 @@ function parseStamp(stamp: string): string {
   return `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}`;
 }
 
+// Restore a display board name from its filename token (hyphens → spaces).
+function boardFromToken(token: string): string {
+  return token.replace(/-+/g, " ").trim();
+}
+
 function parseArtifact(file: ArtifactFile): ParsedArtifact {
   const stem = file.name.replace(/\.[^.]+$/, "");
+
+  // Current agent format: review_<phase>_[<board>_]<stamp>.xlsx
   const m = ARTIFACT_NAME_RE.exec(stem);
-  if (!m) {
-    // Non-testcases output (e.g. a packaged PDF): show as Legacy/PDF.
-    const isPdf = /\.pdf$/i.test(file.name);
+  if (m) {
+    const phaseRaw = m[1].toLowerCase();
+    const boardTok = m[2] ?? "";
+    const stamp = m[3];
+    const isTc = (TC_TYPES as readonly string[]).includes(phaseRaw);
+    const board = boardFromToken(boardTok);
     return {
       file,
-      genKind: "",
-      tcType: "",
-      phaseLabel: isPdf ? "PDF" : "Legacy",
-      board: "",
-      group: GENERAL_GROUP,
-      when: fmtTime(file.modified),
-      stamp: String(file.modified),
+      // Any review_ workbook is a reviewable test-case artifact (enables the
+      // regenerate/upload menu items), even the "general" phase.
+      genKind: "review",
+      tcType: (isTc ? phaseRaw : "") as TcType | "",
+      phaseLabel: isTc ? TC_DISPLAY_NAME[phaseRaw as TcType] : "General",
+      board,
+      group: board || GENERAL_GROUP,
+      when: parseStamp(stamp),
+      stamp,
     };
   }
-  const genKind = m[1];
-  const middle = m[2] ?? "";
-  const stamp = m[3];
-  let phase = "";
-  let board = middle;
-  for (const t of TC_TYPES) {
-    if (middle === t) {
-      phase = t;
-      board = "";
-      break;
+
+  // Legacy desktop format: testcases_<review|template>_[<phase>_][<board>_]<stamp>
+  const lm = LEGACY_NAME_RE.exec(stem);
+  if (lm) {
+    const genKind = lm[1];
+    const middle = lm[2] ?? "";
+    const stamp = lm[3];
+    let phase = "";
+    let board = middle;
+    for (const t of TC_TYPES) {
+      if (middle === t) {
+        phase = t;
+        board = "";
+        break;
+      }
+      if (middle.startsWith(t + "_")) {
+        phase = t;
+        board = middle.slice(t.length + 1);
+        break;
+      }
     }
-    if (middle.startsWith(t + "_")) {
-      phase = t;
-      board = middle.slice(t.length + 1);
-      break;
-    }
+    return {
+      file,
+      genKind,
+      tcType: (phase as TcType) || "",
+      phaseLabel: phase ? TC_DISPLAY_NAME[phase as TcType] : "General",
+      board: boardFromToken(board),
+      group: boardFromToken(board) || GENERAL_GROUP,
+      when: parseStamp(stamp),
+      stamp,
+    };
   }
+
+  // Unrecognized output (e.g. a packaged PDF): show as PDF/Legacy, no actions.
+  const isPdf = /\.pdf$/i.test(file.name);
   return {
     file,
-    genKind,
-    tcType: (phase as TcType) || "",
-    phaseLabel: phase ? TC_DISPLAY_NAME[phase as TcType] : "Legacy",
-    board,
-    group: board || GENERAL_GROUP,
-    when: parseStamp(stamp),
-    stamp,
+    genKind: "",
+    tcType: "",
+    phaseLabel: isPdf ? "PDF" : "Legacy",
+    board: "",
+    group: GENERAL_GROUP,
+    when: fmtTime(file.modified),
+    stamp: String(file.modified),
   };
 }
 
@@ -547,7 +583,11 @@ function OutputsContent({
                 title={f.name}
               >
                 <span className="text-[#8a8f99]">▸ </span>
-                {`[${p.phaseLabel}]  ${p.when}   ${p.genKind || f.kind}`}
+                {`${p.board || GENERAL_GROUP} - ${p.when}${
+                  p.phaseLabel && p.phaseLabel !== "General"
+                    ? `  (${p.phaseLabel})`
+                    : ""
+                }`}
               </button>
             );
           })

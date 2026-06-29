@@ -822,6 +822,7 @@ export const agent = {
       project: string;
       wi_ids: number[];
       tc_type: TcType | "";
+      board?: string;
       manual_payload?: Record<string, unknown> | null;
       regen_feedback?: string;
       base_payload?: Record<string, unknown> | null;
@@ -835,6 +836,7 @@ export const agent = {
         project: payload.project,
         wi_ids: payload.wi_ids,
         tc_type: payload.tc_type,
+        board: payload.board ?? "",
         manual_payload: payload.manual_payload ?? null,
         regen_feedback: payload.regen_feedback ?? "",
         base_payload: payload.base_payload ?? null,
