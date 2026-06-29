@@ -266,6 +266,21 @@
     cursor: not-allowed;
   }
 
+  /* App-wide: buttons size their WIDTH to the text (never a fixed width) while
+     keeping a consistent height. white-space:nowrap stops labels like
+     "AI Generate" / "Push to ADO" from wrapping to two lines, and
+     flex-shrink:0 + width:auto stop a flex/grid footer from squeezing them
+     below their content width. */
+  .tt-btn,
+  .tt-btn-primary,
+  .tt-btn-success,
+  .tt-btn-danger,
+  .tt-btn-ghost {
+    white-space: nowrap;
+    flex-shrink: 0;
+    width: auto;
+  }
+
   /* ---- Inputs ---- */
   .tt-input {
     background: #13161d;
