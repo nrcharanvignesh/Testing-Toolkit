@@ -1,17 +1,20 @@
 /**
- * Builds the tiny self-contained Windows installer (a .cmd file).
+ * Builds the tiny self-contained Windows installer - a WINDOWLESS .vbs launcher.
  *
- * The file is a cmd/PowerShell polyglot. The batch header (which cmd runs)
- * extracts everything after the `#PSBEGIN` marker into a temporary .ps1 file
- * and executes it with `powershell -File`. cmd stops at `exit /b`, so it never
- * tries to parse the PowerShell body below it.
+ * Why .vbs and not .cmd: double-clicking a .cmd/.bat ALWAYS makes Windows open a
+ * console window before the first line of the script even runs - that is the
+ * "terminal flash" users see. A .vbs is run by wscript.exe, which has NO console
+ * at all, so there is ZERO flash. The launcher writes the PowerShell worker to
+ * the centralized cache and starts it fully hidden (window style 0 +
+ * -WindowStyle Hidden); the web app is the UI and shows live progress via the
+ * local install beacon.
  *
- * IMPORTANT: the marker is searched for as the concatenation 'PSB'+'EGIN' so
- * that the literal token `#PSBEGIN` appears EXACTLY ONCE in the whole file (the
- * real marker). An earlier version searched for the literal '#PSBEGIN', which
- * also matched the search command itself, so extraction started mid-line and
- * the PowerShell failed to parse. Running via a real .ps1 file with -File also
- * avoids Invoke-Expression quoting/scoping issues and any script-size limits.
+ * To avoid duplicating logic, we still assemble the proven cmd/PowerShell
+ * polyglot below (its PowerShell worker body is the tested, parse-verified
+ * payload), then slice off everything up to the `#PSBEGIN` marker and embed ONLY
+ * the PowerShell worker inside the VBScript host (see buildVbsHost). The marker
+ * is searched for as the concatenation 'PSB'+'EGIN' so the literal token
+ * `#PSBEGIN` appears EXACTLY ONCE in the whole file (the real marker).
  *
  * The PowerShell body:
  *   1. Reads the manifest directly from the GitHub repo (parts branch)
@@ -60,7 +63,7 @@ export function buildWindowsInstaller(
   const psRef = ref.replace(/'/g, "''")
   const psToken = token.replace(/'/g, "''")
 
-  return `@echo off
+  const cmdPolyglot = `@echo off
 setlocal enabledelayedexpansion
 title Testing Toolkit Agent - Installer
 
@@ -709,6 +712,131 @@ try {
   }
 }
 `
+
+  // Ship ONLY the PowerShell worker, wrapped in a windowless VBScript host.
+  // Slice off everything up to and including the #PSBEGIN marker line; what
+  // remains is the proven, parse-verified PowerShell worker body.
+  const marker = "#PS" + "BEGIN"
+  const mi = cmdPolyglot.indexOf(marker)
+  const psBody = cmdPolyglot.slice(cmdPolyglot.indexOf("\n", mi) + 1)
+  return buildVbsHost(psBody)
+}
+
+/**
+ * Wraps the PowerShell worker in a VBScript launcher so the installer runs with
+ * ZERO console flash. Double-clicking a .vbs runs it under wscript.exe, which
+ * has no console window. The launcher:
+ *   1. Re-launches itself under wscript if it somehow started under cscript
+ *      (console host), so there is never a window.
+ *   2. Creates the centralized dirs (~/TestingToolkitWeb\\logs and \\.cache) and
+ *      writes a bootstrap breadcrumb to installer-bootstrap.log.
+ *   3. Writes the PowerShell worker to a .ps1 in the cache dir. It is written as
+ *      UTF-16LE (FSO Unicode), which `powershell -File` reads natively.
+ *   4. Forwards TT_LOG_DIR / TT_CACHE_DIR / TT_HIDDEN and starts PowerShell
+ *      fully hidden (Run window style 0 + -WindowStyle Hidden), without waiting.
+ *      The worker outlives the launcher and deletes its own .ps1 on completion.
+ *
+ * The PowerShell body is embedded as VBScript string literals (one WriteLine per
+ * source line; the only escaping needed inside a VBScript "..." literal is "" for
+ * a double quote). No %TEMP% scratch and no extra COM beyond FileSystemObject /
+ * WScript.Shell, to minimize what corporate AV / policy can block.
+ */
+function buildVbsHost(psBody: string): string {
+  const lines = psBody.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n")
+  // Drop a single trailing empty line so we do not append a spurious blank line.
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop()
+  const payload = lines
+    .map((l) => `  out.WriteLine "${l.replace(/"/g, '""')}"`)
+    .join("\r\n")
+
+  const vbs = [
+    `' Testing Toolkit Agent - windowless installer launcher (VBScript).`,
+    `' Run by wscript.exe => NO console window => ZERO terminal flash. This writes`,
+    `' the PowerShell worker to the centralized cache and starts it fully hidden.`,
+    `' The web app is the UI and shows live progress via the local install beacon.`,
+    `Option Explicit`,
+    ``,
+    `' If launched under cscript (console host), relaunch under wscript (windowless)`,
+    `' and exit, so a console can never appear.`,
+    `If InStr(LCase(WScript.FullName), "cscript") > 0 Then`,
+    `  CreateObject("WScript.Shell").Run "wscript.exe " & Chr(34) & WScript.ScriptFullName & Chr(34), 0, False`,
+    `  WScript.Quit 0`,
+    `End If`,
+    ``,
+    `Dim fso, sh, env, userProfile, root, cacheDir, logDir, bootLog, ps1, out, cmd`,
+    `Set fso = CreateObject("Scripting.FileSystemObject")`,
+    `Set sh = CreateObject("WScript.Shell")`,
+    `Set env = sh.Environment("Process")`,
+    ``,
+    `userProfile = env("USERPROFILE")`,
+    `If userProfile = "" Then userProfile = sh.ExpandEnvironmentStrings("%USERPROFILE%")`,
+    ``,
+    `' Centralized root: EVERYTHING install-related lives under ~/TestingToolkitWeb.`,
+    `root = userProfile & "\\TestingToolkitWeb"`,
+    `cacheDir = root & "\\.cache"`,
+    `logDir = root & "\\logs"`,
+    `EnsureDir root`,
+    `EnsureDir cacheDir`,
+    `EnsureDir logDir`,
+    `' Fall back to TEMP only if the workspace dirs cannot be created.`,
+    `If Not fso.FolderExists(cacheDir) Then cacheDir = env("TEMP")`,
+    `If Not fso.FolderExists(logDir) Then logDir = env("TEMP")`,
+    ``,
+    `bootLog = logDir & "\\installer-bootstrap.log"`,
+    `WriteLog bootLog, "============ Testing Toolkit installer launched (vbs, windowless) ============"`,
+    `WriteLog bootLog, "log dir   : " & logDir`,
+    `WriteLog bootLog, "cache dir : " & cacheDir`,
+    ``,
+    `' Write the PowerShell worker (UTF-16LE; powershell -File reads it natively).`,
+    `ps1 = cacheDir & "\\TestingToolkit_" & Replace(fso.GetTempName(), ".tmp", "") & ".ps1"`,
+    `On Error Resume Next`,
+    `Set out = fso.CreateTextFile(ps1, True, True)`,
+    `If Err.Number <> 0 Then`,
+    `  WriteLog bootLog, "[FATAL] could not create worker .ps1: " & Err.Description`,
+    `  WScript.Quit 1`,
+    `End If`,
+    `On Error Goto 0`,
+    `WritePayload out`,
+    `out.Close`,
+    `WriteLog bootLog, "wrote PowerShell worker to " & ps1`,
+    ``,
+    `' Forward centralized dirs + hidden flag to the worker (inherited by the child).`,
+    `env("TT_LOG_DIR") = logDir`,
+    `env("TT_CACHE_DIR") = cacheDir`,
+    `env("TT_HIDDEN") = "1"`,
+    ``,
+    `' Launch FULLY HIDDEN (window style 0) and do NOT wait. wscript exits`,
+    `' immediately; the worker outlives it and removes its own .ps1 when done.`,
+    `cmd = "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & ps1 & Chr(34)`,
+    `On Error Resume Next`,
+    `sh.Run cmd, 0, False`,
+    `If Err.Number <> 0 Then WriteLog bootLog, "[FATAL] could not launch PowerShell: " & Err.Description`,
+    `On Error Goto 0`,
+    `WriteLog bootLog, "launched hidden PowerShell worker"`,
+    `WScript.Quit 0`,
+    ``,
+    `Sub EnsureDir(p)`,
+    `  On Error Resume Next`,
+    `  If Not fso.FolderExists(p) Then fso.CreateFolder(p)`,
+    `  On Error Goto 0`,
+    `End Sub`,
+    ``,
+    `Sub WriteLog(path, msg)`,
+    `  On Error Resume Next`,
+    `  Dim f`,
+    `  Set f = fso.OpenTextFile(path, 8, True)`,
+    `  f.WriteLine "[" & Now & "] " & msg`,
+    `  f.Close`,
+    `  On Error Goto 0`,
+    `End Sub`,
+    ``,
+    `Sub WritePayload(out)`,
+    payload,
+    `End Sub`,
+    ``,
+  ].join("\r\n")
+
+  return vbs
 }
 
 /**

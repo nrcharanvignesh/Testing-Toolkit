@@ -10,9 +10,11 @@ const REPO = "nrcharanvignesh/Testing-Toolkit"
 const REF = "parts"
 
 /**
- * Serves the tiny Windows installer (a .cmd file) that the user downloads and
- * runs. The installer fetches the bundle parts directly from GitHub in
- * parallel, so it never has to pass the project's SSO at install time.
+ * Serves the tiny Windows installer (a windowless .vbs launcher) that the user
+ * downloads and runs. Running a .vbs uses wscript.exe, which has no console
+ * window, so there is no terminal flash; it starts the PowerShell worker fully
+ * hidden. The worker fetches the bundle parts directly from GitHub in parallel,
+ * so it never has to pass the project's SSO at install time.
  *
  * A GitHub token is injected here at download time, so it never lives in the
  * repo or in client-side source. A human downloads this file through the
@@ -53,7 +55,9 @@ export async function GET(req: NextRequest) {
         : "Testing-Toolkit-Installer.sh"
   } else {
     script = buildWindowsInstaller(REPO, REF, token, fresh)
-    filename = "Testing-Toolkit-Installer.cmd"
+    // A .vbs is run by wscript.exe, which has NO console window, so there is zero
+    // terminal flash. The launcher starts the PowerShell worker fully hidden.
+    filename = "Testing-Toolkit-Installer.vbs"
   }
 
   return new NextResponse(script, {
