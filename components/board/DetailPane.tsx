@@ -595,13 +595,21 @@ function OutputsContent({
       </div>
 
       <div className="flex items-center gap-2">
-        <button
-          className="tt-btn-primary !px-4 !py-1.5 text-sm"
-          disabled={!selected}
-          onClick={() => openPath(selected)}
-        >
-          Open
-        </button>
+        {selected ? (
+          <a
+            className="tt-btn-primary !px-4 !py-1.5 text-sm"
+            href={agent.artifactDownloadUrl(selected)}
+            download
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Download
+          </a>
+        ) : (
+          <button className="tt-btn-primary !px-4 !py-1.5 text-sm" disabled>
+            Download
+          </button>
+        )}
         <button
           className="tt-btn-danger !px-4 !py-1.5 text-sm"
           disabled={!selected}
@@ -625,7 +633,7 @@ function OutputsContent({
           onClick={(e) => e.stopPropagation()}
         >
           <ContextItem
-            label="Open"
+            label="Download"
             onClick={() => {
               openPath(menu.art.file.path);
               setMenu(null);

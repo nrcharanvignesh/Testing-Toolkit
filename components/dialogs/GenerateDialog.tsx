@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, FileText, X } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
+import { DownloadLinks } from "@/components/ui/download-links";
 import {
   agent,
   agentLogLevel,
@@ -381,6 +382,20 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
             />
           </div>
         </div>
+
+        {/* Inline download link for the generated reviewer workbook. */}
+        {result && (
+          <DownloadLinks
+            title="Generated file"
+            items={[
+              {
+                name: result.xlsx_name,
+                url: agent.artifactDownloadUrl(result.xlsx_path),
+                note: `${result.n_test_cases} test case(s)`,
+              },
+            ]}
+          />
+        )}
 
         {mode === "manual" ? (
           <ManualMode

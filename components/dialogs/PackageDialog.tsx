@@ -2,6 +2,11 @@
 
 import { useState } from "react";
 import { Modal } from "@/components/ui/modal";
+import {
+  DownloadLinks,
+  humanSize,
+  type DownloadItem,
+} from "@/components/ui/download-links";
 import { agent, agentLogLevel, type JobProgress } from "@/lib/agent-client";
 import { useAppState } from "@/lib/app-state";
 
@@ -14,6 +19,7 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState("");
   const [progress, setProgress] = useState<JobProgress | null>(null);
   const [result, setResult] = useState<{ dir: string; n: number } | null>(null);
+  const [downloads, setDownloads] = useState<DownloadItem[]>([]);
 
   const usingSelection = selectedIds.length > 0;
 
@@ -30,6 +36,10 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
     if (!currentProject || ids.length === 0) return;
     setBusy(true);
     setProgress(null);
+    setDownloads([]);
+    // Epoch seconds just before the run, so we can list only the PDFs this
+    // packaging produced (artifact.modified is epoch seconds).
+    const startedAt = Date.now() / 1000 - 5;
     setStatus(`Packaging ${ids.length} work item(s)...`);
     pushLog("INFO", `Packaging ${ids.length} work item(s) into PDFs...`);
     try {
@@ -46,6 +56,21 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
         "SUCCESS",
         `Packaged ${res.n_package_ok} work item(s): ${res.output_dir}`
       );
+      // Surface on-screen download links for the freshly packaged PDFs.
+      try {
+        const arts = await agent.listArtifacts(currentProject);
+        const fresh = arts
+          .filter((a) => a.kind === "packets" && a.modified >= startedAt)
+          .sort((a, b) => b.modified - a.modified)
+          .map((a) => ({
+            name: a.name,
+            url: agent.artifactDownloadUrl(a.path),
+            note: humanSize(a.size),
+          }));
+        setDownloads(fresh);
+      } catch {
+        // Non-fatal: the Outputs tab still lists everything.
+      }
     } catch (e) {
       setStatus(`Packaging failed: ${(e as Error).message}`);
       pushLog("ERROR", `Packaging failed: ${(e as Error).message}`);
@@ -150,10 +175,19 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
               Packaged {result.n} work item(s). PDFs written to:
             </p>
             <code className="break-all text-xs text-[#bfc4cc]">{result.dir}</code>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Open the Outputs tab on a work item to download the packets.
-            </p>
+            {downloads.length === 0 && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Open the Outputs tab on a work item to download the packets.
+              </p>
+            )}
           </div>
+        )}
+
+        {downloads.length > 0 && (
+          <DownloadLinks
+            title={`Download packaged PDFs (${downloads.length})`}
+            items={downloads}
+          />
         )}
       </div>
     </Modal>
