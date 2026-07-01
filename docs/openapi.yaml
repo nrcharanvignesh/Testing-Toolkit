@@ -1,0 +1,508 @@
+openapi: 3.1.0
+info:
+  title: Testing Toolkit — Local Agent API
+  version: "1.0.0"
+  description: >
+    HTTP API exposed by the **Testing Toolkit local compute agent** — a FastAPI
+    process that runs on the end user's machine at `http://127.0.0.1:7842`.
+
+
+    The agent is the trusted bridge between the browser-based web UI (deployed on
+    Vercel) and the user's local environment. It holds the Azure DevOps Personal
+    Access Token (PAT) and the LLM API key in the OS-native secret store, talks
+    to Azure DevOps and the LLM gateway on the user's behalf, and runs the local
+    ONNX models used for knowledge-base retrieval. No secret ever leaves the
+    machine and no ADO/LLM traffic passes through Vercel.
+
+
+    ## Authentication
+
+    The agent binds to `127.0.0.1` only, so it is reachable exclusively by
+    processes on the same machine (including the browser tab talking to it via
+    CORS `*`). There is no bearer-token auth on the agent itself; trust is
+    established by loopback binding. Outbound calls to Azure DevOps and the LLM
+    provider are authenticated with credentials read from the local secret store.
+  contact:
+    name: Testing Toolkit
+    url: https://github.com/nrcharanvignesh/Testing-Toolkit
+
+servers:
+  - url: http://127.0.0.1:7842
+    description: Local compute agent (loopback only)
+
+tags:
+  - name: Health
+    description: Liveness and version probes used by the web UI to detect the agent.
+  - name: Settings
+    description: Read/write local configuration and secrets (PAT, API key).
+  - name: Azure DevOps
+    description: Proxy to Azure DevOps using the locally-stored PAT.
+  - name: Knowledge Base
+    description: Per-project document indexing and hybrid retrieval (local ONNX models).
+  - name: LLM
+    description: Proxy to the configured LLM gateway using the locally-stored API key.
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      description: >
+        Returns agent status, version, and the local user/machine identity. The
+        web UI polls this to decide between the "connected" app and the
+        onboarding/installer screen.
+      responses:
+        "200":
+          description: Agent is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /version:
+    get:
+      tags: [Health]
+      summary: Agent + Python version
+      responses:
+        "200":
+          description: Version information.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: { type: string, example: "1.0.0" }
+                  python: { type: string, example: "3.11.9" }
+
+  /settings:
+    get:
+      tags: [Settings]
+      summary: Read current settings
+      description: >
+        Returns non-secret configuration plus booleans indicating whether the
+        secrets (LLM API key, ADO PAT) are present. Secret values themselves are
+        never returned.
+      responses:
+        "200":
+          description: Current settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsResponse"
+    post:
+      tags: [Settings]
+      summary: Save settings and/or secrets
+      description: >
+        Partial update. Any provided non-secret field is persisted to
+        `settings.json`. If `api_key` or `pat` is supplied it is written to the
+        OS secret store. Omitted fields are left unchanged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveSettingsRequest"
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+        "500":
+          description: Failed to persist a secret.
+
+  /ado/verify:
+    get:
+      tags: [Azure DevOps]
+      summary: Verify the stored PAT
+      description: Validates the stored PAT against the configured organization.
+      responses:
+        "200":
+          description: Verification result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  detail: { type: string }
+
+  /ado/projects:
+    get:
+      tags: [Azure DevOps]
+      summary: List ADO projects
+      description: Lists projects in the configured organization.
+      responses:
+        "200":
+          description: Project names.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+        "400":
+          description: PAT or organization not configured.
+        "502":
+          description: Upstream Azure DevOps error.
+
+  /ado/boards/{project}:
+    get:
+      tags: [Azure DevOps]
+      summary: List boards/teams for a project
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Boards.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Board" }
+        "400":
+          description: PAT or organization not configured.
+        "502":
+          description: Upstream Azure DevOps error.
+
+  /ado/workitems:
+    post:
+      tags: [Azure DevOps]
+      summary: Fetch work items for a board
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project, team, board]
+              properties:
+                project: { type: string }
+                team: { type: string }
+                board: { type: string }
+      responses:
+        "200":
+          description: Work items on the board.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WorkItemRow" }
+        "400":
+          description: PAT or organization not configured.
+        "502":
+          description: Upstream Azure DevOps error.
+
+  /kb/retrieve:
+    post:
+      tags: [Knowledge Base]
+      summary: Hybrid retrieval over a project KB
+      description: >
+        Runs hybrid BM25 + dense-vector search with cross-encoder reranking over
+        the project's indexed knowledge base.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project, query]
+              properties:
+                project: { type: string }
+                query: { type: string }
+                top_k: { type: integer, default: 32 }
+      responses:
+        "200":
+          description: Ranked chunks.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chunks:
+                    type: array
+                    items: { $ref: "#/components/schemas/RetrievedChunk" }
+        "404":
+          description: Project not found locally.
+        "409":
+          description: KB index not built yet.
+
+  /kb/embed:
+    post:
+      tags: [Knowledge Base]
+      summary: Embed texts with the local ONNX embedder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [texts]
+              properties:
+                texts:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: Embedding vectors.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vectors:
+                    type: array
+                    items:
+                      type: array
+                      items: { type: number }
+        "503":
+          description: Embedding model not available.
+
+  /kb/rerank:
+    post:
+      tags: [Knowledge Base]
+      summary: Rerank candidates with the local cross-encoder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query, candidates]
+              properties:
+                query: { type: string }
+                candidates:
+                  type: array
+                  items: { type: string }
+                top_k: { type: integer, default: 32 }
+      responses:
+        "200":
+          description: Reranked candidates.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ranked:
+                    type: array
+                    items: { type: object }
+        "503":
+          description: Reranker model not available.
+
+  /kb/index:
+    post:
+      tags: [Knowledge Base]
+      summary: Build/refresh the KB index for a project
+      description: >
+        Chunks and indexes every document in the project's `kb/` folder. Runs
+        synchronously and can be long for large corpora.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project]
+              properties:
+                project: { type: string }
+      responses:
+        "200":
+          description: Index result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  n_chunks: { type: integer }
+                  n_documents: { type: integer }
+                  has_dense: { type: boolean }
+        "404":
+          description: No kb/ folder for the project.
+
+  /kb/upload/{project}:
+    post:
+      tags: [Knowledge Base]
+      summary: Upload a document into the project KB
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  path: { type: string }
+                  size: { type: integer }
+
+  /kb/status/{project}:
+    get:
+      tags: [Knowledge Base]
+      summary: KB index status for a project
+      parameters:
+        - name: project
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KbStatus"
+
+  /llm/complete:
+    post:
+      tags: [LLM]
+      summary: Single-shot LLM completion
+      description: Proxies a completion to the configured gateway using the local API key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user]
+              properties:
+                model: { type: string, nullable: true }
+                system: { type: string, default: "" }
+                user: { type: string }
+                max_tokens: { type: integer, default: 4096 }
+                temperature: { type: number, default: 0.0 }
+                thinking_budget: { type: integer, nullable: true }
+                stop_sequences:
+                  type: array
+                  nullable: true
+                  items: { type: string }
+      responses:
+        "200":
+          description: Completion.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  text: { type: string }
+                  stop_reason: { type: string }
+                  input_tokens: { type: integer }
+                  output_tokens: { type: integer }
+        "400":
+          description: No API key configured.
+        "502":
+          description: LLM API error.
+
+  /llm/models:
+    get:
+      tags: [LLM]
+      summary: List working models
+      responses:
+        "200":
+          description: Model IDs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+        "400":
+          description: No API key configured.
+        "502":
+          description: Failed to list models.
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status: { type: string, example: "ok" }
+        version: { type: string, example: "1.0.0" }
+        user: { type: string }
+        machine: { type: string }
+        models_loaded: { type: boolean }
+    SettingsResponse:
+      type: object
+      properties:
+        configured: { type: boolean }
+        has_api_key: { type: boolean }
+        organization: { type: string }
+        model: { type: string }
+        fast_model: { type: string }
+        fallback_model: { type: string }
+        base_url: { type: string }
+        project_prefix: { type: string }
+    SaveSettingsRequest:
+      type: object
+      properties:
+        organization: { type: string, nullable: true }
+        base_url: { type: string, nullable: true }
+        model: { type: string, nullable: true }
+        fast_model: { type: string, nullable: true }
+        fallback_model: { type: string, nullable: true }
+        project_prefix: { type: string, nullable: true }
+        api_key:
+          type: string
+          nullable: true
+          description: Written to the OS secret store; never returned by GET.
+        pat:
+          type: string
+          nullable: true
+          description: Azure DevOps PAT; written to the OS secret store.
+    Board:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        team_id: { type: string }
+        team_name: { type: string }
+        label: { type: string }
+    WorkItemRow:
+      type: object
+      properties:
+        wi_id: { type: integer }
+        title: { type: string }
+        wi_type: { type: string }
+        state: { type: string }
+        board_column: { type: string }
+        board_lane: { type: string }
+        assigned_to: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        iteration_path: { type: string }
+        area_path: { type: string }
+    RetrievedChunk:
+      type: object
+      properties:
+        chunk_id: { type: string }
+        doc: { type: string }
+        title: { type: string }
+        text: { type: string }
+        score: { type: number }
+    KbStatus:
+      type: object
+      properties:
+        project: { type: string }
+        documents:
+          type: array
+          items: { type: string }
+        indexed: { type: boolean }
