@@ -1,0 +1,46 @@
+{
+  "charter": "v0_master_prompt: CXO demo-ready, full desktop parity, all discipline gates green.",
+  "architecture": "Next.js 16 / React 19 / Tailwind v4 browser -> local FastAPI agent (127.0.0.1:7842). Browser never holds secrets. ADO/Jira writes mocked in testing.",
+  "knobs": { "MAX_ITERATIONS": 12, "CONVERGENCE": "2 consecutive passes, zero new P0/P1" },
+  "iterations_used": 1,
+  "convergence_status": "pass 1 found zero new P0/P1; one candidate P1 disproven (see TT-001)",
+  "gates": {
+    "tsc": "PASS (0 errors)",
+    "vitest": "PASS (17/17)",
+    "pytest": "PASS (181)",
+    "next_build": "PASS (clean, 6 routes)",
+    "theming": "PASS (light+dark computed-style verified)",
+    "runtime_logs": "PASS (no client/server exceptions)"
+  },
+  "issues": [
+    {
+      "id": "TT-001",
+      "discipline": "theming / rendered-output",
+      "severity": "P1",
+      "title": "Light theme appeared not to apply in browser screenshots",
+      "location": "app/globals.css (.light scope), theme toggle",
+      "repro": "Toggle to light; capture screenshot via agent-browser.",
+      "expected": "Light palette renders (off-white bg, white cards, dark text).",
+      "actual": "Screenshots rendered dark in both modes.",
+      "status": "verified-not-a-bug",
+      "notes": "Disproven via getComputedStyle: body bg resolves #f4f6f9, --card #fff, text rgb(26,29,38) in light mode. The .light class is correctly applied to <html> and tokens switch. Root cause of the visual was an agent-browser screenshot capture artifact (renders dark palette regardless of active theme), NOT an app defect. Theme correctness confirmed by computed styles."
+    }
+  ],
+  "verified_journeys": [
+    "App boot -> shell (mock agent configured)",
+    "NavPanel projects/boards render with counts",
+    "CoverageBar strip (items, type breakdown)",
+    "BoardGrid: 8 columns, lane grouping, type/state badges, filters (type/assignee/sprint/column)",
+    "DetailPane: description, acceptance criteria, area/iteration, add-tag, related work items",
+    "GenerateDialog opens with correct WI count + custom ADO target fields + manual-mode fallback; NO fast-model toggle (regression fix confirmed live)",
+    "StatusBar: CPU/RAM/Data metrics + NW/AI/ADO/KB dots + agent version chip",
+    "Theme toggle light<->dark (computed-style verified)"
+  ],
+  "residual_risks": [
+    "Real AI-generate path (live LLM) not exercisable in-sandbox (no API key); covered by mock contract + committed vitest/pytest. Ceiling: needs a keyed agent for true live verification.",
+    "Live ADO/Jira API behavior not exercised (mock proves contract + payload shape, not live tenant behavior). By design: no live writes permitted.",
+    "Playwright browser E2E suite cannot run live in sandbox (no chromium); committed as deterministic scripts + mock harness.",
+    "agent-browser screenshot tool renders dark palette regardless of active theme; theme verified via computed styles instead.",
+    "LLM key protection ceiling: bundled encrypted .env.enc is obfuscation, not true secrecy (agent decrypts on user machine). Rotatable; server proxy path remains available if team admin lifts the SSO wall."
+  ]
+}
