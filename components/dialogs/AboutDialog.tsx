@@ -1,9 +1,9 @@
 "use client";
 
 import { Modal } from "@/components/ui/modal";
+import { REQUIRED_AGENT_VERSION } from "@/lib/agent-version";
 
 const APP_NAME = "Testing Toolkit";
-const APP_VERSION = "2.0.0";
 
 /**
  * AboutDialog
@@ -37,7 +37,7 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
         <div className="min-w-0">
           <h2 className="text-xl font-semibold text-foreground">{APP_NAME}</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Version {APP_VERSION}
+            Version {REQUIRED_AGENT_VERSION}
           </p>
 
           <p className="mt-4 text-sm leading-relaxed text-foreground">

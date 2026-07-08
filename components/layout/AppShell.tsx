@@ -206,7 +206,7 @@ export function AppShell() {
         {/* Breadcrumb */}
         {currentProject && (
           <>
-            <span className="text-[var(--tt-teal-bg)] text-white/40 select-none">/</span>
+            <span className="select-none text-white/40" aria-hidden>/</span>
             <span className="truncate text-xs font-medium text-white/80">
               {displayName(currentProject)}
             </span>
