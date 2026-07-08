@@ -32,6 +32,7 @@ import numpy as np
 
 class VectorStore(Protocol):
     def add(self, ids: list[str], vectors: np.ndarray) -> None: ...
+    def delete(self, ids: list[str]) -> int: ...
     def search(self, query: np.ndarray, k: int) -> list[tuple[str, float]]: ...
     def save(self) -> None: ...
     def count(self) -> int: ...
@@ -53,8 +54,8 @@ class NumpyVectorStore:
     def _load(self) -> None:
         try:
             if self._vec_path.exists() and self._ids_path.exists():
-                mat = np.load(str(self._vec_path))
-                ids = json.loads(self._ids_path.read_text(encoding="utf-8"))
+                mat = self._load_vectors()
+                ids = self._load_ids()
                 if (isinstance(ids, list)
                         and getattr(mat, "ndim", 0) == 2
                         and mat.shape[0] == len(ids)):
@@ -64,6 +65,26 @@ class NumpyVectorStore:
         except (OSError, ValueError, json.JSONDecodeError):
             self._ids = []
             self._mat = np.zeros((0, self.dim), dtype=np.float32)
+
+    def _load_vectors(self) -> np.ndarray:
+        """Load vectors, handling encrypted and plaintext formats."""
+        from kb.kb_crypto import is_encrypted, read_decrypted
+        import io
+        raw = self._vec_path.read_bytes()
+        if is_encrypted(raw):
+            dec = read_decrypted(self._vec_path)
+            if dec is None:
+                return np.zeros((0, self.dim), dtype=np.float32)
+            return np.load(io.BytesIO(dec))
+        return np.load(str(self._vec_path))
+
+    def _load_ids(self) -> list[str]:
+        """Load IDs, handling encrypted and plaintext formats."""
+        from kb.kb_crypto import read_decrypted_text
+        text = read_decrypted_text(self._ids_path)
+        if text is None:
+            return []
+        return json.loads(text)
 
     def add(self, ids: list[str], vectors: np.ndarray) -> None:
         if not ids:
@@ -83,6 +104,20 @@ class NumpyVectorStore:
                 raise ValueError("vector dim mismatch")
             self._pending.append(vecs)
         self._ids.extend(str(x) for x in ids)
+
+    def delete(self, ids: list[str]) -> int:
+        """Remove vectors by ID. Returns count actually removed."""
+        if not ids:
+            return 0
+        self._flush_pending()
+        remove = frozenset(ids)
+        keep = [i for i, vid in enumerate(self._ids) if vid not in remove]
+        removed = len(self._ids) - len(keep)
+        if removed == 0:
+            return 0
+        self._ids = [self._ids[i] for i in keep]
+        self._mat = self._mat[keep] if keep else np.zeros((0, self.dim), dtype=np.float32)
+        return removed
 
     def _flush_pending(self) -> None:
         if self._pending:
@@ -108,10 +143,18 @@ class NumpyVectorStore:
     def save(self) -> None:
         self._flush_pending()
         try:
+            import io
+            from kb.kb_crypto import write_encrypted, write_encrypted_text
+
             self.dir.mkdir(parents=True, exist_ok=True)
-            np.save(str(self._vec_path), self._mat)
-            self._ids_path.write_text(
-                json.dumps(self._ids, ensure_ascii=True), encoding="utf-8"
+            # Save vectors encrypted
+            buf = io.BytesIO()
+            np.save(buf, self._mat)
+            write_encrypted(self._vec_path, buf.getvalue())
+            # Save IDs encrypted
+            write_encrypted_text(
+                self._ids_path,
+                json.dumps(self._ids, ensure_ascii=True),
             )
         except OSError:
             pass
@@ -165,6 +208,19 @@ class LanceVectorStore:
             # cosine distance is in [0, 2]; clamp similarity to [0, 1]
             out.append((rid, max(0.0, 1.0 - dist)))
         return out
+
+    def delete(self, ids: list[str]) -> int:
+        """Remove vectors by ID. Returns count actually removed."""
+        if not ids or self._table is None:
+            return 0
+        try:
+            before = int(self._table.count_rows())
+            id_list = ", ".join(f"'{v}'" for v in ids)
+            self._table.delete(f"id IN ({id_list})")
+            after = int(self._table.count_rows())
+            return before - after
+        except Exception:
+            return 0
 
     def save(self) -> None:
         # LanceDB persists on write; nothing to flush explicitly.

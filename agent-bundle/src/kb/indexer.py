@@ -117,8 +117,9 @@ def index_status(kb_dir: Path | str, index_path: Path | str) -> IndexStatus:
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    from kb.kb_crypto import write_encrypted_text
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=True), encoding="utf-8")
+    write_encrypted_text(tmp, json.dumps(payload, ensure_ascii=True))
     os.replace(str(tmp), str(path))
 
 
@@ -126,7 +127,11 @@ def _load_partial(partial: Path) -> dict[str, Any] | None:
     try:
         if not partial.exists():
             return None
-        data = json.loads(partial.read_text(encoding="utf-8"))
+        from kb.kb_crypto import read_decrypted_text
+        text = read_decrypted_text(partial)
+        if text is None:
+            return None
+        data = json.loads(text)
         if int(data.get("schema", 0)) != _SCHEMA:
             return None
         return data

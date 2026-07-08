@@ -51,7 +51,20 @@ import struct
 import zipfile
 from pathlib import Path
 from typing import Final
+import subprocess
+import sys
 from xml.etree import ElementTree as ET
+
+# Suppress terminal popups on Windows for all subprocess calls
+_SUBPROCESS_KWARGS: dict[str, object] = {}
+if sys.platform == "win32":
+    _si = subprocess.STARTUPINFO()
+    _si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    _si.wShowWindow = 0
+    _SUBPROCESS_KWARGS = {
+        "startupinfo": _si,
+        "creationflags": subprocess.CREATE_NO_WINDOW,
+    }
 
 # All extensions this module handles
 LEGACY_EXTENSIONS: Final[frozenset[str]] = frozenset({
@@ -110,10 +123,10 @@ def _extract_doc(path: Path) -> str:
 
     # Method 2: Use antiword subprocess (best quality if available)
     try:
-        import subprocess
         result = subprocess.run(
             ["antiword", "-w", "0", str(path)],
             capture_output=True, text=True, timeout=30,
+            **_SUBPROCESS_KWARGS,
         )
         if result.returncode == 0 and result.stdout.strip():
             return _clean(result.stdout)
@@ -122,10 +135,10 @@ def _extract_doc(path: Path) -> str:
 
     # Method 3: catdoc subprocess
     try:
-        import subprocess
         result = subprocess.run(
             ["catdoc", str(path)],
             capture_output=True, text=True, timeout=30,
+            **_SUBPROCESS_KWARGS,
         )
         if result.returncode == 0 and result.stdout.strip():
             return _clean(result.stdout)
@@ -625,10 +638,10 @@ def legacy_capabilities() -> dict[str, bool]:
     except ImportError:
         pass
     try:
-        import subprocess
         result = subprocess.run(
             ["antiword", "--version"],
             capture_output=True, timeout=5,
+            **_SUBPROCESS_KWARGS,
         )
         caps["antiword"] = True
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):

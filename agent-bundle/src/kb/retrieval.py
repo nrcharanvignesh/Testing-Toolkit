@@ -137,17 +137,19 @@ def build_hybrid_index(
 
     texts = [_ctx_text(c) for c in chunks]
 
-    # 1) chunks.jsonl
+    # 1) chunks.jsonl (encrypted at rest)
     try:
-        with open(str(index_dir / _CHUNKS_FILE), "w", encoding="utf-8") as fh:
-            for c in chunks:
-                fh.write(json.dumps({
-                    "chunk_id": str(c.get("chunk_id", "")),
-                    "doc": str(c.get("doc", "")),
-                    "title": str(c.get("title", "")),
-                    "text": str(c.get("text", "")),
-                    "context": str(c.get("context", "") or ""),
-                }, ensure_ascii=True) + "\n")
+        from kb.kb_crypto import write_encrypted_text
+        chunks_text = "\n".join(
+            json.dumps({
+                "chunk_id": str(c.get("chunk_id", "")),
+                "doc": str(c.get("doc", "")),
+                "title": str(c.get("title", "")),
+                "text": str(c.get("text", "")),
+                "context": str(c.get("context", "") or ""),
+            }, ensure_ascii=True) for c in chunks
+        )
+        write_encrypted_text(index_dir / _CHUNKS_FILE, chunks_text)
     except OSError as e:
         _log(on_log, f"[ERROR] Could not write chunks: {e!r}")
         return False
@@ -198,16 +200,17 @@ def build_hybrid_index(
             dim = 0
             model_name = ""
 
-    # 4) manifest
+    # 4) manifest (encrypted at rest)
     try:
-        (index_dir / _MANIFEST_FILE).write_text(json.dumps({
+        from kb.kb_crypto import write_encrypted_text
+        write_encrypted_text(index_dir / _MANIFEST_FILE, json.dumps({
             "schema": _SCHEMA,
             "n_chunks": len(ids),
             "dense": bool(dim),
             "dim": int(dim),
             "model": model_name,
             "built_at": time.time(),
-        }, ensure_ascii=True), encoding="utf-8")
+        }, ensure_ascii=True))
     except OSError:
         pass
     return True
@@ -234,9 +237,12 @@ class HybridRetriever:
 
     def _load_manifest(self) -> dict[str, Any]:
         try:
+            from kb.kb_crypto import read_decrypted_text
             p = self.dir / _MANIFEST_FILE
             if p.exists():
-                return json.loads(p.read_text(encoding="utf-8"))
+                text = read_decrypted_text(p)
+                if text is not None:
+                    return json.loads(text)
         except (OSError, json.JSONDecodeError):
             pass
         return {}
@@ -246,18 +252,22 @@ class HybridRetriever:
         if not p.exists():
             return
         try:
-            with open(str(p), "r", encoding="utf-8") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    d = json.loads(line)
-                    cid = str(d.get("chunk_id", ""))
-                    self._chunks[cid] = RetrievedChunk(
-                        chunk_id=cid, doc=str(d.get("doc", "")),
-                        title=str(d.get("title", "")),
-                        text=str(d.get("text", "")),
-                    )
+            from kb.kb_crypto import read_decrypted_text
+            text = read_decrypted_text(p)
+            if text is None:
+                self._chunks = {}
+                return
+            for line in text.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                d = json.loads(line)
+                cid = str(d.get("chunk_id", ""))
+                self._chunks[cid] = RetrievedChunk(
+                    chunk_id=cid, doc=str(d.get("doc", "")),
+                    title=str(d.get("title", "")),
+                    text=str(d.get("text", "")),
+                )
         except (OSError, json.JSONDecodeError, ValueError):
             self._chunks = {}
 
@@ -498,10 +508,14 @@ def hybrid_has_dense(index_dir: Path | str) -> bool:
     enforced dense indexing really produced vectors rather than a lexical-only
     index."""
     try:
+        from kb.kb_crypto import read_decrypted_text
         p = Path(index_dir) / _MANIFEST_FILE
         if not p.exists():
             return False
-        man = json.loads(p.read_text(encoding="utf-8"))
+        text = read_decrypted_text(p)
+        if text is None:
+            return False
+        man = json.loads(text)
         return bool(man.get("dense", False)) and int(man.get("dim", 0)) > 0
     except (OSError, json.JSONDecodeError, ValueError, TypeError):
         return False
@@ -518,10 +532,14 @@ def hybrid_index_is_current(
     is True - the existing index already has dense vectors (so flipping
     dense on forces a rebuild that adds them)."""
     try:
+        from kb.kb_crypto import read_decrypted_text
         p = Path(index_dir) / _MANIFEST_FILE
         if not p.exists():
             return False
-        man = json.loads(p.read_text(encoding="utf-8"))
+        text = read_decrypted_text(p)
+        if text is None:
+            return False
+        man = json.loads(text)
         if want_dense and not bool(man.get("dense", False)):
             return False
         return (int(man.get("n_chunks", -1)) == int(n_chunks)

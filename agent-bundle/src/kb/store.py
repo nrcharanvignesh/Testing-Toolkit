@@ -590,8 +590,12 @@ def _index_is_current(index_path: Path, files: list[Path]) -> bool:
     if not index_path.exists():
         return False
     try:
-        data = json.loads(index_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        from kb.kb_crypto import read_decrypted_text
+        text = read_decrypted_text(index_path)
+        if text is None:
+            return False
+        data = json.loads(text)
+    except Exception:
         return False
     # An index built by an older extractor must be rebuilt even if the source
     # files are byte-for-byte unchanged (so improved extraction takes effect).
@@ -621,7 +625,11 @@ def _index_is_current(index_path: Path, files: list[Path]) -> bool:
 
 
 def _load_index(index_path: Path) -> KbIndex:
-    data = json.loads(index_path.read_text(encoding="utf-8"))
+    from kb.kb_crypto import read_decrypted_text
+    text = read_decrypted_text(index_path)
+    if text is None:
+        raise OSError("Cannot decrypt kb_index")
+    data = json.loads(text)
     chunks = [
         KbChunk(
             chunk_id=str(c.get("chunk_id", "")),
@@ -663,9 +671,10 @@ def load_or_build_index(kb_dir: Path, index_path: Path) -> KbIndex:
     cache = load_hash_cache(cache_path)
     index = build_index(kb_dir, cache)
     try:
+        from kb.kb_crypto import write_encrypted_text
         index_path.parent.mkdir(parents=True, exist_ok=True)
-        index_path.write_text(
-            json.dumps(index.to_dict(), ensure_ascii=True), encoding="utf-8"
+        write_encrypted_text(
+            index_path, json.dumps(index.to_dict(), ensure_ascii=True)
         )
         save_hash_cache(cache_path, cache)
     except OSError:

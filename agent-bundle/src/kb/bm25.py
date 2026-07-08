@@ -177,12 +177,10 @@ class BM25Index:
 
     def save(self, path: Path | str) -> bool:
         try:
+            from kb.kb_crypto import write_encrypted_text
             p = Path(path)
             p.parent.mkdir(parents=True, exist_ok=True)
-            tmp = p.with_name(p.name + ".tmp")
-            tmp.write_text(json.dumps(self.to_dict(), ensure_ascii=True),
-                           encoding="utf-8")
-            tmp.replace(p)
+            write_encrypted_text(p, json.dumps(self.to_dict(), ensure_ascii=True))
             return True
         except (OSError, TypeError, ValueError):
             return False
@@ -190,9 +188,13 @@ class BM25Index:
     @classmethod
     def load(cls, path: Path | str) -> "BM25Index | None":
         try:
+            from kb.kb_crypto import read_decrypted_text
             p = Path(path)
             if not p.exists():
                 return None
-            return cls.from_dict(json.loads(p.read_text(encoding="utf-8")))
+            text = read_decrypted_text(p)
+            if text is None:
+                return None
+            return cls.from_dict(json.loads(text))
         except (OSError, json.JSONDecodeError, ValueError):
             return None
