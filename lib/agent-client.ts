@@ -305,6 +305,22 @@ export interface TemplateStatus {
   describe: string;
 }
 
+/** Auto-extracted project context summary (desktop KB dialog "Project Context"). */
+export interface ProjectContextSummary {
+  has: boolean;
+  n_items: number;
+  counts: Partial<{
+    actors: number;
+    entities: number;
+    workflows: number;
+    integrations: number;
+    business_rules: number;
+    screens: number;
+    test_data_needs: number;
+  }>;
+  summary: string;
+}
+
 export interface ArtifactFile {
   name: string;
   path: string;
@@ -1252,6 +1268,20 @@ export const agent = {
     return `${AGENT_URL}/kb/template/${encodeURIComponent(
       project
     )}/${encodeURIComponent(phase)}/download`;
+  },
+
+  // -- Project context summary (desktop KB dialog "Project Context") --
+  async projectContext(project: string): Promise<ProjectContextSummary> {
+    return agentFetch<ProjectContextSummary>(
+      `/kb/context/${encodeURIComponent(project)}`
+    );
+  },
+
+  async regenerateContext(project: string): Promise<ProjectContextSummary> {
+    return agentFetch<ProjectContextSummary>(
+      `/kb/context/${encodeURIComponent(project)}/regenerate`,
+      { method: "POST" }
+    );
   },
 
   // -- Artifacts (generated outputs browser) --

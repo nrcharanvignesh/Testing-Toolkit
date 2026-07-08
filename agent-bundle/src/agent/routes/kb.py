@@ -448,3 +448,90 @@ async def download_template(project: str, phase: str):
         filename=path.name,
         media_type="application/octet-stream",
     )
+
+
+# ---------------------------------------------------------------------
+# Project context summary (desktop project KB dialog "Project Context")
+# ---------------------------------------------------------------------
+def _context_payload(project: str) -> dict:
+    """Shape the stored ProjectContext for the web dialog, mirroring the
+    desktop _refresh_context_status/_view_context counts + prompt section."""
+    import core.project_store as ps
+
+    ctx = ps.read_context_summary(project)
+    if ctx is None or ctx.is_empty():
+        return {"has": False, "n_items": 0, "counts": {}, "summary": ""}
+    counts = {
+        "actors": len(ctx.actors),
+        "entities": len(ctx.entities),
+        "workflows": len(ctx.workflows),
+        "integrations": len(ctx.integrations),
+        "business_rules": len(ctx.business_rules),
+        "screens": len(ctx.screens),
+        "test_data_needs": len(ctx.test_data_needs),
+    }
+    return {
+        "has": True,
+        "n_items": sum(counts.values()),
+        "counts": counts,
+        "summary": ctx.to_prompt_section(),
+    }
+
+
+@router.get("/context/{project}")
+async def get_context(project: str) -> dict:
+    """Return the auto-extracted project context summary (actors, entities,
+    workflows, screens, ...). Web equivalent of the desktop dialog's
+    "View" button + status label."""
+    return _context_payload(project)
+
+
+@router.post("/context/{project}/regenerate")
+async def regenerate_context(project: str) -> dict:
+    """Re-extract project context from the current KB index using the LLM and
+    persist it. Mirrors the desktop dialog's "Regenerate" button."""
+    import hashlib
+
+    import core.project_store as ps
+    from kb.context_summary import extract_project_context_async
+
+    # An LLM client is required — degrade with a clear 409 when unavailable
+    # (matches the desktop "No LLM" warning) rather than silently no-op.
+    try:
+        from core.settings_store import build_llm_client, model_pair
+
+        client = build_llm_client()
+        primary, _fast = model_pair()
+    except Exception:  # noqa: BLE001
+        client = None
+        primary = ""
+    if client is None:
+        raise HTTPException(
+            409,
+            "No LLM client configured. Context extraction needs a working API key.",
+        )
+
+    index = await asyncio.to_thread(ps.get_index, project)
+    chunks = list(getattr(index, "chunks", []) or [])
+    if not chunks:
+        raise HTTPException(
+            409, "The knowledge base is empty. Add documents and index first."
+        )
+
+    # Fingerprint the current KB state (sha256 of chunk text) exactly like the
+    # desktop _regen_context worker.
+    h = hashlib.sha256()
+    for c in chunks:
+        h.update((getattr(c, "text", "") or "").encode("utf-8", errors="replace"))
+    fingerprint = h.hexdigest()[:16]
+
+    ctx = await extract_project_context_async(
+        kb_index=index,
+        client=client,
+        model=primary,
+        kb_fingerprint=fingerprint,
+    )
+    if not ctx.is_empty():
+        await asyncio.to_thread(ps.write_context_summary, project, ctx)
+
+    return _context_payload(project)

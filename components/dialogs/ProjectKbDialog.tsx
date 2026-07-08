@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Upload, FileText, RefreshCw, Download, Trash2 } from "lucide-react";
+import { Upload, FileText, RefreshCw, Download, Trash2, Sparkles, Eye, EyeOff } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
-import { agent, type KbStatus, type TcType, TC_TYPES, TC_DISPLAY_NAME, type TemplateStatus } from "@/lib/agent-client";
+import { agent, type KbStatus, type TcType, TC_TYPES, TC_DISPLAY_NAME, type TemplateStatus, type ProjectContextSummary } from "@/lib/agent-client";
 import { useAppState } from "@/lib/app-state";
 
 type UploadStatus = "queued" | "uploading" | "processing" | "done" | "error";
@@ -120,6 +120,7 @@ export function ProjectKbDialog({ onClose }: { onClose: () => void }) {
         </h3>
         <DocumentsSection project={currentProject} pushLog={pushLog} />
         <TemplatesSection project={currentProject} pushLog={pushLog} />
+        <ProjectContextSection project={currentProject} pushLog={pushLog} />
         <PromptsSection project={currentProject} pushLog={pushLog} />
       </div>
     </Modal>
@@ -598,6 +599,121 @@ const PROMPT_SCOPES: { value: string; label: string }[] = [
   { value: "sit", label: "SIT phase" },
   { value: "uat", label: "UAT phase" },
 ];
+
+/**
+ * Project Context (desktop KB dialog "Project Context"): view the auto-extracted
+ * context summary (actors, entities, workflows, screens, ...) and regenerate it
+ * from the current KB index using the LLM.
+ */
+function ProjectContextSection({
+  project,
+  pushLog,
+}: {
+  project: string;
+  pushLog: (l: "INFO" | "SUCCESS" | "WARN" | "ERROR", t: string) => void;
+}) {
+  const [ctx, setCtx] = useState<ProjectContextSummary | null>(null);
+  const [showSummary, setShowSummary] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!project) return;
+    let alive = true;
+    agent
+      .projectContext(project)
+      .then((c) => alive && setCtx(c))
+      .catch(() => {
+        // Older agents (< 2.9.4) don't expose this route — degrade to the
+        // empty state rather than spinning forever.
+        if (alive) setCtx({ has: false, n_items: 0, counts: {}, summary: "" });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [project]);
+
+  const regenerate = async () => {
+    if (!project) return;
+    setBusy(true);
+    setError("");
+    pushLog("INFO", "Re-extracting project context from the knowledge base...");
+    try {
+      const c = await agent.regenerateContext(project);
+      setCtx(c);
+      if (c.has) {
+        pushLog("SUCCESS", `Project context extracted: ${c.n_items} item(s).`);
+        setShowSummary(true);
+      } else {
+        pushLog("WARN", "No project context could be extracted.");
+      }
+    } catch (e) {
+      const msg = (e as Error).message;
+      setError(msg);
+      pushLog("ERROR", `Context extraction failed: ${msg}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const statusText = !ctx
+    ? "Loading project context..."
+    : ctx.has
+      ? `Context extracted: ${ctx.n_items} items (${ctx.counts.actors ?? 0} actors, ${
+          ctx.counts.entities ?? 0
+        } entities, ${ctx.counts.workflows ?? 0} workflows, ${
+          ctx.counts.screens ?? 0
+        } screens)`
+      : "No project context extracted yet. Build the KB index with an LLM client available, or click Regenerate.";
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <h4 className="mr-auto text-sm font-bold text-[var(--tt-text-primary)]">
+          Project Context
+        </h4>
+        <button
+          className="tt-btn-ghost !px-2.5 !py-1 !text-xs !gap-1.5"
+          onClick={() => setShowSummary((s) => !s)}
+          disabled={!ctx?.has}
+          title="View the auto-extracted project context summary (actors, entities, workflows, screens, ...)"
+        >
+          {showSummary ? (
+            <EyeOff className="h-3.5 w-3.5" />
+          ) : (
+            <Eye className="h-3.5 w-3.5" />
+          )}
+          {showSummary ? "Hide" : "View"}
+        </button>
+        <button
+          className="tt-btn-ghost !px-2.5 !py-1 !text-xs !gap-1.5"
+          onClick={regenerate}
+          disabled={busy}
+          title="Re-extract project context from KB documents using the LLM"
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          {busy ? "Extracting..." : "Regenerate"}
+        </button>
+      </div>
+      <p
+        className="text-xs"
+        style={{
+          color: ctx?.has ? "var(--tt-success)" : "var(--tt-text-muted)",
+        }}
+      >
+        {statusText}
+      </p>
+      {error && (
+        <p className="text-xs text-[var(--tt-danger)]">{error}</p>
+      )}
+      {showSummary && ctx?.has && (
+        <pre className="max-h-52 overflow-auto whitespace-pre-wrap rounded-[10px] border border-[var(--tt-outline)] bg-[var(--tt-surface-base)] p-3 font-mono text-[11px] leading-relaxed text-[var(--tt-text-secondary)]">
+          {ctx.summary}
+        </pre>
+      )}
+    </div>
+  );
+}
 
 function PromptsSection({
   project,
