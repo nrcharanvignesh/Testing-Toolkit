@@ -1099,6 +1099,7 @@ export const agent = {
       use_tools?: boolean;
       model?: string;
       attachment_text?: string;
+      images?: { media_type: string; data_b64: string }[];
     },
     handlers: {
       onText?: (delta: string) => void;
@@ -1118,6 +1119,7 @@ export const agent = {
         use_tools: req.use_tools ?? true,
         model: req.model,
         attachment_text: req.attachment_text ?? "",
+        images: req.images ?? [],
       }),
       signal,
     });

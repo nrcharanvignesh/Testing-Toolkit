@@ -39,6 +39,19 @@ interface Conversation {
 }
 
 type Attachment = { name: string; chars: number; text: string };
+type ImageAttachment = {
+  name: string;
+  media_type: string;
+  data_b64: string;
+  data_url: string;
+};
+
+const IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]);
 
 function newConversation(): Conversation {
   return {
@@ -78,6 +91,7 @@ export function ChatDialog({ onClose }: { onClose: () => void }) {
   const [useKb, setUseKb] = useState(true);
   const [useTools, setUseTools] = useState(true);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [images, setImages] = useState<ImageAttachment[]>([]);
   const [reading, setReading] = useState(false);
   const [note, setNote] = useState("");
 
@@ -133,6 +147,7 @@ export function ChatDialog({ onClose }: { onClose: () => void }) {
     setConversations((prev) => [conv, ...prev]);
     setActiveId(conv.id);
     setAttachments([]);
+    setImages([]);
     setInput("");
   };
 
@@ -150,26 +165,66 @@ export function ChatDialog({ onClose }: { onClose: () => void }) {
     });
   };
 
-  const pickFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    setReading(true);
-    setNote("Reading files...");
-    try {
-      const results = await agent.extractAttachments(Array.from(files));
-      const mapped: Attachment[] = results
-        .filter((r) => !r.error)
-        .map((r) => ({ name: r.name, chars: r.chars, text: r.text }));
-      setAttachments((prev) => {
+  const addImageFiles = async (imgFiles: File[]) => {
+    const read = (f: File) =>
+      new Promise<ImageAttachment | null>((resolve) => {
+        const reader = new FileReader();
+        reader.onerror = () => resolve(null);
+        reader.onload = () => {
+          const dataUrl = String(reader.result || "");
+          const comma = dataUrl.indexOf(",");
+          if (comma < 0) return resolve(null);
+          resolve({
+            name: f.name || "pasted-image",
+            media_type: f.type || "image/png",
+            data_b64: dataUrl.slice(comma + 1),
+            data_url: dataUrl,
+          });
+        };
+        reader.readAsDataURL(f);
+      });
+    const mapped = (await Promise.all(imgFiles.map(read))).filter(
+      (x): x is ImageAttachment => x !== null
+    );
+    if (mapped.length) {
+      setImages((prev) => {
         const byName = new Map(prev.map((a) => [a.name, a]));
         for (const m of mapped) byName.set(m.name, m);
         return Array.from(byName.values());
       });
-      const failed = results.filter((r) => r.error);
-      setNote(
-        failed.length
-          ? `Attached ${mapped.length}, skipped ${failed.length} (unreadable).`
-          : `Attached ${mapped.length} file(s).`
-      );
+    }
+    return mapped.length;
+  };
+
+  const pickFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const all = Array.from(files);
+    const imgFiles = all.filter((f) => IMAGE_TYPES.has(f.type));
+    const docFiles = all.filter((f) => !IMAGE_TYPES.has(f.type));
+    setReading(true);
+    setNote("Reading files...");
+    try {
+      const nImg = imgFiles.length ? await addImageFiles(imgFiles) : 0;
+      let nDoc = 0;
+      let failedDocs = 0;
+      if (docFiles.length) {
+        const results = await agent.extractAttachments(docFiles);
+        const mapped: Attachment[] = results
+          .filter((r) => !r.error)
+          .map((r) => ({ name: r.name, chars: r.chars, text: r.text }));
+        nDoc = mapped.length;
+        failedDocs = results.filter((r) => r.error).length;
+        setAttachments((prev) => {
+          const byName = new Map(prev.map((a) => [a.name, a]));
+          for (const m of mapped) byName.set(m.name, m);
+          return Array.from(byName.values());
+        });
+      }
+      const parts: string[] = [];
+      if (nDoc) parts.push(`${nDoc} file(s)`);
+      if (nImg) parts.push(`${nImg} image(s)`);
+      if (failedDocs) parts.push(`skipped ${failedDocs} (unreadable)`);
+      setNote(parts.length ? `Attached ${parts.join(", ")}.` : "Nothing attached.");
     } catch (e) {
       setNote(`Attach failed: ${(e as Error).message}`);
     } finally {
@@ -178,17 +233,42 @@ export function ChatDialog({ onClose }: { onClose: () => void }) {
     }
   };
 
+  // Paste screenshots directly into the composer (desktop chat parity).
+  const onPasteImages = async (e: React.ClipboardEvent) => {
+    const imgs = Array.from(e.clipboardData?.items ?? [])
+      .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
+      .map((it) => it.getAsFile())
+      .filter((f): f is File => f !== null);
+    if (imgs.length === 0) return;
+    e.preventDefault();
+    const n = await addImageFiles(imgs);
+    if (n) setNote(`Attached ${n} pasted image(s).`);
+  };
+
   const send = async () => {
     const text = input.trim();
-    if ((!text && attachments.length === 0) || busy || !currentProject) return;
+    if (
+      (!text && attachments.length === 0 && images.length === 0) ||
+      busy ||
+      !currentProject
+    )
+      return;
 
     const attachmentText = attachments
       .map((a) => `--- FILE: ${a.name} ---\n${a.text}`)
       .join("\n\n");
 
+    const imgPayload = images.map((i) => ({
+      media_type: i.media_type,
+      data_b64: i.data_b64,
+    }));
+    const placeholder =
+      images.length && !attachments.length
+        ? "(see attached image(s))"
+        : "(see attached files)";
     const userMsg: ChatMessage = {
       role: "user",
-      content: text || "(see attached files)",
+      content: text || placeholder,
     };
     const assistantMsg: ChatMessage = { role: "assistant", content: "", tools: [] };
 
@@ -211,6 +291,7 @@ export function ChatDialog({ onClose }: { onClose: () => void }) {
     });
     setInput("");
     setAttachments([]);
+    setImages([]);
     setNote("");
     setBusy(true);
 
@@ -225,6 +306,7 @@ export function ChatDialog({ onClose }: { onClose: () => void }) {
           use_kb: useKb,
           use_tools: useTools,
           attachment_text: attachmentText,
+          images: imgPayload,
         },
         {
           onText: (delta) =>
@@ -433,6 +515,36 @@ export function ChatDialog({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
+          {/* Image thumbnails (desktop chat parity: pasted/attached images) */}
+          {images.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {images.map((img) => (
+                <span
+                  key={img.name}
+                  className="group relative inline-block overflow-hidden rounded-md border border-[var(--tt-outline)]"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img.data_url || "/placeholder.svg"}
+                    alt={img.name}
+                    className="h-16 w-16 object-cover"
+                  />
+                  <button
+                    onClick={() =>
+                      setImages((prev) =>
+                        prev.filter((x) => x.name !== img.name)
+                      )
+                    }
+                    aria-label={`Remove ${img.name}`}
+                    className="absolute right-0.5 top-0.5 rounded bg-[var(--tt-surface-base)]/80 p-0.5"
+                  >
+                    <X className="h-3 w-3 text-[var(--tt-text-secondary)] hover:text-[var(--tt-danger)]" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Composer */}
           <div className="flex items-end gap-2">
             <div className="flex flex-col gap-1">
@@ -459,6 +571,7 @@ export function ChatDialog({ onClose }: { onClose: () => void }) {
               ref={fileRef}
               type="file"
               multiple
+              accept="image/*,.pdf,.txt,.md,.csv,.docx,.xlsx,.json"
               className="hidden"
               onChange={(e) => void pickFiles(e.target.files)}
             />
@@ -466,17 +579,18 @@ export function ChatDialog({ onClose }: { onClose: () => void }) {
               className="tt-btn-ghost h-9 shrink-0"
               onClick={() => fileRef.current?.click()}
               disabled={busy || reading}
-              title="Attach files"
+              title="Attach files or images (you can also paste a screenshot)"
             >
               {reading ? "Reading..." : <FileText className="h-4 w-4" />}
             </button>
             <textarea
               className="tt-input min-h-9 flex-1 resize-none text-sm"
               rows={2}
-              placeholder="Message the assistant (Enter to send, Shift+Enter for newline)..."
+              placeholder="Message the assistant (Enter to send, Shift+Enter for newline, paste an image)..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
+              onPaste={(e) => void onPasteImages(e)}
               disabled={busy || !currentProject}
             />
             {busy ? (
@@ -491,7 +605,10 @@ export function ChatDialog({ onClose }: { onClose: () => void }) {
                 className="tt-btn-primary flex h-9 shrink-0 items-center gap-1.5"
                 onClick={() => void send()}
                 disabled={
-                  !currentProject || (!input.trim() && attachments.length === 0)
+                  !currentProject ||
+                  (!input.trim() &&
+                    attachments.length === 0 &&
+                    images.length === 0)
                 }
               >
                 <Send className="h-4 w-4" /> Send
