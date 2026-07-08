@@ -372,6 +372,7 @@ async def _run_generate(job: Job, req: StartRequest) -> None:
                 retriever=retriever,
                 enable_decompose=enable_decompose,
                 enable_verify=enable_verify,
+                project_full=req.project,
             )
             if not result.ok or result.payload is None:
                 raise RuntimeError(

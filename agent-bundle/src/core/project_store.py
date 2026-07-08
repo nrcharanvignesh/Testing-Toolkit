@@ -225,7 +225,61 @@ def index_project_resumable(
                 on_log(f"[WARN] Hybrid index build skipped: {e!r}")
             except Exception:
                 pass
+    # Extract a deep project-understanding summary from the KB when an LLM is
+    # available and the KB changed. Injected into generation via
+    # rlm.generate_test_cases_rlm(project_full=...). Best-effort: never blocks
+    # indexing.
+    if llm_client and getattr(index, "chunks", None):
+        try:
+            _maybe_extract_context(p, index, llm_client, llm_model, on_log)
+        except Exception as exc:  # noqa: BLE001
+            if on_log:
+                try:
+                    on_log(f"[WARN] Context extraction skipped: {exc!r}")
+                except Exception:
+                    pass
     return index
+
+
+def _maybe_extract_context(
+    p: "ProjectPaths", index: "Any",
+    llm_client: "Any", llm_model: str,
+    on_log: "Any | None" = None,
+) -> None:
+    """Run project context extraction if the KB fingerprint changed. Mirrors
+    the desktop hook so the web app produces the same context_summary.json."""
+    import asyncio
+    import hashlib
+
+    from kb.context_summary import extract_project_context_async, save_context_summary
+
+    h = hashlib.sha256()
+    for c in index.chunks:
+        h.update((getattr(c, "text", "") or "").encode("utf-8", errors="replace"))
+    fp = h.hexdigest()[:16]
+
+    existing_fp = context_summary_fingerprint(p.full_name)
+    if fp == existing_fp and existing_fp:
+        return  # KB unchanged, skip
+
+    # Prefer the balanced (MEDIUM) tier for structured extraction unless an
+    # explicit model was passed in.
+    model = llm_model
+    if not model:
+        try:
+            from core.model_router import Task, route
+            model = route(Task.MAP_EXTRACT)
+        except Exception:  # noqa: BLE001
+            model = ""
+
+    ctx = asyncio.run(extract_project_context_async(
+        kb_index=index, client=llm_client, model=model,
+        kb_fingerprint=fp, on_log=on_log,
+    ))
+    if not ctx.is_empty():
+        save_context_summary(p.context_summary_path, ctx)
+        if on_log:
+            on_log("[INFO] Project context summary saved")
 
 
 def _build_hybrid_from_index(
