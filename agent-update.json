@@ -1,8 +1,13 @@
 {
-  "version": "2.9.6",
+  "version": "2.10.0",
   "ref": "main",
-  "generatedAt": "2026-07-08T16:10:45.153Z",
+  "generatedAt": "2026-07-08T18:24:12.406Z",
   "files": [
+    {
+      "path": ".env.enc",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/.env.enc?ref=main",
+      "hash": "ee1db7c55c1b292a8cb329fc03ae236e89cb457c25827b27bbca2cd9e2266ed9"
+    },
     {
       "path": "ado/__init__.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/ado/__init__.py?ref=main",
@@ -51,7 +56,7 @@
     {
       "path": "agent/requirements-agent.txt",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/requirements-agent.txt?ref=main",
-      "hash": "151e8d45aa567af87aea7a8c1612201ca7d534d03e025544a1f513eae84abf36"
+      "hash": "3d6ea57a79edaaa3e7c392c1e545fb58415fc9a7f704e35d4d9a14899d06a71a"
     },
     {
       "path": "agent/routes/__init__.py",
@@ -151,7 +156,7 @@
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "0bdc8eb55dcc8e6150efc9355be3448320c0b779fb6b780fd79dfd3862ab38cc"
+      "hash": "10500adddcd5d15e0306e5b186845f4d6dfa56c31b6fe81463106a10c6776cba"
     },
     {
       "path": "automation/__init__.py",
@@ -211,7 +216,7 @@
     {
       "path": "core/app_config.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/app_config.py?ref=main",
-      "hash": "4997e4f422f7af8160c40f69abeb08df208074a0a66a86d2290b74a94f01810a"
+      "hash": "769c6ddc461b682ea8fab7b1c0b038352df06048961c1561e38015e9bbbf5c49"
     },
     {
       "path": "core/app_logging.py",
@@ -306,7 +311,7 @@
     {
       "path": "core/settings_store.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/settings_store.py?ref=main",
-      "hash": "5e9670a188d44804df8908d3a5c4878ddd879d86bd4c1b9d03cf8edb08dbf9e6"
+      "hash": "ded1d2aed94a129408319c17172bab4b6845fa1cd02158211e04d0686eff18e6"
     },
     {
       "path": "core/source_registry.py",
