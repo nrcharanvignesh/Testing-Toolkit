@@ -1,7 +1,7 @@
 {
-  "version": "2.7.1",
+  "version": "2.7.2",
   "ref": "main",
-  "generatedAt": "2026-07-08T09:40:24.249Z",
+  "generatedAt": "2026-07-08T10:39:35.670Z",
   "files": [
     {
       "path": "ado/__init__.py",
@@ -151,7 +151,7 @@
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "d75d97819a9f2a66f0743ddf22f65d662f7cd18a7c6439dbd1964879a0c91b5f"
+      "hash": "3cc67026dfcab0b49fe7c7d34018fb392fa5a52d47e6d97db5c9655669e55843"
     },
     {
       "path": "automation/__init__.py",
@@ -196,7 +196,7 @@
     {
       "path": "automation/script_generator.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/automation/script_generator.py?ref=main",
-      "hash": "771cbe0de5e68d233caa80fa9a0800e32ca368b261de7cd7c5f7842e9bff5bd9"
+      "hash": "217f5717ea4506bf0abb14f7665716275f7ec246d29ccdaea2f8959dbab46274"
     },
     {
       "path": "core/__init__.py",
