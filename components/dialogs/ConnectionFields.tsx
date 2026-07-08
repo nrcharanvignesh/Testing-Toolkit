@@ -232,6 +232,23 @@ export function ConnectionFields({
         />
       </Field>
       <p className="pl-[152px] text-xs text-[var(--tt-danger)]">* required</p>
+      {!readOnlyModels && (
+        <>
+          <Field label="Strip project prefix">
+            <input
+              type="text"
+              className="tt-input"
+              placeholder="InteractionsHub_"
+              value={values.project_prefix}
+              onChange={(e) => set("project_prefix", e.target.value)}
+            />
+          </Field>
+          <p className="pl-[152px] text-xs text-muted-foreground">
+            Project names are shown with this prefix stripped, e.g.
+            InteractionsHub_Abbott → Abbott.
+          </p>
+        </>
+      )}
 
       {!readOnlyModels && (
         <>
@@ -274,21 +291,6 @@ export function ConnectionFields({
             Connect a JIRA Server/Data Center instance to browse boards and
             generate test cases from JIRA issues alongside Azure DevOps. Leave
             blank to use Azure DevOps only.
-          </p>
-
-          <SectionHeader>Display</SectionHeader>
-          <Field label="Strip project prefix">
-            <input
-              type="text"
-              className="tt-input"
-              placeholder="InteractionsHub_"
-              value={values.project_prefix}
-              onChange={(e) => set("project_prefix", e.target.value)}
-            />
-          </Field>
-          <p className="pl-[152px] text-xs text-muted-foreground">
-            Project names are shown with this prefix stripped, e.g.
-            InteractionsHub_Abbott → Abbott.
           </p>
         </>
       )}

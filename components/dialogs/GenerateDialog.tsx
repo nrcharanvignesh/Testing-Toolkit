@@ -58,7 +58,6 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
   const [iterationPath, setIterationPath] = useState("");
   const [testCategory, setTestCategory] = useState("");
   const [inherit, setInherit] = useState(true);
-  const [fastModel, setFastModel] = useState(false);
   const [testData, setTestData] = useState(true);
 
   // Files attached to a regeneration. Their extracted text is folded into the
@@ -186,7 +185,6 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
           board: currentBoard?.label ?? "",
           regen_feedback: isRegen ? regenFeedback : "",
           base_payload: isRegen ? result?.payload ?? null : null,
-          fast_model: fastModel,
           test_data: testData,
         },
         handlers
@@ -304,16 +302,6 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
           >
             Manual mode
           </button>
-          <label className="flex items-center gap-1.5 px-1 text-xs text-[var(--tt-text-secondary)]">
-            <input
-              type="checkbox"
-              className="tt-check"
-              checked={fastModel}
-              onChange={(e) => setFastModel(e.target.checked)}
-              disabled={busy}
-            />
-            Fast model
-          </label>
           <label
             className="flex items-center gap-1.5 px-1 text-xs text-[var(--tt-text-secondary)]"
             title="Append pattern-based positive/negative test data to data-entry steps"
@@ -542,8 +530,6 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
                 setFeedback={setFeedback}
                 iteration={iteration}
                 busy={busy}
-                fastModel={fastModel}
-                setFastModel={setFastModel}
                 attachments={attachments}
                 setAttachments={setAttachments}
                 pushLog={pushLog}
@@ -578,8 +564,6 @@ function RegenerateSection({
   setFeedback,
   iteration,
   busy,
-  fastModel,
-  setFastModel,
   attachments,
   setAttachments,
   pushLog,
@@ -590,8 +574,6 @@ function RegenerateSection({
   setFeedback: (v: string) => void;
   iteration: number;
   busy: boolean;
-  fastModel: boolean;
-  setFastModel: (v: boolean) => void;
   attachments: Attachment[];
   setAttachments: React.Dispatch<React.SetStateAction<Attachment[]>>;
   pushLog: (level: "INFO" | "SUCCESS" | "WARN" | "ERROR", t: string) => void;
@@ -703,19 +685,6 @@ function RegenerateSection({
           {extracting ? "Reading files..." : "Attach files..."}
         </button>
         <div className="flex items-center gap-3">
-          <label
-            className="flex items-center gap-1.5 text-xs text-[var(--tt-text-secondary)]"
-            title="Use the faster model (skips decompose/verify) for this regeneration"
-          >
-            <input
-              type="checkbox"
-              className="tt-check"
-              checked={fastModel}
-              onChange={(e) => setFastModel(e.target.checked)}
-              disabled={busy || atLimit}
-            />
-            Fast model
-          </label>
           <button
             className="tt-btn-primary !px-4 !py-1.5 text-sm"
             onClick={onRegenerate}
