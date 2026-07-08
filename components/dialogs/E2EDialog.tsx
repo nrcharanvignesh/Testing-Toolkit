@@ -125,6 +125,7 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
     setLogs([]);
     setProgress(null);
     setResult(null);
+    jobIdRef.current = ""; // reset before new run
     // Reset row status: chosen -> running, rest -> pending.
     const chosen = new Set(indices);
     setRowStatus(() => {
@@ -140,6 +141,7 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
       const res = await agent.runE2E(
         { project: currentProject, env: selectedEnv, indices },
         {
+          onJobId: (id) => { jobIdRef.current = id; },
           onLog: (line) => {
             pushLog(agentLogLevel(line), line);
             setLogs((prev) => [...prev, line]);
@@ -180,14 +182,15 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
 
   const rerunFailed = () => {
     if (!lastRun) return;
-    const failedIds = new Set(
+    // E2ELastRun results have both tc_id and tc_title; match against tc_title
+    // so the lookup aligns with the E2ETestCase.title field in the current list.
+    const failedTitles = new Set(
       lastRun.results
         .filter((r) => r.status === "fail" || r.status === "error")
-        .map((r) => r.tc_id)
+        .map((r) => r.tc_title)
     );
-    // Match failed tc_ids back to current rows by title (tc_id is title-based).
     const indices = testCases
-      .filter((t) => failedIds.has(t.title))
+      .filter((t) => failedTitles.has(t.title))
       .map((t) => t.index);
     if (indices.length === 0) {
       setError("No matching failed test cases from the last run.");

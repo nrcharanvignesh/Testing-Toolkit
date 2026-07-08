@@ -463,6 +463,9 @@ export interface JobSnapshot {
 export interface JobHandlers {
   onLog?: (line: string) => void;
   onProgress?: (p: JobProgress) => void;
+  /** Called with the background job id immediately after the job is created,
+   *  before polling starts. Use this to wire a Stop button. */
+  onJobId?: (id: string) => void;
   signal?: AbortSignal;
   intervalMs?: number;
 }
@@ -1406,6 +1409,8 @@ export const agent = {
         indices: payload.indices ?? [],
       }),
     });
+    // Surface the job id immediately so the caller can wire a Stop button.
+    handlers.onJobId?.(job_id);
     const snap = await pollJob(job_id, handlers);
     if (snap.state !== "done") {
       throw new Error(snap.error || `E2E run ${snap.state}`);

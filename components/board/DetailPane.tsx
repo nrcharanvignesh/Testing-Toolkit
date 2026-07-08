@@ -168,7 +168,10 @@ export function DetailPane({ activeWiId }: DetailPaneProps) {
 /** Leaf of a backslash/slash area or iteration path, e.g. ...\Abbott → Abbott. */
 function pathTail(p: string): string {
   if (!p) return "";
-  return p;
+  // ADO paths use backslash; normalise both separators to backslash then split.
+  const normalised = p.replace(/\//g, "\\");
+  const parts = normalised.split("\\").map((s) => s.trim()).filter(Boolean);
+  return parts[parts.length - 1] ?? p;
 }
 
 function DetailContent({

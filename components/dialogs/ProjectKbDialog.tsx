@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Upload, FileText, RefreshCw } from "lucide-react";
+import { Upload, FileText, RefreshCw, Download, Trash2 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
-import { agent, type KbStatus } from "@/lib/agent-client";
+import { agent, type KbStatus, type TcType, TC_TYPES, TC_DISPLAY_NAME, type TemplateStatus } from "@/lib/agent-client";
 import { useAppState } from "@/lib/app-state";
 
 type UploadStatus = "queued" | "uploading" | "processing" | "done" | "error";
@@ -469,7 +469,61 @@ function TemplatesSection({
   project: string;
   pushLog: (l: "INFO" | "SUCCESS" | "WARN" | "ERROR", t: string) => void;
 }) {
-  const [phase, setPhase] = useState("Implementation");
+  const [phase, setPhase] = useState<TcType>("implementation");
+  const [status, setStatus] = useState<TemplateStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // Load template status whenever project or phase changes.
+  useEffect(() => {
+    if (!project) { setStatus(null); return; }
+    agent
+      .templateStatus(project, phase)
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  }, [project, phase]);
+
+  const upload = async (files: FileList | null) => {
+    if (!files || !files[0] || !project) return;
+    const file = files[0];
+    if (fileRef.current) fileRef.current.value = "";
+    setBusy(true);
+    try {
+      const s = await agent.uploadTemplate(project, phase, file);
+      setStatus(s);
+      pushLog("SUCCESS", `Template uploaded for ${TC_DISPLAY_NAME[phase]}: ${file.name}`);
+    } catch (e) {
+      pushLog("ERROR", `Template upload failed: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openTemplate = () => {
+    if (!project || !status?.has) return;
+    window.open(agent.templateDownloadUrl(project, phase), "_blank", "noopener");
+  };
+
+  const removeTemplate = async () => {
+    if (!project || !status?.has) return;
+    const ok = window.confirm(
+      `Remove the ${TC_DISPLAY_NAME[phase]} template? Generation will fall back to the standard reviewer spreadsheet.`
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await agent.deleteTemplate(project, phase);
+      setStatus((prev) => prev ? { ...prev, has: false, name: "" } : prev);
+      pushLog("INFO", `Removed ${TC_DISPLAY_NAME[phase]} template.`);
+    } catch (e) {
+      pushLog("ERROR", `Remove failed: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const hasTemplate = !!status?.has;
+
   return (
     <section className="flex flex-col gap-2">
       <h4 className="text-sm font-bold text-[var(--tt-text-primary)]">
@@ -480,30 +534,60 @@ function TemplatesSection({
         <select
           className="tt-input w-auto min-w-44 cursor-pointer text-sm"
           value={phase}
-          onChange={(e) => setPhase(e.target.value)}
+          disabled={busy}
+          onChange={(e) => setPhase(e.target.value as TcType)}
         >
-          {["Implementation", "SIT", "UAT"].map((p) => (
-            <option key={p}>{p}</option>
+          {TC_TYPES.map((t) => (
+            <option key={t} value={t}>{TC_DISPLAY_NAME[t]}</option>
           ))}
         </select>
         <button
           className="tt-btn-primary !px-3 !py-1.5 text-xs"
-          disabled={!project}
-          onClick={() => pushLog("INFO", `${phase} template upload (xlsx).`)}
+          disabled={busy || !project}
+          onClick={() => fileRef.current?.click()}
         >
-          <Upload className="h-3.5 w-3.5" /> Upload template...
+          <Upload className="h-3.5 w-3.5" />{" "}
+          {hasTemplate ? "Replace template..." : "Upload template..."}
         </button>
-        <button className="tt-btn-ghost !px-3 !py-1.5 text-xs" disabled>
-          Open
+        <button
+          className="tt-btn-ghost !px-3 !py-1.5 text-xs"
+          disabled={busy || !hasTemplate}
+          onClick={openTemplate}
+          title="Download and open the stored template"
+        >
+          <Download className="h-3.5 w-3.5" /> Open
         </button>
-        <button className="tt-btn-ghost !px-3 !py-1.5 text-xs" disabled>
-          Remove
+        <button
+          className="tt-btn-ghost !px-3 !py-1.5 text-xs"
+          disabled={busy || !hasTemplate}
+          onClick={removeTemplate}
+          title="Remove the stored template for this phase"
+        >
+          <Trash2 className="h-3.5 w-3.5" /> Remove
         </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".xlsx,.xls"
+          hidden
+          onChange={(e) => upload(e.target.files)}
+        />
       </div>
-      <p className="text-xs text-muted-foreground">
-        No template uploaded for this phase. Generation falls back to the standard
-        reviewer spreadsheet only.
-      </p>
+      {!project ? (
+        <p className="text-xs text-muted-foreground">Select a project to manage templates.</p>
+      ) : status === null ? (
+        <p className="text-xs text-muted-foreground">Loading...</p>
+      ) : hasTemplate ? (
+        <p className="text-xs text-[var(--tt-success)]">
+          Template: <span className="font-mono">{status.name}</span>
+          {status.describe ? ` — ${status.describe}` : ""}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          No template uploaded for {TC_DISPLAY_NAME[phase]}. Generation falls back to the standard
+          reviewer spreadsheet only.
+        </p>
+      )}
     </section>
   );
 }
