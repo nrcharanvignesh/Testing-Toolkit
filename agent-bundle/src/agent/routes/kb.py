@@ -36,7 +36,7 @@ async def retrieve(req: RetrieveRequest) -> RetrieveResponse:
         raise HTTPException(404, f"Project '{req.project}' not found locally")
 
     retriever = HybridRetriever(project_dir)
-    if not retriever.is_ready():
+    if not retriever.is_available():
         raise HTTPException(
             409, "KB index not built yet. Upload documents and trigger indexing first."
         )

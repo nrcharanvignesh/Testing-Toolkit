@@ -68,7 +68,7 @@ def _kb_context(project: str, query: str) -> str:
         if not project_dir.exists():
             return ""
         retriever = HybridRetriever(project_dir)
-        if not retriever.is_ready():
+        if not retriever.is_available():
             return ""
         hits = retriever.retrieve(query, _KB_TOP_K)
         blocks: list[str] = []

@@ -776,27 +776,57 @@ export const agent = {
     project: string,
     board: Board,
     onProgress: (rows: WorkItemRow[], sofar: number, total: number) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    stallMs = 75_000
   ): Promise<BoardView> {
-    const res = await fetch(`${AGENT_URL}/sources/workitems/stream`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        project,
-        board_id: board.id,
-        board_name: board.name,
-        team_id: board.team_id,
-        team_name: board.team_name,
-      }),
-      signal,
-    });
+    // Inactivity watchdog: if no bytes arrive for stallMs, abort so the caller
+    // can fall back to the blocking loader instead of hanging the spinner
+    // forever. The timer resets on every chunk. An external signal (caller
+    // navigating away) also aborts.
+    const ctrl = new AbortController();
+    const onAbort = () => ctrl.abort();
+    if (signal) {
+      if (signal.aborted) ctrl.abort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
+    let stallTimer: ReturnType<typeof setTimeout> | undefined;
+    const armStall = () => {
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = setTimeout(onAbort, stallMs);
+    };
+
+    let res: Response;
+    try {
+      armStall();
+      res = await fetch(`${AGENT_URL}/sources/workitems/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project,
+          board_id: board.id,
+          board_name: board.name,
+          team_id: board.team_id,
+          team_name: board.team_name,
+        }),
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      if (stallTimer) clearTimeout(stallTimer);
+      signal?.removeEventListener("abort", onAbort);
+      throw ctrl.signal.aborted
+        ? new Error("Board stream stalled; falling back")
+        : (e as Error);
+    }
     if (!res.ok || !res.body) {
+      if (stallTimer) clearTimeout(stallTimer);
+      signal?.removeEventListener("abort", onAbort);
       const body = await res.text().catch(() => "");
       throw new Error(humanizeError(res.status, body));
     }
 
     const rows: WorkItemRow[] = [];
     let columns: BoardColumn[] = [];
+    let streamError: string | null = null;
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -834,19 +864,37 @@ export const agent = {
           column_type: "",
         }));
       } else if (evt.type === "error") {
-        throw new Error(evt.message || "Streaming board load failed");
+        // Record and stop; do not throw from inside the read loop (that would
+        // leak the reader). The loop cancels the reader on the next check.
+        streamError = evt.message || "Streaming board load failed";
       }
     };
 
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const chunks = buffer.split("\n\n");
-      buffer = chunks.pop() ?? "";
-      for (const chunk of chunks) handleEvent(chunk);
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        armStall(); // bytes arrived; reset the inactivity watchdog
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() ?? "";
+        for (const chunk of chunks) handleEvent(chunk);
+        if (streamError) break;
+      }
+      if (!streamError && buffer.trim()) handleEvent(buffer);
+    } catch (e) {
+      await reader.cancel().catch(() => {});
+      throw ctrl.signal.aborted
+        ? new Error("Board stream stalled; falling back")
+        : (e as Error);
+    } finally {
+      if (stallTimer) clearTimeout(stallTimer);
+      signal?.removeEventListener("abort", onAbort);
     }
-    if (buffer.trim()) handleEvent(buffer);
+    if (streamError) {
+      await reader.cancel().catch(() => {});
+      throw new Error(streamError);
+    }
 
     // Fallback: if no columns arrived (older/edge case), derive from rows.
     if (columns.length === 0) {
