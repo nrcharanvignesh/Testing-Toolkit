@@ -126,6 +126,12 @@
   --tt-help-header: #7abaff;
   --tt-help-body: #b8d4f0;
 
+  /* Brand teal (title bar, primary accents) */
+  --tt-teal:      #159a9a;
+  --tt-teal-soft: #1ab8b8;
+  --tt-teal-dim:  #0d6f6f;
+  --tt-teal-bg:   rgba(21,154,154,0.10);
+
   /* Work-item type accent colors */
   --tt-type-story:   #5ba8ff;
   --tt-type-bug:     #e53e3e;
@@ -236,6 +242,12 @@
   --tt-help-border: #bcd6f7;
   --tt-help-header: #1a5fb4;
   --tt-help-body: #33507a;
+
+  /* Brand teal (light) */
+  --tt-teal:      #0e7a7a;
+  --tt-teal-soft: #159a9a;
+  --tt-teal-dim:  #0a5e5e;
+  --tt-teal-bg:   rgba(14,122,122,0.08);
 
   /* Work-item type accent colors (light) */
   --tt-type-story:   #0071e3;

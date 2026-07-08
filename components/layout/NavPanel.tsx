@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   KanbanSquare,
 } from "lucide-react";
+
 import { useAppState } from "@/lib/app-state";
 import { useTheme } from "@/lib/theme";
 import { Dropdown } from "@/components/ui/dropdown";
@@ -41,6 +42,7 @@ export function NavPanel() {
     openDialog,
     setLogVisible,
     pushLog,
+    boardView,
   } = useAppState();
 
   const { theme, toggleTheme } = useTheme();
@@ -155,7 +157,20 @@ export function NavPanel() {
                           : "var(--tt-text-muted)",
                       }}
                     />
-                    <span className="truncate">{b.team_name}</span>
+                    <span className="min-w-0 flex-1 truncate">{b.team_name}</span>
+                    {/* Show WI count only for the currently loaded board */}
+                    {isSelected && boardView && (
+                      <span
+                        className="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold tabular-nums"
+                        style={{
+                          background: "rgba(255,255,255,0.18)",
+                          color: "rgba(255,255,255,0.85)",
+                        }}
+                        title={`${boardView.rows.length} work items`}
+                      >
+                        {boardView.rows.length}
+                      </span>
+                    )}
                   </div>
                 );
               })
@@ -164,7 +179,7 @@ export function NavPanel() {
         </div>
 
         {/* ── Bottom toolbar ─────────────────────────────────────── */}
-        <div className="flex items-center gap-0.5 border-t border-[var(--tt-outline-soft)] pt-2">
+        <div className="flex flex-wrap items-center gap-0.5 border-t border-[var(--tt-outline-soft)] pt-2">
           <Dropdown
             align="left"
             direction="up"
@@ -174,41 +189,46 @@ export function NavPanel() {
               { label: "About", separatorBefore: true, onClick: () => openDialog("about") },
             ]}
             trigger={({ toggle, ref }) => (
-              <NavIconBtn
+              <NavLabelBtn
                 ref={ref}
                 onClick={toggle}
                 title="Help & About"
-                icon={<HelpCircle className="h-4 w-4" strokeWidth={2} />}
+                icon={<HelpCircle className="h-3.5 w-3.5" strokeWidth={2} />}
+                label="Help"
               />
             )}
           />
-          <NavIconBtn
+          <NavLabelBtn
             title="Settings"
             onClick={() => openDialog("settings")}
-            icon={<Settings className="h-4 w-4" strokeWidth={2} />}
+            icon={<Settings className="h-3.5 w-3.5" strokeWidth={2} />}
+            label="Settings"
           />
-          <NavIconBtn
+          <NavLabelBtn
             title="Project Knowledge Base"
             disabled={!currentProject}
             onClick={() => openDialog("kb")}
-            icon={<Brain className="h-4 w-4" strokeWidth={2} />}
+            icon={<Brain className="h-3.5 w-3.5" strokeWidth={2} />}
+            label="KB"
           />
-          <NavIconBtn
+          <NavLabelBtn
             title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
             aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
             onClick={toggleTheme}
             icon={
               theme === "dark" ? (
-                <Sun className="h-4 w-4" strokeWidth={2} />
+                <Sun className="h-3.5 w-3.5" strokeWidth={2} />
               ) : (
-                <Moon className="h-4 w-4" strokeWidth={2} />
+                <Moon className="h-3.5 w-3.5" strokeWidth={2} />
               )
             }
+            label={theme === "dark" ? "Light" : "Dark"}
           />
-          <NavIconBtn
+          <NavLabelBtn
             title="Collapse navigator"
             onClick={() => setNavVisible(false)}
-            icon={<ChevronLeft className="h-4 w-4" strokeWidth={2} />}
+            icon={<ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />}
+            label="Collapse"
           />
         </div>
       </div>
@@ -251,6 +271,33 @@ const NavIconBtn = React.forwardRef<
       onClick={onClick}
     >
       {icon}
+    </button>
+  );
+});
+
+/** Labeled icon button for the bottom toolbar — icon + short text label. */
+const NavLabelBtn = React.forwardRef<
+  HTMLButtonElement,
+  {
+    title: string;
+    onClick: () => void;
+    icon: React.ReactNode;
+    label: string;
+    disabled?: boolean;
+    "aria-label"?: string;
+  }
+>(function NavLabelBtn({ title, onClick, icon, label, disabled, ...rest }, ref) {
+  return (
+    <button
+      ref={ref}
+      title={title}
+      aria-label={rest["aria-label"] ?? title}
+      disabled={disabled}
+      className="tt-btn-ghost flex items-center gap-1 !px-1.5 !py-1 !text-[10px] disabled:opacity-40"
+      onClick={onClick}
+    >
+      {icon}
+      <span>{label}</span>
     </button>
   );
 });

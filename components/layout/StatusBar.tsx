@@ -3,6 +3,7 @@
 import { useAgent } from "@/lib/agent-context";
 import { useAppState, type KbState } from "@/lib/app-state";
 import { useMetrics } from "@/lib/use-metrics";
+import { REQUIRED_AGENT_VERSION } from "@/lib/agent-version";
 
 /** Format a megabyte value as GB when large enough, else MB. */
 function fmtMem(mb: number | null): string {
@@ -91,7 +92,8 @@ const KB_COLOR: Record<KbState, string> = {
 };
 
 export function StatusBar() {
-  const { status } = useAgent();
+  const { status, health } = useAgent();
+  const agentVer = health?.version ?? null;
   const {
     settings,
     kbState,
@@ -277,6 +279,14 @@ export function StatusBar() {
           pulse={kbState === "indexing"}
           title={kbMessage || `Knowledge base: ${kbState}`}
         />
+        {/* Agent / web version */}
+        <span
+          className="font-mono tabular-nums"
+          style={{ color: "var(--tt-text-faint)", fontSize: "9px" }}
+          title={`Agent: ${agentVer ?? "not connected"} | Web: ${REQUIRED_AGENT_VERSION}`}
+        >
+          {agentVer ? `v${agentVer}` : `web ${REQUIRED_AGENT_VERSION}`}
+        </span>
       </div>
     </footer>
   );

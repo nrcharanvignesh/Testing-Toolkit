@@ -4,14 +4,32 @@
  * CoverageBar
  * A compact, single-row strip shown between ActionBar and BoardGrid that gives
  * the Senior QA engineer at-a-glance coverage and health metrics without
- * opening any dialog. Reads entirely from app-state — zero extra API calls.
+ * opening any dialog. Reads from app-state and fetches the last E2E run summary.
  */
 
-import { Layers, CheckSquare } from "lucide-react";
+import { Layers, CheckSquare, CheckCircle2, XCircle, Clock } from "lucide-react";
+import useSWR from "swr";
 import { useAppState } from "@/lib/app-state";
+import { agent, type E2ELastRun } from "@/lib/agent-client";
+
+/** Time since `epochSeconds` as a short human string. */
+function timeSince(epochSeconds: number): string {
+  const diff = Math.floor(Date.now() / 1000) - epochSeconds;
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
 
 export function CoverageBar() {
-  const { boardView, selected, currentBoard } = useAppState();
+  const { boardView, selected, currentBoard, currentProject } = useAppState();
+
+  // Fetch last E2E run for the current project (re-validates on project switch).
+  const { data: lastRun } = useSWR<E2ELastRun | null>(
+    currentProject ? ["e2e-last-run", currentProject] : null,
+    ([, proj]: [string, string]) => agent.e2eLastRun(proj),
+    { refreshInterval: 60_000, revalidateOnFocus: false }
+  );
 
   // Only render when a board is loaded
   if (!boardView) return null;
@@ -60,6 +78,41 @@ export function CoverageBar() {
       <TypeBreakdown rows={boardView.rows} />
 
       <div className="flex-1" />
+
+      {/* E2E last run summary */}
+      {lastRun && (
+        <>
+          <span
+            className="tt-metric-chip"
+            style={{
+              background: lastRun.failed === 0
+                ? "rgba(26,171,92,0.10)"
+                : "rgba(229,62,62,0.10)",
+              borderColor: lastRun.failed === 0
+                ? "rgba(26,171,92,0.3)"
+                : "rgba(229,62,62,0.3)",
+              color: lastRun.failed === 0
+                ? "var(--tt-success)"
+                : "var(--tt-danger)",
+            }}
+            title={`Last E2E run: ${lastRun.passed} passed, ${lastRun.failed} failed, ${lastRun.skipped} skipped`}
+          >
+            {lastRun.failed === 0 ? (
+              <CheckCircle2 className="h-3 w-3" />
+            ) : (
+              <XCircle className="h-3 w-3" />
+            )}
+            E2E {lastRun.passed}/{lastRun.total}
+          </span>
+          <span
+            className="tt-metric-chip"
+            title={`Last E2E run finished at ${new Date(lastRun.finished_at * 1000).toLocaleString()}`}
+          >
+            <Clock className="h-3 w-3 text-[var(--tt-text-muted)]" />
+            {timeSince(lastRun.finished_at)}
+          </span>
+        </>
+      )}
     </div>
   );
 }
