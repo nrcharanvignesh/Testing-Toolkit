@@ -1,11 +1,18 @@
 "use client";
 
 import { useMemo, useState, type MouseEvent } from "react";
+import useSWR from "swr";
 import { RefreshCw, PanelRightOpen, PanelRightClose } from "lucide-react";
 import { useAppState } from "@/lib/app-state";
 import { usePreferences, getPreferences, setSizePref } from "@/lib/preferences";
 import { ResizeHandle } from "@/components/ui/resizer";
-import type { WorkItemRow, WiId } from "@/lib/agent-client";
+import {
+  agent,
+  type WorkItemRow,
+  type WiId,
+  type E2ELastRun,
+  type E2ETestCase,
+} from "@/lib/agent-client";
 import {
   ALL,
   COLOR_MUTED,
@@ -63,6 +70,41 @@ export function BoardGrid() {
 
   const rows = boardView?.rows ?? [];
   const columns = boardView?.columns ?? [];
+
+  // ── Coverage + Last Run data (desktop parity: cols 6 & 7) ──────────────
+  // Coverage: a work item is "Covered" if a generated test case traces back
+  // to it (E2ETestCase.wi_id === parent WI). Mirrors the desktop's sidecar.
+  const { data: testCases } = useSWR<E2ETestCase[]>(
+    currentProject ? ["board-coverage", currentProject] : null,
+    ([, proj]: [string, string]) => agent.e2eTestCases(proj),
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
+  // Last Run: map parent WI id -> pass/fail from the latest execution run.
+  // Shares SWR cache key with CoverageBar so there's only one request.
+  const { data: lastRun } = useSWR<E2ELastRun | null>(
+    currentProject ? ["e2e-last-run", currentProject] : null,
+    ([, proj]: [string, string]) => agent.e2eLastRun(proj),
+    { refreshInterval: 60_000, revalidateOnFocus: false, shouldRetryOnError: false }
+  );
+
+  const coveredSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const tc of testCases ?? []) if (tc.wi_id) s.add(String(tc.wi_id));
+    return s;
+  }, [testCases]);
+  const hasCoverageData = (testCases?.length ?? 0) > 0;
+
+  const runStatus = useMemo(() => {
+    const m = new Map<string, "pass" | "fail">();
+    for (const r of lastRun?.results ?? []) {
+      const id = String(r.tc_id);
+      const st = (r.status || "").toLowerCase();
+      if (st === "fail" || st === "error") m.set(id, "fail");
+      else if (st === "pass" && m.get(id) !== "fail") m.set(id, "pass");
+    }
+    return m;
+  }, [lastRun]);
+  const hasRunData = !!lastRun;
 
   const filterOptions = useMemo(() => {
     const types = uniqueSorted(rows.map((r) => r.wi_type));
@@ -230,6 +272,8 @@ export function BoardGrid() {
                   <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">State</th>
                   <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">Assignee</th>
                   <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">Sprint</th>
+                  <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">Coverage</th>
+                  <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">Last Run</th>
                 </tr>
               </thead>
               <tbody>
@@ -248,6 +292,10 @@ export function BoardGrid() {
                       someChecked={someChecked}
                       selected={selected}
                       activeWiId={activeWiId}
+                      coveredSet={coveredSet}
+                      hasCoverageData={hasCoverageData}
+                      runStatus={runStatus}
+                      hasRunData={hasRunData}
                       onToggleLane={(on) => toggleLane(laneRows, on)}
                       onToggleRow={toggleSelected}
                       onActivate={activateRow}
@@ -314,6 +362,53 @@ function wiTypeBorderClass(t: string): string {
   return "";
 }
 
+/** Title text color by work-item type (desktop board_grid._type_color). */
+function titleTypeColor(t: string): string {
+  const k = (t || "").toLowerCase();
+  if (k.includes("bug") || k.includes("defect") || k.includes("issue"))
+    return "var(--tt-type-bug)";
+  if (k.includes("story") || k.includes("enhancement"))
+    return "var(--tt-type-story)";
+  if (k.includes("test case") || k.includes("case")) return "var(--tt-primary)";
+  if (k.includes("task")) return "var(--tt-type-task)";
+  if (k.includes("epic")) return "var(--tt-type-epic)";
+  if (k.includes("feature")) return "var(--tt-type-feature)";
+  return "var(--tt-text-primary)";
+}
+
+/** Coverage cell — "Covered" (green) / "Uncovered" (muted) / "—" (no data). */
+function CoverageCell({
+  covered,
+  hasData,
+}: {
+  covered: boolean;
+  hasData: boolean;
+}) {
+  if (!hasData)
+    return <span style={{ color: "var(--tt-text-faint)" }}>—</span>;
+  return covered ? (
+    <span style={{ color: "var(--tt-success)" }}>Covered</span>
+  ) : (
+    <span style={{ color: "var(--tt-text-muted)" }}>Uncovered</span>
+  );
+}
+
+/** Last-Run cell — "Pass" (green) / "Fail" (red) / "-" (no result). */
+function LastRunCell({
+  status,
+  hasData,
+}: {
+  status: "pass" | "fail" | null;
+  hasData: boolean;
+}) {
+  if (!hasData) return <span style={{ color: "var(--tt-text-faint)" }}>—</span>;
+  if (status === "pass")
+    return <span style={{ color: "var(--tt-success)" }}>Pass</span>;
+  if (status === "fail")
+    return <span style={{ color: "var(--tt-danger)" }}>Fail</span>;
+  return <span style={{ color: "var(--tt-text-muted)" }}>-</span>;
+}
+
 function wiStateBadgeClass(s: string): string {
   const k = (s || "").toLowerCase();
   if (k === "active" || k === "in progress" || k === "in review") return "tt-badge-success";
@@ -330,6 +425,10 @@ function LaneGroup({
   someChecked,
   selected,
   activeWiId,
+  coveredSet,
+  hasCoverageData,
+  runStatus,
+  hasRunData,
   onToggleLane,
   onToggleRow,
   onActivate,
@@ -340,6 +439,10 @@ function LaneGroup({
   someChecked: boolean;
   selected: Set<WiId>;
   activeWiId: WiId | null;
+  coveredSet: Set<string>;
+  hasCoverageData: boolean;
+  runStatus: Map<string, "pass" | "fail">;
+  hasRunData: boolean;
   onToggleLane: (on: boolean) => void;
   onToggleRow: (id: WiId, on: boolean) => void;
   onActivate: (id: WiId) => void;
@@ -358,7 +461,7 @@ function LaneGroup({
             onChange={(e) => onToggleLane(e.target.checked)}
           />
         </td>
-        <td colSpan={6} className="px-2 py-2">
+        <td colSpan={8} className="px-2 py-2">
           <div className="flex items-center gap-2">
             <span className="tt-group-tri">▼</span>
             <span className="text-xs font-bold uppercase tracking-wide text-[var(--tt-text-secondary)]">
@@ -390,34 +493,51 @@ function LaneGroup({
               />
             </td>
             {/* ID cell — no redundant left-border (now on <tr>) */}
-            <td className="px-2 py-1.5">
+            <td className="whitespace-nowrap px-2 py-1.5">
               <span className="font-mono text-xs font-bold text-[var(--tt-primary)]">
                 {r.wi_id}
               </span>
             </td>
+            {/* Title — stretches to fill; colored by work-item type (desktop
+                parity: green stories, red bugs, blue test cases) */}
             <td
-              className="max-w-0 truncate px-2 py-1.5 text-sm text-[var(--tt-text-primary)]"
+              className="w-full truncate px-2 py-1.5 text-sm font-medium"
+              style={{ color: titleTypeColor(r.wi_type) }}
               title={r.title}
             >
               {r.title}
             </td>
             {/* Type badge */}
-            <td className="px-2 py-1.5">
+            <td className="whitespace-nowrap px-2 py-1.5">
               <span className={`tt-badge ${typeBadgeClass}`}>
                 {r.wi_type}
               </span>
             </td>
             {/* State badge */}
-            <td className="px-2 py-1.5">
+            <td className="whitespace-nowrap px-2 py-1.5">
               <span className={`tt-badge ${stateBadgeClass}`}>
                 {r.state || "n/a"}
               </span>
             </td>
-            <td className="max-w-[120px] truncate px-2 py-1.5 text-xs text-[var(--tt-text-secondary)]">
+            <td className="max-w-[120px] truncate whitespace-nowrap px-2 py-1.5 text-xs text-[var(--tt-text-secondary)]">
               {r.assigned_to || "—"}
             </td>
-            <td className="max-w-[120px] truncate px-2 py-1.5 text-xs text-[var(--tt-text-muted)]">
+            <td className="max-w-[120px] truncate whitespace-nowrap px-2 py-1.5 text-xs text-[var(--tt-text-muted)]">
               {r.board_lane || "—"}
+            </td>
+            {/* Coverage */}
+            <td className="whitespace-nowrap px-2 py-1.5 text-xs">
+              <CoverageCell
+                covered={coveredSet.has(String(r.wi_id))}
+                hasData={hasCoverageData}
+              />
+            </td>
+            {/* Last Run */}
+            <td className="whitespace-nowrap px-2 py-1.5 text-xs">
+              <LastRunCell
+                status={hasRunData ? runStatus.get(String(r.wi_id)) ?? null : null}
+                hasData={hasRunData}
+              />
             </td>
           </tr>
         );
