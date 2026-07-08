@@ -1,7 +1,7 @@
 {
-  "version": "2.9.5",
+  "version": "2.9.6",
   "ref": "main",
-  "generatedAt": "2026-07-08T15:33:44.498Z",
+  "generatedAt": "2026-07-08T16:10:45.153Z",
   "files": [
     {
       "path": "ado/__init__.py",
@@ -96,7 +96,7 @@
     {
       "path": "agent/routes/health.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/health.py?ref=main",
-      "hash": "221dfe232044de782e97fbf86f283fd1c1c4743f4e64715e89ee63d6864ec552"
+      "hash": "a985f78ec2f351fc7d580c7dd2f76871899afe11029c37844b195f62406ea7a5"
     },
     {
       "path": "agent/routes/jira.py",
@@ -151,7 +151,7 @@
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "00662eac3cda8aca825f3a714199da9dbd0afb26b1e9e47c4681e6bf3eae0bbe"
+      "hash": "0bdc8eb55dcc8e6150efc9355be3448320c0b779fb6b780fd79dfd3862ab38cc"
     },
     {
       "path": "automation/__init__.py",
