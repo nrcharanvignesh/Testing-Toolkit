@@ -135,12 +135,17 @@ def test_execution_store_roundtrip(tmp_install):
         failed_tc_ids,
     )
 
+    def _tr(tc_id: str, status: str) -> TestResult:
+        return TestResult(
+            tc_id=tc_id, tc_title=f"Title {tc_id}", status=status,
+            duration_ms=10, error_message="", screenshot_path="",
+            timestamp=1000.0)
+
     run = ExecutionRun(
-        run_id="r1",
-        results=[
-            TestResult(tc_id="TC-1", status="passed"),
-            TestResult(tc_id="TC-2", status="failed"),
-        ],
+        run_id="r1", project_full="Proj",
+        started_at=1000.0, finished_at=1001.0,
+        results=[_tr("TC-1", "pass"), _tr("TC-2", "fail")],
+        total=2, passed=1, failed=1,
     )
     save_run("Proj", run)
     runs = load_runs("Proj")
