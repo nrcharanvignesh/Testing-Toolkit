@@ -1,7 +1,7 @@
 {
-  "version": "2.8.1",
+  "version": "2.8.2",
   "ref": "main",
-  "generatedAt": "2026-07-08T11:51:24.729Z",
+  "generatedAt": "2026-07-08T12:07:57.383Z",
   "files": [
     {
       "path": "ado/__init__.py",
@@ -86,7 +86,7 @@
     {
       "path": "agent/routes/e2e.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/e2e.py?ref=main",
-      "hash": "7678cf199fe0d593c1eca292a6909634ac2aa209f5319debcedbf15900401b22"
+      "hash": "ec5093629b749cb1d4f5753a767f46aae46b916d0b05e520689a9b34affe219e"
     },
     {
       "path": "agent/routes/generate.py",
@@ -151,7 +151,7 @@
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "ddc33794a9d26a9450f50e0d5f4294f031e6b8fe804e366758828e327c2102f1"
+      "hash": "7fd089c115a189391fdfea24bb8fa2edd6e47bea6dc0cb78d8189bc699b42cf0"
     },
     {
       "path": "automation/__init__.py",
@@ -171,7 +171,7 @@
     {
       "path": "automation/e2e_runner.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/automation/e2e_runner.py?ref=main",
-      "hash": "0dc872d3dc655b563d3e49ab7983568a9a059bd9fd025de81fd74b452297aa63"
+      "hash": "f09f60db4aa6e38f75aed4991e715821d4595c271a32158e5db476012cd030bc"
     },
     {
       "path": "automation/execution_store.py",
@@ -196,7 +196,7 @@
     {
       "path": "automation/script_generator.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/automation/script_generator.py?ref=main",
-      "hash": "217f5717ea4506bf0abb14f7665716275f7ec246d29ccdaea2f8959dbab46274"
+      "hash": "f7f2781f7a5d5b6f28ffcc7240b6c9d683206cda288f883a90124f74e100e83c"
     },
     {
       "path": "core/__init__.py",
