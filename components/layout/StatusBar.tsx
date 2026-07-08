@@ -71,15 +71,15 @@ function Chip({
             : "rgba(138,143,153,0.10)";
   return (
     <span
-      className="flex items-center gap-1.5 rounded-md px-2 py-0.5"
-      style={{ background: bg, color }}
+      className="tt-metric-chip"
+      style={{ background: bg, color, borderColor: `${color}33` }}
       title={title}
     >
       <span
         className={`tt-chip-dot${pulse ? " tt-animate-pulse-dot" : ""}`}
         style={{ background: color }}
       />
-      <span className="font-medium">{label}</span>
+      {label}
     </span>
   );
 }
