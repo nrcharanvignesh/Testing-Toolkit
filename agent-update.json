@@ -1,7 +1,7 @@
 {
-  "version": "2.9.4",
+  "version": "2.9.5",
   "ref": "main",
-  "generatedAt": "2026-07-08T15:20:16.407Z",
+  "generatedAt": "2026-07-08T15:33:44.498Z",
   "files": [
     {
       "path": "ado/__init__.py",
@@ -71,7 +71,7 @@
     {
       "path": "agent/routes/chat.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/chat.py?ref=main",
-      "hash": "da868f8efccb8c300d4fa1ba015853dbe9abf51398625597a2a18a7d523a2eb3"
+      "hash": "24d2de1d8865fcb753a301fc9bae14b0e7c317b7aec5b41e1e4dca1491fd47a8"
     },
     {
       "path": "agent/routes/credentials.py",
@@ -151,7 +151,7 @@
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "0490e7af49a1e11486878872b30a83e08066897da6f9ff1806c430b9e6057217"
+      "hash": "00662eac3cda8aca825f3a714199da9dbd0afb26b1e9e47c4681e6bf3eae0bbe"
     },
     {
       "path": "automation/__init__.py",
@@ -266,7 +266,7 @@
     {
       "path": "core/openai_transport.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/openai_transport.py?ref=main",
-      "hash": "6fbe0c8dcdcdcce02e389987785c13c94f65a3eb57b00a7ae6eef822dbe513ef"
+      "hash": "cbb26788553e2de28a2efdaad46e80ea17bc7095d9506a385347df35a3b7e33c"
     },
     {
       "path": "core/orchestrator.py",
