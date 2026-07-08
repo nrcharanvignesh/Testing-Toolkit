@@ -457,6 +457,122 @@ async def load_board_view_async(
     return BoardView(columns=columns, rows=rows)
 
 
+# Batch callback type: receives (batch_rows, batch_index, total_batches)
+BatchCallback = Callable[[list["WorkItemRow"], int, int], None]
+
+
+async def _fetch_rows_streaming(
+    client: httpx.AsyncClient, org: str, project: str,
+    ids: list[int], cfg: RuntimeConfig,
+    on_batch: BatchCallback | None = None,
+) -> list[WorkItemRow]:
+    """Fetch work items in batches, emitting each batch via callback as it
+    arrives. Enables progressive UI rendering without waiting for all data.
+    Uses sys.intern() on repeated low-cardinality strings (type, state,
+    column) to reduce memory via pointer dedup."""
+    from sys import intern as _intern
+
+    rows: list[WorkItemRow] = []
+    url = (
+        f"https://dev.azure.com/{org}/{project}/_apis/wit/workitemsbatch"
+        f"?api-version={API_VER_WI}"
+    )
+    total_batches = (len(ids) + _BATCH_LIMIT - 1) // _BATCH_LIMIT
+    batch_idx = 0
+    for start in range(0, len(ids), _BATCH_LIMIT):
+        batch_ids = ids[start:start + _BATCH_LIMIT]
+        body = {"ids": batch_ids, "fields": _GRID_FIELDS}
+        last_exc: Exception | None = None
+        for attempt in range(cfg.retry_count):
+            try:
+                r = await client.post(
+                    url, json=body,
+                    headers={"Content-Type": "application/json"},
+                )
+                if r.status_code in (429, 503):
+                    await asyncio.sleep(cfg.retry_backoff_sec * (attempt + 1))
+                    continue
+                r.raise_for_status()
+                batch_rows: list[WorkItemRow] = []
+                for wi in r.json().get("value", []) or []:
+                    f = wi.get("fields", {}) or {}
+                    assigned = f.get("System.AssignedTo") or {}
+                    assigned_name = (
+                        assigned.get("displayName", "")
+                        if isinstance(assigned, dict) else str(assigned)
+                    )
+                    tags_raw = str(f.get("System.Tags", "") or "")
+                    tags = [t.strip() for t in tags_raw.split(";") if t.strip()]
+                    # intern low-cardinality fields: saves ~40 bytes per dupe
+                    batch_rows.append(WorkItemRow(
+                        wi_id=int(wi.get("id", 0) or 0),
+                        title=str(f.get("System.Title", "")).strip(),
+                        wi_type=_intern(
+                            str(f.get("System.WorkItemType", "")).strip()),
+                        state=_intern(
+                            str(f.get("System.State", "")).strip()),
+                        board_column=_intern(
+                            str(f.get("System.BoardColumn", "")).strip()),
+                        board_lane=_intern(
+                            str(f.get("System.BoardLane", "") or "").strip()),
+                        assigned_to=assigned_name,
+                        tags=tags,
+                        iteration_path=_intern(
+                            str(f.get("System.IterationPath", "") or ""
+                                ).strip()),
+                        area_path=_intern(
+                            str(f.get("System.AreaPath", "") or "").strip()),
+                    ))
+                rows.extend(batch_rows)
+                if on_batch and batch_rows:
+                    on_batch(batch_rows, batch_idx, total_batches)
+                batch_idx += 1
+                break
+            except (httpx.HTTPError, _ssl.SSLError) as e:
+                last_exc = e
+                await asyncio.sleep(cfg.retry_backoff_sec * (attempt + 1))
+        else:
+            raise RuntimeError(f"workitemsbatch failed: {last_exc!r}")
+    return rows
+
+
+async def load_board_view_streaming(
+    org: str, project: str, board: "Board", cfg: RuntimeConfig,
+    scope_to_team_area: bool = True,
+    on_log: LogFn | None = None,
+    on_batch: Callable[[list["WorkItemRow"], int, int], None] | None = None,
+) -> "BoardView":
+    """Streaming variant: emits work-item batches to the UI as they arrive.
+    Returns the complete BoardView when done (same contract as
+    load_board_view_async, plus incremental batch callbacks)."""
+    columns = await get_board_columns(org, project, board, cfg)
+    wit_types = _wit_types_from_columns(columns)
+    area_paths: list[str] = []
+    if scope_to_team_area:
+        team = Team(id=board.team_id, name=board.team_name)
+        area_paths = await get_team_area_paths(org, project, team, cfg)
+    query = _build_wiql(project, wit_types, area_paths)
+    if on_log:
+        on_log(
+            f"[INFO] Board '{board.label}': {len(columns)} columns, "
+            f"types={wit_types}"
+        )
+    # Emit columns first so UI can render the skeleton
+    if on_batch:
+        on_batch([], -1, 0)  # -1 signals "columns ready, rows incoming"
+    async with _client(cfg) as client:
+        ids = await _run_wiql(client, org, project, query, cfg)
+        if on_log:
+            on_log(f"[INFO] WIQL matched {len(ids)} work item(s)")
+        rows = (
+            await _fetch_rows_streaming(
+                client, org, project, ids, cfg, on_batch=on_batch
+            )
+            if ids else []
+        )
+    return BoardView(columns=columns, rows=rows)
+
+
 # ---------------------------------------------------------------------
 # Grouping
 # ---------------------------------------------------------------------
@@ -727,6 +843,92 @@ def download_attachment_sync(
     org: str, project: str, url: str, dest: Path, cfg: RuntimeConfig,
 ) -> str:
     return asyncio.run(download_attachment_async(org, project, url, dest, cfg))
+
+
+async def tag_work_item(
+    org: str,
+    project: str,
+    work_item_id: int,
+    tag: str,
+    pat: str,
+    *,
+    ssl_ctx: Any = None,
+    on_log: Callable[[str], None] | None = None,
+) -> bool:
+    """Add a tag to an ADO work item. Returns True on success."""
+    from core.http_retry import request_with_retry
+
+    tag = tag.strip()
+    if not tag:
+        if on_log:
+            on_log("[WARN] tag_work_item called with empty tag; skipping")
+        return False
+
+    headers = build_auth_header(pat)
+    verify: bool | _ssl.SSLContext = ssl_ctx if ssl_ctx is not None else True
+
+    base = f"https://dev.azure.com/{org}/{project}/_apis/wit/workitems/{work_item_id}"
+    get_url = f"{base}?api-version={API_VER_WI}&fields=System.Tags"
+
+    try:
+        async with httpx.AsyncClient(
+            headers=headers, timeout=httpx.Timeout(30.0),
+            verify=verify, http2=False,
+        ) as client:
+            # 1. Read existing tags
+            r = await request_with_retry(client, "GET", get_url)
+            if r.status_code != 200:
+                if on_log:
+                    on_log(
+                        f"[ERROR] GET work item {work_item_id} "
+                        f"returned {r.status_code}"
+                    )
+                return False
+            fields = r.json().get("fields", {}) or {}
+            tags_raw = str(fields.get("System.Tags", "") or "")
+            existing = [t.strip() for t in tags_raw.split(";") if t.strip()]
+
+            # 2. Check if tag already present (case-insensitive)
+            if any(t.lower() == tag.lower() for t in existing):
+                if on_log:
+                    on_log(
+                        f"[INFO] Tag '{tag}' already on WI {work_item_id}; "
+                        f"no update needed"
+                    )
+                return True
+
+            # 3. Append and PATCH
+            existing.append(tag)
+            new_tags = "; ".join(existing)
+            patch_url = f"{base}?api-version={API_VER_WI}"
+            patch_body = [
+                {
+                    "op": "replace",
+                    "path": "/fields/System.Tags",
+                    "value": new_tags,
+                }
+            ]
+            r = await request_with_retry(
+                client, "PATCH", patch_url,
+                json=patch_body,
+                headers={"Content-Type": "application/json-patch+json"},
+            )
+            if r.status_code in (200, 204):
+                if on_log:
+                    on_log(
+                        f"[SUCCESS] Tagged WI {work_item_id} with '{tag}'"
+                    )
+                return True
+            if on_log:
+                on_log(
+                    f"[ERROR] PATCH work item {work_item_id} "
+                    f"returned {r.status_code}: {r.text[:200]}"
+                )
+            return False
+    except Exception as exc:
+        if on_log:
+            on_log(f"[ERROR] tag_work_item failed: {exc!r}")
+        return False
 
 
 async def fetch_ado_blob_async(

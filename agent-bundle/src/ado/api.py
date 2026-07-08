@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import base64
 import ssl as _ssl
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -132,6 +132,57 @@ async def list_projects(
                 name = str(prj.get("name", "")).strip()
                 if name:
                     out.append(name)
+            cont = r.headers.get("x-ms-continuationtoken", "").strip()
+            if cont:
+                next_url = f"{base_url}&continuationToken={cont}"
+            else:
+                next_url = None
+    out.sort(key=str.lower)
+    return out
+
+
+async def list_projects_streaming(
+    pat: str,
+    organization: str,
+    cfg: RuntimeConfig,
+    on_batch: Callable[[list[str]], None] | None = None,
+) -> list[str]:
+    """Stream project names in page-sized batches. Each page emits
+    immediately via on_batch so the UI can render progressively. Returns the
+    full sorted list when done (same contract as list_projects)."""
+    headers = build_auth_header(pat)
+    timeout = httpx.Timeout(cfg.http_timeout_sec)
+    base_url = (
+        f"https://dev.azure.com/{organization}/_apis/projects"
+        f"?api-version={API_VER_CORE}&$top=500"
+    )
+    out: list[str] = []
+    async with httpx.AsyncClient(
+        headers=headers, timeout=timeout, verify=cfg.build_ssl(),
+    ) as client:
+        next_url: str | None = base_url
+        while next_url:
+            r = await client.get(next_url)
+            if r.status_code != 200:
+                detail = (r.text or "")[:300].replace("\n", " ")
+                if r.status_code == 401:
+                    raise RuntimeError(
+                        "HTTP 401 Unauthorized from ADO. "
+                        "The PAT was sent but rejected."
+                    )
+                raise RuntimeError(
+                    f"HTTP {r.status_code} from {next_url}. "
+                    f"body={detail!r}"
+                )
+            payload: dict[str, Any] = r.json()
+            batch: list[str] = []
+            for prj in payload.get("value", []) or []:
+                name = str(prj.get("name", "")).strip()
+                if name:
+                    batch.append(name)
+            out.extend(batch)
+            if on_batch and batch:
+                on_batch(batch)
             cont = r.headers.get("x-ms-continuationtoken", "").strip()
             if cont:
                 next_url = f"{base_url}&continuationToken={cont}"
