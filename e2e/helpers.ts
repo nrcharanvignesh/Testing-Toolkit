@@ -140,8 +140,7 @@ export async function mockAgent(
     ...workItemRow,
     area_path: "Demo",
     description_html: "<p>Login story</p>",
-    acceptance_criteria_html: "<p>Given valid creds, I can sign in.</p>",
-    repro_steps_html: "",
+    acceptance_html: "<p>Given valid creds, I can sign in.</p>",
     url: "https://demo-org/_workitems/edit/101",
   };
 

@@ -7,21 +7,11 @@
  * opening any dialog. Reads entirely from app-state — zero extra API calls.
  */
 
-import { Layers, CheckSquare, TestTube2, PlayCircle, Clock } from "lucide-react";
+import { Layers, CheckSquare } from "lucide-react";
 import { useAppState } from "@/lib/app-state";
 
-function timeSince(epochSec: number): string {
-  const diffMs = Date.now() - epochSec * 1000;
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `${diffH}h ago`;
-  return `${Math.floor(diffH / 24)}d ago`;
-}
-
 export function CoverageBar() {
-  const { boardView, selected, currentBoard, generateCtx } = useAppState();
+  const { boardView, selected, currentBoard } = useAppState();
 
   // Only render when a board is loaded
   if (!boardView) return null;
@@ -29,10 +19,6 @@ export function CoverageBar() {
   const totalWi = boardView.rows.length;
   const selectedCount = selected.size;
 
-  // generateCtx carries the last n_test_cases from the most recent generation
-  // via the result stored in app-state. We surface what we have.
-  // The E2ELastRun is not yet in app-state; CoverageBar shows TC stats from
-  // generateCtx if available, otherwise omits that chip.
   const hasSelection = selectedCount > 0;
 
   return (
@@ -74,31 +60,6 @@ export function CoverageBar() {
       <TypeBreakdown rows={boardView.rows} />
 
       <div className="flex-1" />
-
-      {/* Last generation result (if ctx has it from this session) */}
-      {generateCtx.tcType && (
-        <span
-          className="tt-metric-chip"
-          style={{
-            background: "rgba(26,171,92,0.10)",
-            borderColor: "rgba(26,171,92,0.3)",
-            color: "var(--tt-success)",
-          }}
-          title="Test cases generated this session"
-        >
-          <TestTube2 className="h-3 w-3" />
-          TC generated
-        </span>
-      )}
-
-      {/* Placeholder for E2E last run — wired when e2eLastRun enters app-state */}
-      <span
-        className="tt-metric-chip opacity-40"
-        title="E2E last run — run E2E tests to see results here"
-      >
-        <PlayCircle className="h-3 w-3" />
-        E2E ready
-      </span>
     </div>
   );
 }
