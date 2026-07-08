@@ -260,6 +260,87 @@ export interface ArtifactFile {
 // ---------------------------------------------------------------------------
 // Generation / defects payloads
 // ---------------------------------------------------------------------------
+/**
+ * A test credential as returned to the browser. The password is never
+ * included; `has_password` reports whether one is stored in the vault.
+ */
+export interface MaskedCredential {
+  env: string;
+  login_url: string;
+  user_id: string;
+  login_method: string;
+  notes: string;
+  ai_instructions: string;
+  has_password: boolean;
+}
+
+/** A selectable E2E test case (steps are resolved server-side by index). */
+export interface E2ETestCase {
+  index: number;
+  wi_id: string;
+  title: string;
+  step_count: number;
+  category: string;
+}
+
+/** A runnable environment derived from a stored credential. */
+export interface E2EEnvironment {
+  env: string;
+  login_url: string;
+  user_id: string;
+  login_method: string;
+  has_password: boolean;
+}
+
+/** One executed step in an E2E result. */
+export interface E2EStepResult {
+  step_num: number;
+  action: string;
+  expected: string;
+  actual: string;
+  status: string; // pass | fail | skip | error
+  screenshot_path: string;
+}
+
+/** One executed test case in an E2E run. */
+export interface E2ECaseResult {
+  tc_id: string;
+  title: string;
+  status: string; // pass | fail | error
+  duration_ms: number;
+  script_path: string;
+  video_path: string;
+  steps: E2EStepResult[];
+}
+
+/** Final payload of a completed E2E job. */
+export interface E2ERunResult {
+  run_id: string;
+  report_path: string;
+  total: number;
+  passed: number;
+  failed: number;
+  tc_statuses: Record<string, string>;
+  results: E2ECaseResult[];
+}
+
+/** Summary of the most recent stored execution run. */
+export interface E2ELastRun {
+  run_id: string;
+  started_at: number;
+  finished_at: number;
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  results: {
+    tc_id: string;
+    tc_title: string;
+    status: string;
+    duration_ms: number;
+  }[];
+}
+
 export interface GenerationResult {
   payload: Record<string, unknown>;
   n_test_cases: number;
@@ -995,6 +1076,112 @@ export const agent = {
       throw new Error(snap.error || `Generation ${snap.state}`);
     }
     return snap.result as unknown as GenerationResult;
+  },
+
+  /**
+   * List masked test credentials for a project. Passwords are NEVER returned
+   * by the agent; each entry only reports whether a password is stored.
+   */
+  async listCredentials(project: string): Promise<MaskedCredential[]> {
+    const res = await agentFetch<{ credentials: MaskedCredential[] }>(
+      `/credentials/${encodeURIComponent(project)}`
+    );
+    return res.credentials;
+  },
+
+  /**
+   * Add or update a credential (keyed by env). Pass keep_password=true with an
+   * empty password to preserve the stored secret when editing other fields.
+   */
+  async upsertCredential(
+    project: string,
+    cred: {
+      env: string;
+      login_url: string;
+      user_id: string;
+      password?: string;
+      login_method?: string;
+      notes?: string;
+      ai_instructions?: string;
+      keep_password?: boolean;
+    }
+  ): Promise<MaskedCredential[]> {
+    const res = await agentFetch<{ credentials: MaskedCredential[] }>(
+      `/credentials/${encodeURIComponent(project)}`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          env: cred.env,
+          login_url: cred.login_url,
+          user_id: cred.user_id,
+          password: cred.password ?? "",
+          login_method: cred.login_method ?? "form",
+          notes: cred.notes ?? "",
+          ai_instructions: cred.ai_instructions ?? "",
+          keep_password: cred.keep_password ?? false,
+        }),
+      }
+    );
+    return res.credentials;
+  },
+
+  /** Delete a single credential by environment name. */
+  async deleteCredential(
+    project: string,
+    env: string
+  ): Promise<MaskedCredential[]> {
+    const res = await agentFetch<{ credentials: MaskedCredential[] }>(
+      `/credentials/${encodeURIComponent(project)}/${encodeURIComponent(env)}`,
+      { method: "DELETE" }
+    );
+    return res.credentials;
+  },
+
+  /** List generated test cases available to run for a project. */
+  async e2eTestCases(project: string): Promise<E2ETestCase[]> {
+    const res = await agentFetch<{ test_cases: E2ETestCase[] }>(
+      `/e2e/test-cases/${encodeURIComponent(project)}`
+    );
+    return res.test_cases;
+  },
+
+  /** List environments (from the vault) that can be run against. */
+  async e2eEnvironments(project: string): Promise<E2EEnvironment[]> {
+    const res = await agentFetch<{ environments: E2EEnvironment[] }>(
+      `/e2e/environments/${encodeURIComponent(project)}`
+    );
+    return res.environments;
+  },
+
+  /** Fetch a summary of the most recent execution run (or null). */
+  async e2eLastRun(project: string): Promise<E2ELastRun | null> {
+    const res = await agentFetch<{ run: E2ELastRun | null }>(
+      `/e2e/last-run/${encodeURIComponent(project)}`
+    );
+    return res.run;
+  },
+
+  /**
+   * Run E2E tests as a background job and stream progress/logs. The password
+   * stays on the agent host; only the environment name is sent.
+   */
+  async runE2E(
+    payload: { project: string; env: string; indices?: number[] },
+    handlers: JobHandlers = {}
+  ): Promise<E2ERunResult> {
+    const { job_id } = await agentFetch<{ job_id: string }>("/e2e/start", {
+      method: "POST",
+      body: JSON.stringify({
+        project: payload.project,
+        env: payload.env,
+        indices: payload.indices ?? [],
+      }),
+    });
+    const snap = await pollJob(job_id, handlers);
+    if (snap.state !== "done") {
+      throw new Error(snap.error || `E2E run ${snap.state}`);
+    }
+    return snap.result as unknown as E2ERunResult;
   },
 
   /** Build the manual-mode work-item dump + system prompt. */

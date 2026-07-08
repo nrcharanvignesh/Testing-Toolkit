@@ -73,6 +73,14 @@ export function ActionBar() {
       >
         Custom Generate
       </button>
+      <button
+        className="tt-btn-ghost !px-4 !py-1.5 text-sm"
+        disabled={!currentProject}
+        title="Manage encrypted test-environment credentials for E2E automation"
+        onClick={() => openDialog("credentials")}
+      >
+        Credentials
+      </button>
 
       <div className="flex-1" />
 

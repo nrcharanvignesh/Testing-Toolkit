@@ -27,6 +27,12 @@ truststore>=0.9
 # --- Secure credential storage ---
 keyring>=24.0
 
+# --- E2E browser automation (Playwright over CDP attach) ---
+# Drives the user's real Chrome/Edge profile so SSO/MFA state is preserved.
+# The E2E routes import this lazily, so the agent still starts without it;
+# users run `playwright install` once (or attach to their system browser).
+playwright>=1.44
+
 # --- Document extraction (KB + PDF packaging) ---
 openpyxl>=3.1
 selectolax>=0.3.21

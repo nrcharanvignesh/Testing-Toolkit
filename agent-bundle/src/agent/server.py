@@ -386,6 +386,8 @@ from agent.routes.llm import router as llm_router
 from agent.routes.chat import router as chat_router
 from agent.routes.generate import router as generate_router
 from agent.routes.defects import router as defects_router
+from agent.routes.credentials import router as credentials_router
+from agent.routes.e2e import router as e2e_router
 from agent.routes.jobs import router as jobs_router
 from agent.routes.tools import router as tools_router
 from agent.routes.artifacts import router as artifacts_router
@@ -399,6 +401,8 @@ app.include_router(llm_router, prefix="/llm")
 app.include_router(chat_router, prefix="/chat")
 app.include_router(generate_router, prefix="/generate")
 app.include_router(defects_router, prefix="/defects")
+app.include_router(credentials_router, prefix="/credentials")
+app.include_router(e2e_router, prefix="/e2e")
 app.include_router(jobs_router, prefix="/jobs")
 app.include_router(tools_router, prefix="/tools")
 app.include_router(artifacts_router, prefix="/artifacts")
