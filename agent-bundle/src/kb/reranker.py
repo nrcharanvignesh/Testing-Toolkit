@@ -1,32 +1,31 @@
 """
 reranker.py
-Final-stage precision reranking - local and CPU-friendly, no API required.
+Final-stage precision reranking via the GenAI gateway.
 
-A small cross-encoder rescoring the top hybrid candidates is the single
-biggest precision win in offline RAG. The recommended model is
-ms-marco-MiniLM-L-6-v2 (int8 ONNX, ~22-25 MB) via fastembed's
-TextCrossEncoder - fast enough to rerank 20-50 candidates in tens of ms on a
-U-series CPU.
+Primary path: the gateway's native POST /rerank endpoint
+(azure.cohere-rerank-v3-english by default), a purpose-built cross-encoder
+that is faster and cheaper than asking a chat model to order passages.
 
-Capability-gated: if fastembed (with the cross-encoder) is not installed,
-get_reranker() returns None and callers keep the fused (RRF) order. An
-LLM-based reranker is also provided for environments where only the
-completions API is available and maximum precision is wanted on a small
-candidate set.
+Fallback: llm_rerank() asks a chat model to order candidate ids (one
+completion call). Callers use native_rerank() first and fall back to
+llm_rerank() only when /rerank errors, and finally keep the fused (RRF)
+order if both fail.
 
-ASCII-only; fully type-hinted.
+All reranking is API-based; there is no local model. ASCII-only; fully
+type-hinted.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import ssl as _ssl
 from typing import Any, Final, Protocol
 
-from kb.model_bundle import bundled_models_dir
+import httpx
 
-DEFAULT_RERANKER: Final[str] = "Xenova/ms-marco-MiniLM-L-6-v2"
 _INT_RE: Final[re.Pattern[str]] = re.compile(r"\d+")
+_RERANK_PATH: Final[str] = "/rerank"
 
 
 class Reranker(Protocol):
@@ -34,85 +33,105 @@ class Reranker(Protocol):
 
     def rerank(
         self, query: str, candidates: list[tuple[str, str]], top_k: int,
-    ) -> list[tuple[str, float]]:
+    ) -> list[tuple[str, str]]:
         """candidates: list of (id, text). Returns (id, score) best-first."""
         ...
 
 
-def _build_cross_encoder(cross_encoder_cls: Any, model_name: str) -> Any:
-    """Construct a fastembed TextCrossEncoder.
+# ---------------------------------------------------------------------
+# Native gateway /rerank (cross-encoder). Preferred path.
+# ---------------------------------------------------------------------
+def native_rerank(
+    base_url: str,
+    api_key: str,
+    model: str,
+    query: str,
+    candidates: list[tuple[str, str]],
+    top_k: int,
+    ssl_verify: Any = True,
+    timeout_sec: float = 30.0,
+) -> list[tuple[str, float]] | None:
+    """Rerank candidates via the gateway POST /rerank endpoint.
 
-    Mirrors the embedder logic: when a project-local model cache is bundled,
-    load strictly offline via cache_dir + local_files_only=True (falling back
-    to cache_dir only on older fastembed builds). Otherwise default behavior.
+    Sends documents as index-tagged objects so the response order can be
+    mapped back to candidate ids regardless of whether the gateway echoes
+    the document text. Returns (id, relevance_score) best-first, or None on
+    any failure so the caller can fall back to the LLM reranker / RRF order.
     """
-    models_dir: str | None = bundled_models_dir()
-    if models_dir is not None:
-        try:
-            return cross_encoder_cls(
-                model_name=model_name,
-                cache_dir=models_dir,
-                local_files_only=True,
-            )
-        except TypeError:
-            return cross_encoder_cls(model_name=model_name, cache_dir=models_dir)
-    return cross_encoder_cls(model_name=model_name)
-
-
-class _FastEmbedReranker:
-    def __init__(self, model_name: str = DEFAULT_RERANKER) -> None:
-        from fastembed.rerank.cross_encoder import (  # type: ignore
-            TextCrossEncoder,
-        )
-
-        self._model = _build_cross_encoder(TextCrossEncoder, model_name)
-        self.name = f"fastembed:{model_name}"
-
-    def rerank(
-        self, query: str, candidates: list[tuple[str, str]], top_k: int,
-    ) -> list[tuple[str, float]]:
-        if not candidates:
-            return []
-        docs = [text for _id, text in candidates]
-        scores = list(self._model.rerank(query, docs))
-        paired = [
-            (candidates[i][0], float(scores[i])) for i in range(len(docs))
-        ]
-        paired.sort(key=lambda kv: kv[1], reverse=True)
-        return paired[:max(0, int(top_k))]
-
-
-def reranker_available() -> bool:
+    if not (api_key or "").strip() or not candidates:
+        return None
+    url = f"{(base_url or '').rstrip('/')}{_RERANK_PATH}"
+    # id -> index; the gateway returns results by index (or echoes id).
+    docs = [
+        {"text": " ".join((text or "").split())[:2000], "id": str(i)}
+        for i, (_cid, text) in enumerate(candidates)
+    ]
+    body: dict[str, Any] = {
+        "model": model,
+        "query": query,
+        "documents": docs,
+        "top_n": max(1, int(top_k)),
+        "return_documents": False,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "x-api-key": api_key,
+        "content-type": "application/json",
+        "accept": "application/json",
+    }
     try:
-        __import__("fastembed")
-        return True
+        with httpx.Client(
+            headers=headers, verify=ssl_verify,
+            timeout=httpx.Timeout(timeout_sec),
+        ) as client:
+            resp = client.post(url, json=body)
+    except (httpx.HTTPError, _ssl.SSLError):
+        return None
+    if resp.status_code != 200:
+        return None
+    try:
+        data = resp.json()
     except Exception:
-        return False
+        return None
 
+    results = data.get("results")
+    if not isinstance(results, list) or not results:
+        return None
 
-def get_reranker(model_name: str | None = None) -> "Reranker | None":
-    """Returns None - all reranking now goes through LLM API via llm_rerank().
-    Local ONNX reranker removed; callers should use llm_rerank() directly."""
-    # ponytail: local reranker disabled; all reranking via API (llm_rerank)
-    return None
-
-
-def get_reranker_strict(model_name: str | None = None) -> "Reranker | None":
-    """Web-compat verification gate used on the enforced-dense index path.
-
-    Reranking now runs via the LLM API (llm_rerank) using the SAME client the
-    embedder already verified, so there is no separate local reranker model to
-    load here. Returns None without raising: the enforced path only needs the
-    dense EMBEDDER to be strictly available (verified separately); the reranker
-    is an API call at retrieval time and must not fail indexing.
-    """
-    # ponytail: no local reranker to verify; API rerank shares the embedder's
-    # verified client. Return None (non-fatal) to preserve the enforced flow.
-    return get_reranker(model_name)
+    out: list[tuple[str, float]] = []
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        # Prefer explicit id; fall back to the numeric index key the gateway
+        # may return as "index".
+        raw_id = r.get("id")
+        idx: int | None = None
+        if raw_id is not None:
+            try:
+                idx = int(str(raw_id))
+            except (TypeError, ValueError):
+                idx = None
+        if idx is None and "index" in r:
+            try:
+                idx = int(r["index"])
+            except (TypeError, ValueError):
+                idx = None
+        if idx is None or not (0 <= idx < len(candidates)):
+            continue
+        score = r.get("relevance_score", 0.0)
+        try:
+            score_f = float(score)
+        except (TypeError, ValueError):
+            score_f = 0.0
+        out.append((candidates[idx][0], score_f))
+    if not out:
+        return None
+    out.sort(key=lambda kv: kv[1], reverse=True)
+    return out[:max(0, int(top_k))]
 
 
 # ---------------------------------------------------------------------
-# Optional: LLM-as-reranker (completions API only). Use on a SMALL
+# Fallback: LLM-as-reranker (completions API only). Use on a SMALL
 # candidate set; it costs one API call. Returns ids best-first.
 # ---------------------------------------------------------------------
 def llm_rerank(
@@ -138,7 +157,7 @@ def llm_rerank(
         f"QUERY:\n{query}\n\nPASSAGES:\n" + "\n".join(listing)
     )
     try:
-        resp = client.complete_async  # presence check only
+        _ = client.complete_async  # presence check only
     except Exception:
         return None
     try:

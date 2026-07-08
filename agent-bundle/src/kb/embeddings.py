@@ -130,6 +130,7 @@ class _APIEmbedder:
 
         url = f"{self._base_url}/embeddings"
         headers = {
+            "Authorization": f"Bearer {self._api_key}",
             "x-api-key": self._api_key,
             "content-type": "application/json",
             "accept": "application/json",

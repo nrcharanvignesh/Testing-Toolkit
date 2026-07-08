@@ -295,35 +295,62 @@ class HybridRetriever:
         return self._embedder
 
     def _ensure_reranker(self) -> Any | None:
-        """Build an API-based LLM reranker (no local ONNX). Returns a
-        lightweight wrapper with .rerank(query, candidates, top_k)."""
+        """Build an API-based reranker (no local ONNX). Returns a lightweight
+        wrapper with .rerank(query, candidates, top_k).
+
+        Primary path: the gateway's native /rerank cross-encoder. Fallback:
+        LLM-as-judge (one completion call). If neither is reachable the wrapper
+        returns an empty list and the caller keeps the fused (RRF) order.
+        """
         if self._reranker_tried:
             return self._reranker
         self._reranker_tried = True
         try:
+            from core.app_config import RERANK_MODEL
             from core.model_router import Task, route
-            from core.settings_store import build_llm_client
+            from core.settings_store import (
+                KEY_BASE_URL, build_llm_client, build_runtime_config,
+                get_setting, load_api_key,
+            )
 
             model = route(Task.LLM_RERANK)
             client = build_llm_client()
-            if client is None:
+            api_key = (load_api_key() or "").strip()
+            base_url = get_setting(KEY_BASE_URL)
+            try:
+                ssl_verify = build_runtime_config().build_ssl()
+            except Exception:
+                ssl_verify = True
+            if client is None and not api_key:
                 self._reranker = None
                 return None
 
-            class _LLMRerankerWrapper:
-                name = f"llm:{model}"
+            class _APIRerankerWrapper:
+                name = f"rerank:{RERANK_MODEL}|llm:{model}"
 
                 def rerank(self, query: str,
                            candidates: list[tuple[str, str]],
                            top_k: int) -> list[tuple[str, float]]:
-                    from kb.reranker import llm_rerank
-                    ids = llm_rerank(client, model, query, candidates, top_k)
-                    if ids:
-                        return [(cid, 1.0 / (1 + i))
-                                for i, cid in enumerate(ids)]
+                    from kb.reranker import llm_rerank, native_rerank
+                    # 1) Native gateway /rerank (preferred).
+                    if api_key:
+                        native = native_rerank(
+                            base_url=base_url, api_key=api_key,
+                            model=RERANK_MODEL, query=query,
+                            candidates=candidates, top_k=top_k,
+                            ssl_verify=ssl_verify,
+                        )
+                        if native:
+                            return native
+                    # 2) Fallback: LLM-as-judge ordering.
+                    if client is not None:
+                        ids = llm_rerank(client, model, query, candidates, top_k)
+                        if ids:
+                            return [(cid, 1.0 / (1 + i))
+                                    for i, cid in enumerate(ids)]
                     return []
 
-            self._reranker = _LLMRerankerWrapper()
+            self._reranker = _APIRerankerWrapper()
         except Exception:
             self._reranker = None
         return self._reranker

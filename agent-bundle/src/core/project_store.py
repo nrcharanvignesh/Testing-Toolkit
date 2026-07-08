@@ -364,22 +364,19 @@ def _build_hybrid_from_index(
         pass
     embedder = None
     if enable_dense and enforced:
-        # ENFORCED path: build BOTH local models (dense embedder + cross-encoder
-        # reranker) strictly. Any failure raises and is surfaced as a visible
-        # index-job error instead of a silent downgrade to lexical-only.
+        # ENFORCED path: verify the dense embedder API backend strictly. Any
+        # failure raises and is surfaced as a visible index-job error instead
+        # of a silent downgrade to lexical-only. Reranking is a retrieval-time
+        # gateway API call (kb.reranker.native_rerank), so nothing to verify
+        # here.
         from kb.embeddings import get_text_embedder_strict
-        from kb.reranker import get_reranker_strict
 
         embedder = get_text_embedder_strict()
-        # Verify the reranker can also load now, so "both local models" are
-        # guaranteed for retrieval; fail at index time if it cannot.
-        get_reranker_strict()
         if on_log is not None:
             try:
                 backend = getattr(embedder, "name", "local")
                 on_log(f"[SUCCESS] Dense indexing enforced: embedder "
-                       f"({backend}) + reranker ready; adding vectors "
-                       f"alongside BM25.")
+                       f"({backend}) ready; adding vectors alongside BM25.")
             except Exception:
                 pass
     elif enable_dense:

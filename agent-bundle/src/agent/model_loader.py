@@ -1,6 +1,7 @@
 """
 model_loader.py
-Preload ONNX embedding + reranker models at agent startup.
+Warm the API embedder client at agent startup. Reranking is a stateless
+gateway API call, so it needs no preloading.
 Runs in a background thread so the server accepts /health immediately.
 """
 
@@ -27,11 +28,9 @@ def _load() -> None:
         _embedder = get_text_embedder()
     except Exception:
         _embedder = None
-    try:
-        from kb.reranker import get_reranker
-        _reranker = get_reranker()
-    except Exception:
-        _reranker = None
+    # Reranking is a stateless gateway API call (kb.reranker.native_rerank),
+    # so there is no model to preload here.
+    _reranker = None
     _models_ready.set()
 
 

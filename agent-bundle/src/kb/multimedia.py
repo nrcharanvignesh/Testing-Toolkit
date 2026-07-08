@@ -265,7 +265,11 @@ def _extract_image_ocr(path: Path, on_log: LogFn | None) -> str:
         with httpx.Client(base_url=url, verify=ssl_ctx, timeout=120.0) as client:
             resp = client.post(
                 "/chat/completions",
-                headers={"x-api-key": key, "Content-Type": "application/json"},
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "x-api-key": key,
+                    "Content-Type": "application/json",
+                },
                 json={
                     "model": model,
                     "max_tokens": 4096,
@@ -501,7 +505,10 @@ def _transcribe_audio_whisper(
                     seg_mime = _WHISPER_MIME.get(seg.suffix.lower(), mime)
                     resp = client.post(
                         "/audio/transcriptions",
-                        headers={"x-api-key": key},
+                        headers={
+                            "Authorization": f"Bearer {key}",
+                            "x-api-key": key,
+                        },
                         files={"file": (seg.name, file_bytes, seg_mime)},
                         data={"model": "openai.whisper-1", "response_format": "text"},
                     )

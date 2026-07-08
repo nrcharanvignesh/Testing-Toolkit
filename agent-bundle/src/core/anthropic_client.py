@@ -27,10 +27,17 @@ from typing import Any, Callable, Final
 import httpx
 
 from core.app_config import ANTHROPIC_VERSION
+from core.openai_transport import (
+    OpenAIStreamAccumulator,
+    openai_message_to_blocks,
+    to_openai_messages,
+    to_openai_tools,
+)
 
 LogFn = Callable[[str], None]
 
 _MESSAGES_PATH: Final[str] = "/v1/messages"
+_CHAT_COMPLETIONS_PATH: Final[str] = "/chat/completions"
 _RETRY_STATUS: Final[frozenset[int]] = frozenset({429, 500, 502, 503, 529})
 
 # Appended to the system prompt of the agentic chat so the assistant stays
@@ -205,9 +212,16 @@ class AnthropicClient:
     retry_count: int = 3
     retry_backoff_sec: float = 2.0
     on_log: LogFn | None = None
+    # Wire protocol: "anthropic" (POST /v1/messages) or "openai"
+    # (POST /chat/completions). Both are served by the GenAI gateway.
+    provider_format: str = "anthropic"
 
     def _headers(self) -> dict[str, str]:
+        # The GenAI gateway standardizes on Authorization: Bearer. x-api-key +
+        # anthropic-version are additionally sent for the native Anthropic
+        # /v1/messages route (harmless on the OpenAI route).
         return {
+            "Authorization": f"Bearer {self.api_key}",
             "x-api-key": self.api_key,
             "anthropic-version": self.version,
             "content-type": "application/json",
@@ -217,6 +231,14 @@ class AnthropicClient:
     def _url(self) -> str:
         base = (self.base_url or "").rstrip("/")
         return f"{base}{_MESSAGES_PATH}"
+
+    def _chat_url(self) -> str:
+        base = (self.base_url or "").rstrip("/")
+        return f"{base}{_CHAT_COMPLETIONS_PATH}"
+
+    @property
+    def _is_openai(self) -> bool:
+        return (self.provider_format or "").strip().lower() == "openai"
 
     def _log(self, msg: str) -> None:
         if self.on_log:
@@ -265,6 +287,13 @@ class AnthropicClient:
             raise AnthropicAuthError(
                 "No LLM API key configured. Open Settings to add one, "
                 "or switch to Manual Mode."
+            )
+
+        if self._is_openai:
+            return await self._complete_async_openai(
+                model=model, system=system, user=user,
+                max_tokens=max_tokens, temperature=temperature,
+                stop_sequences=stop_sequences,
             )
 
         use_thinking = thinking_budget is not None and thinking_budget > 0
@@ -811,6 +840,13 @@ class AnthropicClient:
                 "No LLM API key configured. Open Settings to add one."
             )
 
+        if self._is_openai:
+            return await self._stream_tools_async_openai(
+                model=model, messages=messages, system=system, tools=tools,
+                max_tokens=max_tokens, temperature=temperature,
+                on_text_delta=on_text_delta,
+            )
+
         body: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
@@ -925,6 +961,163 @@ class AnthropicClient:
                         )
                         raise AnthropicAPIError(f"Stream error: {err_msg}")
 
+        return StreamResult(content=content_blocks, stop_reason=stop_reason)
+
+    # -----------------------------------------------------------------
+    # OpenAI /chat/completions transport (used when provider_format ==
+    # "openai"). Requests/responses are translated to/from the internal
+    # Anthropic content-block shape so no consumer code changes.
+    # -----------------------------------------------------------------
+    async def _complete_async_openai(
+        self,
+        model: str,
+        system: str,
+        user: str,
+        max_tokens: int,
+        temperature: float,
+        stop_sequences: list[str] | None,
+    ) -> CompletionResult:
+        body: dict[str, Any] = {
+            "model": model,
+            "max_tokens": int(max_tokens),
+            "temperature": float(temperature),
+            "messages": to_openai_messages(
+                system, [{"role": "user", "content": user}]
+            ),
+        }
+        if stop_sequences:
+            body["stop"] = stop_sequences
+
+        async with httpx.AsyncClient(
+            headers=self._headers(),
+            verify=self.ssl_verify,
+            timeout=httpx.Timeout(self.timeout_sec),
+        ) as client:
+            try:
+                resp = await client.post(self._chat_url(), json=body)
+            except httpx.ConnectError as e:
+                self._report_nw_failure()
+                raise AnthropicConnectionError(
+                    f"Cannot reach {self._chat_url()} (DNS/firewall): {e!r}"
+                ) from e
+            except (_ssl.SSLError, _ssl.SSLCertVerificationError) as e:
+                self._report_nw_failure()
+                raise AnthropicConnectionError(
+                    f"TLS error reaching the API (proxy interception?): {e!r}. "
+                    f"Try Rebuild TLS in Settings."
+                ) from e
+
+            if resp.status_code in (401, 403):
+                self._report_nw_failure()
+                raise AnthropicAuthError(
+                    f"HTTP {resp.status_code}: the API key was rejected. "
+                    f"{self._error_detail(resp)}"
+                )
+            if resp.status_code != 200:
+                self._report_nw_failure()
+                raise AnthropicAPIError(
+                    f"HTTP {resp.status_code}: {self._error_detail(resp)}"
+                )
+
+            self._report_nw_success()
+            data = resp.json()
+            choices = data.get("choices") or []
+            text = ""
+            if choices:
+                text = (choices[0].get("message", {}) or {}).get("content", "") or ""
+            usage_raw = data.get("usage", {}) or {}
+            return CompletionResult(
+                text=text,
+                stop_reason=(
+                    choices[0].get("finish_reason", "") if choices else ""
+                ),
+                usage=Usage(
+                    input_tokens=int(usage_raw.get("prompt_tokens", 0) or 0),
+                    output_tokens=int(
+                        usage_raw.get("completion_tokens", 0) or 0
+                    ),
+                ),
+            )
+
+    async def _stream_tools_async_openai(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        system: str,
+        tools: list[dict[str, Any]] | None,
+        max_tokens: int,
+        temperature: float,
+        on_text_delta: "Callable[[str], Any] | None",
+    ) -> "StreamResult":
+        sys_prompt = (
+            (system + _GUARDRAIL_SUFFIX) if system.strip()
+            else _GUARDRAIL_SUFFIX.lstrip()
+        )
+        body: dict[str, Any] = {
+            "model": model,
+            "max_tokens": int(max_tokens),
+            "temperature": float(temperature),
+            "messages": to_openai_messages(sys_prompt, messages),
+            "stream": True,
+        }
+        oa_tools = to_openai_tools(tools)
+        if oa_tools:
+            body["tools"] = oa_tools
+
+        headers = self._headers()
+        headers["accept"] = "text/event-stream"
+        acc = OpenAIStreamAccumulator()
+
+        async def _emit(chunk: str) -> None:
+            if not (on_text_delta and chunk):
+                return
+            res = on_text_delta(chunk)
+            if asyncio.iscoroutine(res):
+                await res
+
+        async with httpx.AsyncClient(
+            headers=headers,
+            verify=self.ssl_verify,
+            timeout=httpx.Timeout(self.timeout_sec, read=300.0),
+        ) as client:
+            async with client.stream(
+                "POST", self._chat_url(), json=body
+            ) as resp:
+                if resp.status_code in (401, 403):
+                    await resp.aread()
+                    self._report_nw_failure()
+                    raise AnthropicAuthError(
+                        f"HTTP {resp.status_code}: API key rejected."
+                    )
+                if resp.status_code != 200:
+                    await resp.aread()
+                    self._report_nw_failure()
+                    raise AnthropicAPIError(
+                        f"HTTP {resp.status_code}: {self._error_detail(resp)}"
+                    )
+
+                self._report_nw_success()
+                async for line in resp.aiter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    payload = line[6:]
+                    if payload.strip() == "[DONE]":
+                        break
+                    try:
+                        event = json.loads(payload)
+                    except Exception:
+                        continue
+                    choices = event.get("choices") or []
+                    if not choices:
+                        continue
+                    choice = choices[0]
+                    delta = choice.get("delta", {}) or {}
+                    finish = choice.get("finish_reason", "") or ""
+                    chunk = acc.add_delta(delta, finish)
+                    if chunk:
+                        await _emit(chunk)
+
+        content_blocks, stop_reason = acc.finalize()
         return StreamResult(content=content_blocks, stop_reason=stop_reason)
 
     async def list_working_models_async(

@@ -185,6 +185,13 @@ ANTHROPIC_VERSION = LLM_API_VERSION
 LLM_BASE_URL: Final[str] = _cfg("BASE_URL", DEFAULT_LLM_BASE_URL)
 LLM_API_KEY:  Final[str] = _cfg("API_KEY")
 
+# LLM wire protocol: "anthropic" (POST /v1/messages, Claude models) or
+# "openai" (POST /chat/completions, e.g. azure.gpt-4o). The GenAI gateway
+# serves both; this only selects which the client speaks.
+LLM_PROVIDER_FORMAT: Final[str] = (
+    _cfg("LLM_PROVIDER_FORMAT", "anthropic") or "anthropic"
+).strip().lower()
+
 # --- Model capability tiers (consumed by core.model_router) ---
 # Tiers map onto the three defaults above so behavior is unchanged unless a
 # deployment overrides them. LARGE=quality, MEDIUM=balanced, SMALL=cheap.
@@ -196,6 +203,11 @@ MODEL_SMALL:  Final[str] = _cfg("MODEL_SMALL", DEFAULT_FALLBACK_MODEL)
 # the tier model. Set these to pin a specific task to a specific model
 # (e.g. a cheaper non-Anthropic model for reranking/contextualization).
 MODEL_RERANK:       Final[str] = _cfg("MODEL_RERANK")
+# Native cross-encoder rerank model for the gateway POST /rerank endpoint.
+# Used at retrieval time; LLM-as-judge (MODEL_RERANK / tier) is the fallback.
+RERANK_MODEL:       Final[str] = _cfg(
+    "RERANK_MODEL", "azure.cohere-rerank-v3-english"
+)
 MODEL_CONTEXTUALIZE: Final[str] = _cfg("MODEL_CONTEXTUALIZE")
 MODEL_EXTRACT:      Final[str] = _cfg("MODEL_EXTRACT")
 MODEL_GENERATE:     Final[str] = _cfg("MODEL_GENERATE")

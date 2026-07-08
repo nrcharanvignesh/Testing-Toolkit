@@ -423,6 +423,7 @@ def build_llm_client(cfg: "RuntimeConfig | None" = None):
     """Return a configured LLMClient, or None when no API key is
     stored (the signal that the app must use Manual Mode)."""
     from core.anthropic_client import LLMClient
+    from core.app_config import LLM_PROVIDER_FORMAT
     key = (load_api_key() or "").strip()
     if not key:
         return None
@@ -432,6 +433,7 @@ def build_llm_client(cfg: "RuntimeConfig | None" = None):
         api_key=key,
         base_url=get_setting(KEY_BASE_URL),
         ssl_verify=cfg.build_ssl(),
+        provider_format=LLM_PROVIDER_FORMAT,
     )
 
 

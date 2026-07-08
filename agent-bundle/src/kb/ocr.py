@@ -143,6 +143,7 @@ def _ocr_single_image(img_bytes: bytes, page_idx: int) -> tuple[int, str]:
             }],
         }
         headers = {
+            "Authorization": f"Bearer {api_key}",
             "x-api-key": api_key,
             "content-type": "application/json",
             "accept": "application/json",

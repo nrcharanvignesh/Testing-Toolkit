@@ -62,8 +62,10 @@ def capabilities() -> dict[str, Any]:
         return bool(embedding_backend_available())
 
     def _rerank() -> bool:
-        from kb.reranker import reranker_available
-        return bool(reranker_available())
+        # Reranking is a gateway API call (native /rerank with LLM fallback);
+        # it is available whenever an API key is configured.
+        from core.settings_store import has_api_key
+        return bool(has_api_key())
 
     caps["dense_retrieval"] = _safe(_dense)
     caps["reranker"] = _safe(_rerank)
@@ -170,17 +172,18 @@ def run_doctor() -> dict[str, Any]:
 
     # --- Reranker backend ---------------------------------------------------
     try:
-        from kb.reranker import reranker_available
+        from core.settings_store import has_api_key
 
-        ok = bool(reranker_available())
+        ok = bool(has_api_key())
         _check(
-            checks, "reranker", "Cross-encoder reranker",
+            checks, "reranker", "Cross-encoder reranker (API /rerank)",
             _PASS if ok else _WARN,
-            "available" if ok else "fastembed reranker not importable",
-            "" if ok else "Reinstall the agent to restore the reranker model.",
+            "gateway /rerank available" if ok
+            else "no API key configured",
+            "" if ok else "Add an LLM API key in Settings to enable reranking.",
         )
     except Exception as e:  # noqa: BLE001
-        _check(checks, "reranker", "Cross-encoder reranker", _WARN,
+        _check(checks, "reranker", "Cross-encoder reranker (API /rerank)", _WARN,
                f"probe failed: {e!r}")
 
     # --- Bundled offline model files ---------------------------------------
