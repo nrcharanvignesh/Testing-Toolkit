@@ -24,6 +24,94 @@ import sys
 from pathlib import Path
 from typing import Final
 
+
+# --------------------- .env loader (no deps) ---------------------
+# The frozen agent bundle ships its LLM service-account credentials in a
+# bundled .env (dev) or DPAPI-encrypted .env.enc (frozen Windows build), the
+# same way the desktop app does. Process environment variables still take
+# precedence so cloud/dev deployments can override without a file.
+def _dpapi_decrypt_bytes(data: bytes) -> bytes | None:
+    """Decrypt bytes with Windows DPAPI (CurrentUser scope). Returns None on
+    non-Windows or on failure."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        import ctypes.wintypes
+
+        class _Blob(ctypes.Structure):
+            _fields_ = [
+                ("cbData", ctypes.wintypes.DWORD),
+                ("pbData", ctypes.POINTER(ctypes.c_char)),
+            ]
+
+        inp = _Blob(len(data), ctypes.create_string_buffer(data, len(data)))
+        out = _Blob()
+        if ctypes.windll.crypt32.CryptUnprotectData(
+            ctypes.byref(inp), None, None, None, None, 0, ctypes.byref(out)
+        ):
+            result = ctypes.string_at(out.pbData, out.cbData)
+            ctypes.windll.kernel32.LocalFree(out.pbData)
+            return result
+    except Exception:
+        return None
+    return None
+
+
+def _parse_env_text(text: str) -> dict[str, str]:
+    """Parse KEY=VALUE lines from env text, skipping comments and blanks."""
+    result: dict[str, str] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        eq = line.find("=")
+        if eq < 1:
+            continue
+        result[line[:eq].strip()] = line[eq + 1:].strip()
+    return result
+
+
+def _load_env() -> dict[str, str]:
+    """Load LLM config from .env (dev) or .env.enc (frozen/encrypted).
+    Frozen builds use a DPAPI-encrypted .env.enc for secret protection; dev
+    mode reads a plaintext .env. Returns an empty dict on any failure."""
+    mei: str = getattr(sys, "_MEIPASS", "")
+    base = Path(mei) if mei else Path(__file__).resolve().parent.parent
+
+    enc_path = base / ".env.enc"
+    if enc_path.exists():
+        try:
+            decrypted = _dpapi_decrypt_bytes(enc_path.read_bytes())
+            if decrypted:
+                return _parse_env_text(decrypted.decode("utf-8"))
+        except Exception:
+            pass
+
+    env_path = base / ".env"
+    if env_path.exists():
+        try:
+            return _parse_env_text(env_path.read_text(encoding="utf-8"))
+        except OSError:
+            pass
+
+    return {}
+
+
+_ENV: Final[dict[str, str]] = _load_env()
+
+
+def _cfg(name: str, default: str = "") -> str:
+    """Resolve a config value with precedence: process env > bundled .env >
+    default. Keeps cloud/dev overrides working while letting the frozen agent
+    read its shipped service-account credentials."""
+    val = (os.environ.get(name) or "").strip()
+    if val:
+        return val
+    val = (_ENV.get(name) or "").strip()
+    return val or default
+
+
 # -------------------------- IDENTITY --------------------------
 APP_NAME:    Final[str] = "Testing Toolkit"
 APP_SLUG:    Final[str] = "TestingToolkit"
@@ -91,31 +179,34 @@ ANTHROPIC_VERSION = LLM_API_VERSION
 # Env-overridable LLM endpoint + key. Primary source is settings_store
 # (per-user settings.json); these act as the fallback when settings has no
 # value. Callers use e.g. `(load_api_key() or "").strip() or LLM_API_KEY`.
-LLM_BASE_URL: Final[str] = (os.environ.get("BASE_URL") or "").strip() or DEFAULT_LLM_BASE_URL
-LLM_API_KEY:  Final[str] = (os.environ.get("API_KEY") or "").strip()
+# BASE_URL/API_KEY resolve with precedence: process env > bundled .env(.enc)
+# > hardcoded default. This lets the frozen agent ship a service-account key
+# in .env.enc while cloud/dev deployments override via process env.
+LLM_BASE_URL: Final[str] = _cfg("BASE_URL", DEFAULT_LLM_BASE_URL)
+LLM_API_KEY:  Final[str] = _cfg("API_KEY")
 
 # --- Model capability tiers (consumed by core.model_router) ---
 # Tiers map onto the three defaults above so behavior is unchanged unless a
-# deployment overrides them via env. LARGE=quality, MEDIUM=balanced, SMALL=cheap.
-MODEL_LARGE:  Final[str] = (os.environ.get("MODEL_LARGE") or "").strip() or DEFAULT_MODEL
-MODEL_MEDIUM: Final[str] = (os.environ.get("MODEL_MEDIUM") or "").strip() or DEFAULT_FAST_MODEL
-MODEL_SMALL:  Final[str] = (os.environ.get("MODEL_SMALL") or "").strip() or DEFAULT_FALLBACK_MODEL
+# deployment overrides them. LARGE=quality, MEDIUM=balanced, SMALL=cheap.
+MODEL_LARGE:  Final[str] = _cfg("MODEL_LARGE", DEFAULT_MODEL)
+MODEL_MEDIUM: Final[str] = _cfg("MODEL_MEDIUM", DEFAULT_FAST_MODEL)
+MODEL_SMALL:  Final[str] = _cfg("MODEL_SMALL", DEFAULT_FALLBACK_MODEL)
 
 # Optional per-task overrides. Empty by default -> model_router falls back to
-# the tier model. Set these in env to pin a specific task to a specific model
+# the tier model. Set these to pin a specific task to a specific model
 # (e.g. a cheaper non-Anthropic model for reranking/contextualization).
-MODEL_RERANK:       Final[str] = (os.environ.get("MODEL_RERANK") or "").strip()
-MODEL_CONTEXTUALIZE: Final[str] = (os.environ.get("MODEL_CONTEXTUALIZE") or "").strip()
-MODEL_EXTRACT:      Final[str] = (os.environ.get("MODEL_EXTRACT") or "").strip()
-MODEL_GENERATE:     Final[str] = (os.environ.get("MODEL_GENERATE") or "").strip()
-MODEL_CHAT:         Final[str] = (os.environ.get("MODEL_CHAT") or "").strip()
-MODEL_OCR:          Final[str] = (os.environ.get("MODEL_OCR") or "").strip()
+MODEL_RERANK:       Final[str] = _cfg("MODEL_RERANK")
+MODEL_CONTEXTUALIZE: Final[str] = _cfg("MODEL_CONTEXTUALIZE")
+MODEL_EXTRACT:      Final[str] = _cfg("MODEL_EXTRACT")
+MODEL_GENERATE:     Final[str] = _cfg("MODEL_GENERATE")
+MODEL_CHAT:         Final[str] = _cfg("MODEL_CHAT")
+MODEL_OCR:          Final[str] = _cfg("MODEL_OCR")
 
 # --- Embedding model (consumed by kb.embeddings API embedder) ---
-# API-based embeddings (matches desktop). Override via env for a different
+# API-based embeddings (matches desktop). Override for a different
 # embedding model/dimension.
-EMBED_MODEL: Final[str] = (os.environ.get("EMBED_MODEL") or "").strip() or "azure.text-embedding-3-small"
-EMBED_DIM:   Final[int] = int((os.environ.get("EMBED_DIM") or "").strip() or "512")
+EMBED_MODEL: Final[str] = _cfg("EMBED_MODEL", "azure.text-embedding-3-small")
+EMBED_DIM:   Final[int] = int(_cfg("EMBED_DIM", "512") or "512")
 
 # Token budgets for the Recursive Language Model (approximate; we count
 # characters at ~4 chars/token). If the whole project KB fits under

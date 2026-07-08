@@ -763,6 +763,105 @@ export const agent = {
     return { columns, rows };
   },
 
+  /**
+   * Progressive board load over SSE (ADO only). Calls onProgress with the
+   * accumulated rows as each batch arrives, then resolves with the final
+   * BoardView (authoritative columns + all rows). Throws for JIRA projects or
+   * transport errors so callers can fall back to the blocking boardView().
+   *
+   * ponytail: unbounded row accumulation in memory; fine for board sizes
+   * (hundreds-to-thousands). Add windowing if a board ever returns 100k+ rows.
+   */
+  async boardViewStream(
+    project: string,
+    board: Board,
+    onProgress: (rows: WorkItemRow[], sofar: number, total: number) => void,
+    signal?: AbortSignal
+  ): Promise<BoardView> {
+    const res = await fetch(`${AGENT_URL}/sources/workitems/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project,
+        board_id: board.id,
+        board_name: board.name,
+        team_id: board.team_id,
+        team_name: board.team_name,
+      }),
+      signal,
+    });
+    if (!res.ok || !res.body) {
+      const body = await res.text().catch(() => "");
+      throw new Error(humanizeError(res.status, body));
+    }
+
+    const rows: WorkItemRow[] = [];
+    let columns: BoardColumn[] = [];
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    const handleEvent = (raw: string) => {
+      const line = raw.trim();
+      if (!line.startsWith("data:")) return;
+      const payload = line.slice(5).trim();
+      if (!payload) return;
+      let evt: {
+        type?: string;
+        items?: WorkItemRow[];
+        sofar?: number;
+        total?: number;
+        columns?: string[];
+        message?: string;
+      };
+      try {
+        evt = JSON.parse(payload);
+      } catch {
+        return;
+      }
+      if (evt.type === "batch" && evt.items) {
+        for (const item of evt.items) {
+          rows.push({
+            ...item,
+            board_column: item.board_column || "",
+          });
+        }
+        onProgress([...rows], evt.sofar ?? rows.length, evt.total ?? 0);
+      } else if (evt.type === "done") {
+        columns = (evt.columns ?? []).map((name) => ({
+          id: name,
+          name,
+          column_type: "",
+        }));
+      } else if (evt.type === "error") {
+        throw new Error(evt.message || "Streaming board load failed");
+      }
+    };
+
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() ?? "";
+      for (const chunk of chunks) handleEvent(chunk);
+    }
+    if (buffer.trim()) handleEvent(buffer);
+
+    // Fallback: if no columns arrived (older/edge case), derive from rows.
+    if (columns.length === 0) {
+      const seen = new Set<string>();
+      for (const r of rows) {
+        const c = r.board_column || "";
+        if (c && !seen.has(c)) {
+          seen.add(c);
+          columns.push({ id: c, name: c, column_type: "" });
+        }
+      }
+    }
+    return { columns, rows };
+  },
+
   async workItemDetail(project: string, wiId: WiId): Promise<WorkItemDetail> {
     const d = await agentFetch<RawWorkItemDetail>(
       `/sources/workitem/${encodeURIComponent(project)}/${encodeURIComponent(

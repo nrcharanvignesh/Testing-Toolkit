@@ -178,6 +178,31 @@ async def list_work_items(req: WorkItemsRequest) -> dict[str, Any]:
     )
 
 
+@router.post("/workitems/stream")
+async def list_work_items_stream(req: WorkItemsRequest):
+    """Progressive board load (SSE). ADO-only: JIRA has no streaming loader, so
+    JIRA projects get a 400 and the client falls back to POST /workitems."""
+    bare, _ = strip_source_suffix(req.project)
+    if _source_of(req.project) is SourceType.JIRA:
+        raise HTTPException(
+            400, "Streaming board load is only supported for ADO"
+        )
+    from agent.routes.ado import (
+        WorkItemsRequest as AReq,
+        list_work_items_stream as _ado_stream,
+    )
+
+    return await _ado_stream(
+        AReq(
+            project=bare,
+            board_id=req.board_id,
+            board_name=req.board_name,
+            team_id=req.team_id,
+            team_name=req.team_name,
+        )
+    )
+
+
 @router.get("/workitem/{project}/{wi_id}")
 async def work_item_detail(project: str, wi_id: str) -> dict[str, Any]:
     """Dispatch single work-item detail to the resolved source. ADO ids are

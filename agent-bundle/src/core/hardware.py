@@ -328,3 +328,11 @@ def hardware_summary() -> dict[str, object]:
         "gpu_name": gpu_device_name(),
         "onnx_providers": onnx_providers(),
     }
+
+
+def platform_tag() -> str:
+    """Short platform+arch string for logs, e.g. 'Windows/AMD64' or
+    'Darwin/arm64'. Safe to call at any point."""
+    import platform as _p
+
+    return f"{_p.system()}/{_p.machine()}"

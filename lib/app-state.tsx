@@ -328,7 +328,26 @@ export function AppStateProvider({
       setSelected(new Set());
       pushLog("INFO", `Loading board '${board.label}'...`);
       try {
-        const view = await agent.boardView(project, board);
+        // Progressive load: lanes fill as rows stream in (ADO). Falls back to
+        // the blocking loader for JIRA or if streaming is unavailable.
+        let view: BoardView;
+        try {
+          view = await agent.boardViewStream(project, board, (rows) => {
+            // Render partial rows immediately; columns are finalized on done.
+            const seen = new Set<string>();
+            const cols = [];
+            for (const r of rows) {
+              const c = r.board_column || "";
+              if (c && !seen.has(c)) {
+                seen.add(c);
+                cols.push({ id: c, name: c, column_type: "" });
+              }
+            }
+            setBoardView({ columns: cols, rows: [...rows] });
+          });
+        } catch {
+          view = await agent.boardView(project, board);
+        }
         setBoardView(view);
         pushLog(
           "SUCCESS",
