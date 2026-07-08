@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AgentProvider } from "@/lib/agent-context";
+import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -20,8 +21,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport = {
-  themeColor: "#0d1017",
-  colorScheme: "dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#0d1017" },
+    { media: "(prefers-color-scheme: light)", color: "#f4f6f9" },
+  ],
 };
 
 export default function RootLayout({
@@ -32,11 +35,17 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
-      style={{ background: "#0d1017" }}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
+      <head>
+        {/* Set the theme class before first paint to avoid a flash. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="h-full overflow-hidden bg-background text-foreground">
-        <AgentProvider>{children}</AgentProvider>
+        <ThemeProvider>
+          <AgentProvider>{children}</AgentProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

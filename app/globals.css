@@ -2,23 +2,19 @@
 @import "tw-animate-css";
 
 /* ============================================================
- * Testing Toolkit - Material Design 3 / Apple HIG DARK THEME
- * Faithful port of src/ui/theme.py (DARK_QSS).
+ * Testing Toolkit - Material Design 3 / Apple HIG THEME
+ * Port of src/ui/theme.py (DARK_QSS), extended with a LIGHT
+ * theme for the web app (the desktop app is dark-only).
  *
- * Surface hierarchy (darkest -> brightest):
- *   Deepest:   #0d1017   (window bg, toolbars, rails)
- *   Base:      #13161d   (inputs, lists, panels)
- *   Container: #1a1d26   (cards, kanban cards)
- *   High:      #252830   (buttons, interactive)
- *   Highest:   #2f333d   (hover states)
- *   Outline:   #2d313c   (all borders)
+ * All surface / text / role colors are CSS variables (--tt-*)
+ * so a single class swap on <html> (.light) re-themes the whole
+ * app. Both the .tt-* component classes below AND the inline
+ * Tailwind arbitrary values in components read these vars, e.g.
+ *   text-[var(--tt-text-secondary)]  bg-[var(--tt-surface-base)]
  *
- * Color roles:
- *   Primary:   #5ba8ff   (focus rings, active tabs)
- *   Action:    #0071e3   (Apple blue - button fill)
- *   Success:   #1aab5c   (green - go/confirm)
- *   Error:     #e53e3e   (red - destructive)
- *   Text:      #edf0f5   (primary text)
+ * DARK surface hierarchy (darkest -> brightest):
+ *   deepest #0d1017  base #13161d  container #1a1d26
+ *   high #252830  highest #2f333d  outline #2d313c
  * ============================================================ */
 
 @theme inline {
@@ -45,17 +41,17 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  /* Surface hierarchy (raw) */
-  --color-surface-deepest: #0d1017;
-  --color-surface-base: #13161d;
-  --color-surface-container: #1a1d26;
-  --color-surface-high: #252830;
-  --color-surface-highest: #2f333d;
-  --color-outline: #2d313c;
-  --color-outline-soft: #1e2128;
-  --color-action: #0071e3;
-  --color-action-hover: #0077ed;
-  --color-action-press: #005bb5;
+  /* Palette exposed as utilities (bg-surface-*, etc.) */
+  --color-surface-deepest: var(--tt-surface-deepest);
+  --color-surface-base: var(--tt-surface-base);
+  --color-surface-container: var(--tt-surface-container);
+  --color-surface-high: var(--tt-surface-high);
+  --color-surface-highest: var(--tt-surface-highest);
+  --color-outline: var(--tt-outline);
+  --color-outline-soft: var(--tt-outline-soft);
+  --color-action: var(--tt-action);
+  --color-action-hover: var(--tt-action-hover);
+  --color-action-press: var(--tt-action-press);
 
   /* OS-style title bar (teal) used on the app frame and dialog frames */
   --color-titlebar: #159a9a;
@@ -71,31 +67,171 @@
   --radius-xl: 14px;
 }
 
-:root {
-  /* Dark-only app: tokens map directly to the app palette */
-  --background: #0d1017;
-  --foreground: #edf0f5;
-  --card: #1a1d26;
-  --card-foreground: #edf0f5;
-  --popover: #13161d;
-  --popover-foreground: #edf0f5;
-  --primary: #5ba8ff;
+/* ---------- DARK THEME (default) ---------- */
+:root,
+.dark {
+  /* Palette (--tt-*) */
+  --tt-surface-deepest: #0d1017;
+  --tt-surface-base: #13161d;
+  --tt-surface-container: #1a1d26;
+  --tt-surface-high: #252830;
+  --tt-surface-highest: #2f333d;
+  --tt-surface-sunken: #181b22;
+  --tt-input-focus-bg: #161a22;
+  --tt-wi-hover: #1f2330;
+
+  --tt-outline: #2d313c;
+  --tt-outline-soft: #1e2128;
+  --tt-border-strong: #3a3e4a;
+  --tt-scroll-thumb: #2d313c;
+  --tt-scroll-thumb-hover: #4a4e58;
+
+  --tt-text-primary: #edf0f5;
+  --tt-text-bright: #c7ccd6;
+  --tt-text-secondary: #bfc4cc;
+  --tt-text-muted: #8a8f99;
+  --tt-text-dim: #7a7f8a;
+  --tt-text-faint: #5a5f6a;
+  --tt-text-disabled: #4a4e58;
+  --tt-on-accent: #ffffff;
+
+  --tt-primary: #5ba8ff;
+  --tt-primary-soft: #7abaff;
+  --tt-primary-bright: #a9d0ff;
+  --tt-action: #0071e3;
+  --tt-action-hover: #0077ed;
+  --tt-action-press: #005bb5;
+
+  --tt-success: #1aab5c;
+  --tt-success-hover: #22c46a;
+  --tt-success-press: #148a49;
+  --tt-success-soft: #7fd1b9;
+  --tt-success-bg: #0d2a1c;
+
+  --tt-danger: #e53e3e;
+  --tt-danger-hover: #f05252;
+  --tt-danger-press: #c53030;
+
+  --tt-warn: #f59e0b;
+  --tt-warn-alt: #d69e2e;
+  --tt-info: #3b82f6;
+
+  --tt-accent-bg: #0d1f3d;
+  --tt-accent-border: #153060;
+  --tt-row-sel: #16466e;
+  --tt-link-hover-border: #3a6ea5;
+
+  --tt-help-bg: #1a2540;
+  --tt-help-border: #2a4070;
+  --tt-help-header: #7abaff;
+  --tt-help-body: #b8d4f0;
+
+  /* shadcn tokens mapped onto the palette */
+  --background: var(--tt-surface-deepest);
+  --foreground: var(--tt-text-primary);
+  --card: var(--tt-surface-container);
+  --card-foreground: var(--tt-text-primary);
+  --popover: var(--tt-surface-base);
+  --popover-foreground: var(--tt-text-primary);
+  --primary: var(--tt-primary);
   --primary-foreground: #ffffff;
-  --secondary: #252830;
-  --secondary-foreground: #edf0f5;
-  --muted: #13161d;
-  --muted-foreground: #8a8f99;
-  --accent: #1a1d26;
-  --accent-foreground: #edf0f5;
-  --destructive: #e53e3e;
+  --secondary: var(--tt-surface-high);
+  --secondary-foreground: var(--tt-text-primary);
+  --muted: var(--tt-surface-base);
+  --muted-foreground: var(--tt-text-muted);
+  --accent: var(--tt-surface-container);
+  --accent-foreground: var(--tt-text-primary);
+  --destructive: var(--tt-danger);
   --destructive-foreground: #ffffff;
-  --success: #1aab5c;
-  --warn: #f59e0b;
-  --info: #3b82f6;
-  --border: #2d313c;
-  --input: #2d313c;
-  --ring: #5ba8ff;
+  --success: var(--tt-success);
+  --warn: var(--tt-warn);
+  --info: var(--tt-info);
+  --border: var(--tt-outline);
+  --input: var(--tt-outline);
+  --ring: var(--tt-primary);
   --radius: 0.625rem;
+}
+
+/* ---------- LIGHT THEME ---------- */
+.light {
+  --tt-surface-deepest: #f4f6f9;
+  --tt-surface-base: #ffffff;
+  --tt-surface-container: #ffffff;
+  --tt-surface-high: #eceef2;
+  --tt-surface-highest: #e1e4ea;
+  --tt-surface-sunken: #dfe3e9;
+  --tt-input-focus-bg: #ffffff;
+  --tt-wi-hover: #eef1f6;
+
+  --tt-outline: #d6dae1;
+  --tt-outline-soft: #e6e9ee;
+  --tt-border-strong: #c3c8d1;
+  --tt-scroll-thumb: #c3c8d1;
+  --tt-scroll-thumb-hover: #a7adb8;
+
+  --tt-text-primary: #1a1d26;
+  --tt-text-bright: #0d1017;
+  --tt-text-secondary: #3d4351;
+  --tt-text-muted: #656b78;
+  --tt-text-dim: #767c88;
+  --tt-text-faint: #9298a3;
+  --tt-text-disabled: #b3b8c1;
+  --tt-on-accent: #ffffff;
+
+  --tt-primary: #0071e3;
+  --tt-primary-soft: #0a63c4;
+  --tt-primary-bright: #005bb5;
+  --tt-action: #0071e3;
+  --tt-action-hover: #0077ed;
+  --tt-action-press: #005bb5;
+
+  --tt-success: #12924e;
+  --tt-success-hover: #16a558;
+  --tt-success-press: #0e7a41;
+  --tt-success-soft: #0e7a41;
+  --tt-success-bg: #e6f6ee;
+
+  --tt-danger: #d92d2d;
+  --tt-danger-hover: #e14444;
+  --tt-danger-press: #b52424;
+
+  --tt-warn: #b7791f;
+  --tt-warn-alt: #a06d1c;
+  --tt-info: #2563eb;
+
+  --tt-accent-bg: #e3f0ff;
+  --tt-accent-border: #a9ceff;
+  --tt-row-sel: #2b6cb0;
+  --tt-link-hover-border: #6ea8dd;
+
+  --tt-help-bg: #eaf2fe;
+  --tt-help-border: #bcd6f7;
+  --tt-help-header: #1a5fb4;
+  --tt-help-body: #33507a;
+
+  /* shadcn tokens */
+  --background: var(--tt-surface-deepest);
+  --foreground: var(--tt-text-primary);
+  --card: var(--tt-surface-container);
+  --card-foreground: var(--tt-text-primary);
+  --popover: var(--tt-surface-base);
+  --popover-foreground: var(--tt-text-primary);
+  --primary: var(--tt-primary);
+  --primary-foreground: #ffffff;
+  --secondary: var(--tt-surface-high);
+  --secondary-foreground: var(--tt-text-primary);
+  --muted: var(--tt-surface-high);
+  --muted-foreground: var(--tt-text-muted);
+  --accent: var(--tt-surface-high);
+  --accent-foreground: var(--tt-text-primary);
+  --destructive: var(--tt-danger);
+  --destructive-foreground: #ffffff;
+  --success: var(--tt-success);
+  --warn: var(--tt-warn);
+  --info: var(--tt-info);
+  --border: var(--tt-outline);
+  --input: var(--tt-outline);
+  --ring: var(--tt-primary);
 }
 
 @layer base {
@@ -115,7 +251,7 @@
   /* macOS-style ultra-thin scrollbars (matches QSS) */
   * {
     scrollbar-width: thin;
-    scrollbar-color: #2d313c transparent;
+    scrollbar-color: var(--tt-scroll-thumb) transparent;
   }
   *::-webkit-scrollbar {
     width: 7px;
@@ -125,25 +261,25 @@
     background: transparent;
   }
   *::-webkit-scrollbar-thumb {
-    background: #2d313c;
+    background: var(--tt-scroll-thumb);
     border-radius: 3px;
   }
   *::-webkit-scrollbar-thumb:hover {
-    background: #4a4e58;
+    background: var(--tt-scroll-thumb-hover);
   }
 }
 
 @layer components {
   /* ---- role="card" ---- */
   .tt-card {
-    background: #1a1d26;
-    border: 1px solid #2d313c;
+    background: var(--tt-surface-container);
+    border: 1px solid var(--tt-outline);
     border-radius: 14px;
   }
 
   /* ---- role="header" label ---- */
   .tt-header {
-    color: #ffffff;
+    color: var(--tt-text-primary);
     font-weight: 700;
     font-size: 11.5pt;
     letter-spacing: 0.3px;
@@ -151,9 +287,9 @@
 
   /* ---- Standard button ---- */
   .tt-btn {
-    background: #252830;
-    color: #edf0f5;
-    border: 1px solid #3a3e4a;
+    background: var(--tt-surface-high);
+    color: var(--tt-text-primary);
+    border: 1px solid var(--tt-border-strong);
     border-radius: 10px;
     padding: 7px 16px;
     font-weight: 500;
@@ -165,21 +301,21 @@
     gap: 6px;
   }
   .tt-btn:hover {
-    background: #2f333d;
-    border-color: #5ba8ff;
+    background: var(--tt-surface-highest);
+    border-color: var(--tt-primary);
   }
   .tt-btn:active {
-    background: #181b22;
+    background: var(--tt-surface-sunken);
   }
   .tt-btn:disabled {
-    color: #4a4e58;
-    border-color: #252830;
+    color: var(--tt-text-disabled);
+    border-color: var(--tt-surface-high);
     cursor: not-allowed;
   }
 
   /* Primary (Apple blue) */
   .tt-btn-primary {
-    background: #0071e3;
+    background: var(--tt-action);
     color: #ffffff;
     border: none;
     font-weight: 600;
@@ -187,21 +323,21 @@
     border-radius: 10px;
   }
   .tt-btn-primary:hover {
-    background: #0077ed;
+    background: var(--tt-action-hover);
     border-color: transparent;
   }
   .tt-btn-primary:active {
-    background: #005bb5;
+    background: var(--tt-action-press);
   }
   .tt-btn-primary:disabled {
-    background: #252830;
-    color: #4a4e58;
-    border: 1px solid #2d313c;
+    background: var(--tt-surface-high);
+    color: var(--tt-text-disabled);
+    border: 1px solid var(--tt-outline);
   }
 
   /* Success (green) */
   .tt-btn-success {
-    background: #1aab5c;
+    background: var(--tt-success);
     color: #ffffff;
     border: none;
     font-weight: 600;
@@ -209,20 +345,20 @@
     border-radius: 10px;
   }
   .tt-btn-success:hover {
-    background: #22c46a;
+    background: var(--tt-success-hover);
   }
   .tt-btn-success:active {
-    background: #148a49;
+    background: var(--tt-success-press);
   }
   .tt-btn-success:disabled {
-    background: #252830;
-    color: #4a4e58;
-    border: 1px solid #2d313c;
+    background: var(--tt-surface-high);
+    color: var(--tt-text-disabled);
+    border: 1px solid var(--tt-outline);
   }
 
   /* Danger (red) */
   .tt-btn-danger {
-    background: #e53e3e;
+    background: var(--tt-danger);
     color: #ffffff;
     border: none;
     font-weight: 600;
@@ -230,17 +366,17 @@
     border-radius: 10px;
   }
   .tt-btn-danger:hover {
-    background: #f05252;
+    background: var(--tt-danger-hover);
   }
   .tt-btn-danger:active {
-    background: #c53030;
+    background: var(--tt-danger-press);
   }
 
   /* Ghost / footer-toggle */
   .tt-btn-ghost {
     background: transparent;
-    color: #8a8f99;
-    border: 1px solid #2d313c;
+    color: var(--tt-text-muted);
+    border: 1px solid var(--tt-outline);
     border-radius: 10px;
     padding: 5px 12px;
     font-weight: 500;
@@ -252,25 +388,22 @@
     gap: 6px;
   }
   .tt-btn-ghost:hover {
-    background: #1a1d26;
-    color: #edf0f5;
-    border-color: #5ba8ff;
+    background: var(--tt-surface-container);
+    color: var(--tt-text-primary);
+    border-color: var(--tt-primary);
   }
   .tt-btn-ghost[data-active="true"] {
-    background: #0d1f3d;
-    color: #5ba8ff;
-    border-color: #153060;
+    background: var(--tt-accent-bg);
+    color: var(--tt-primary);
+    border-color: var(--tt-accent-border);
   }
   .tt-btn-ghost:disabled {
-    color: #4a4e58;
+    color: var(--tt-text-disabled);
     cursor: not-allowed;
   }
 
   /* App-wide: buttons size their WIDTH to the text (never a fixed width) while
-     keeping a consistent height. white-space:nowrap stops labels like
-     "AI Generate" / "Push to ADO" from wrapping to two lines, and
-     flex-shrink:0 + width:auto stop a flex/grid footer from squeezing them
-     below their content width. */
+     keeping a consistent height. */
   .tt-btn,
   .tt-btn-primary,
   .tt-btn-success,
@@ -283,35 +416,35 @@
 
   /* ---- Inputs ---- */
   .tt-input {
-    background: #13161d;
-    border: 1px solid #2d313c;
+    background: var(--tt-surface-base);
+    border: 1px solid var(--tt-outline);
     border-radius: 10px;
     padding: 6px 10px;
-    color: #edf0f5;
+    color: var(--tt-text-primary);
     width: 100%;
     outline: none;
     transition: border-color 0.12s ease, background 0.12s ease;
   }
   .tt-input::placeholder {
-    color: #5a5f6a;
+    color: var(--tt-text-faint);
   }
   .tt-input:focus {
-    border-color: #5ba8ff;
-    background: #161a22;
+    border-color: var(--tt-primary);
+    background: var(--tt-input-focus-bg);
   }
   .tt-input:disabled {
-    color: #4a4e58;
-    border-color: #1e2128;
+    color: var(--tt-text-disabled);
+    border-color: var(--tt-outline-soft);
   }
   select.tt-input option {
-    background: #13161d;
-    color: #edf0f5;
+    background: var(--tt-surface-base);
+    color: var(--tt-text-primary);
   }
 
   /* ---- Left navigation rail ---- */
   .tt-rail {
-    background: #0d1017;
-    border-right: 1px solid #1e2128;
+    background: var(--tt-surface-deepest);
+    border-right: 1px solid var(--tt-outline-soft);
   }
 
   /* ---- Lists ---- */
@@ -319,25 +452,25 @@
     padding: 5px 8px;
     border-radius: 8px;
     cursor: pointer;
-    color: #bfc4cc;
+    color: var(--tt-text-secondary);
     transition: background 0.1s ease, color 0.1s ease;
   }
   .tt-list-item:hover {
-    background: #1a1d26;
+    background: var(--tt-surface-container);
   }
   .tt-list-item[data-selected="true"] {
-    background: #0071e3;
+    background: var(--tt-action);
     color: #ffffff;
   }
 
   /* ---- Kanban column ---- */
   .tt-kanban-col {
-    background: #13161d;
-    border: 1px solid #1e2128;
+    background: var(--tt-surface-base);
+    border: 1px solid var(--tt-outline-soft);
     border-radius: 12px;
   }
   .tt-kanban-col-head {
-    color: #bfc4cc;
+    color: var(--tt-text-secondary);
     font-weight: 700;
     padding: 3px 4px 5px 4px;
     font-size: 8.5pt;
@@ -345,46 +478,46 @@
     letter-spacing: 0.4px;
   }
   .tt-lane {
-    color: #5ba8ff;
+    color: var(--tt-primary);
     font-weight: 700;
-    background: #0d1f3d;
-    border: 1px solid #153060;
+    background: var(--tt-accent-bg);
+    border: 1px solid var(--tt-accent-border);
     border-radius: 10px;
     padding: 6px 12px;
   }
 
   /* ---- Work item card ---- */
   .tt-wi-card {
-    background: #1a1d26;
-    border: 1px solid #2d313c;
-    border-left: 3px solid #2d313c;
+    background: var(--tt-surface-container);
+    border: 1px solid var(--tt-outline);
+    border-left: 3px solid var(--tt-outline);
     border-radius: 10px;
     transition: background 0.1s ease, border-color 0.1s ease;
     cursor: pointer;
   }
   .tt-wi-card:hover {
-    background: #1f2330;
-    border-color: #5ba8ff;
-    border-left-color: #5ba8ff;
+    background: var(--tt-wi-hover);
+    border-color: var(--tt-primary);
+    border-left-color: var(--tt-primary);
   }
   .tt-wi-card[data-selected="true"] {
-    background: #0d1f3d;
-    border-color: #0071e3;
-    border-left-color: #5ba8ff;
+    background: var(--tt-accent-bg);
+    border-color: var(--tt-action);
+    border-left-color: var(--tt-primary);
   }
   .tt-card-id {
-    color: #5ba8ff;
+    color: var(--tt-primary);
     font-weight: 700;
   }
   .tt-card-title {
-    color: #edf0f5;
+    color: var(--tt-text-primary);
   }
   .tt-card-meta {
-    color: #7a7f8a;
+    color: var(--tt-text-dim);
   }
   .tt-state-pill {
-    background: #252830;
-    border: 1px solid #2d313c;
+    background: var(--tt-surface-high);
+    border: 1px solid var(--tt-outline);
     border-radius: 10px;
     padding: 2px 10px;
     font-size: 8pt;
@@ -392,9 +525,9 @@
 
   /* ---- Tabs ---- */
   .tt-tab {
-    background: #13161d;
-    color: #7a7f8a;
-    border: 1px solid #1e2128;
+    background: var(--tt-surface-base);
+    color: var(--tt-text-dim);
+    border: 1px solid var(--tt-outline-soft);
     border-bottom: none;
     border-top-left-radius: 10px;
     border-top-right-radius: 10px;
@@ -403,46 +536,44 @@
     cursor: pointer;
   }
   .tt-tab:hover {
-    background: #1a1d26;
-    color: #edf0f5;
+    background: var(--tt-surface-container);
+    color: var(--tt-text-primary);
   }
   .tt-tab[data-active="true"] {
-    background: #1a1d26;
-    color: #5ba8ff;
+    background: var(--tt-surface-container);
+    color: var(--tt-primary);
     font-weight: 600;
-    border-color: #2d313c;
+    border-color: var(--tt-outline);
   }
 
   /* ---- Help banner ---- */
   .tt-help {
-    background: #1a2540;
-    border: 1px solid #2a4070;
+    background: var(--tt-help-bg);
+    border: 1px solid var(--tt-help-border);
     border-radius: 12px;
   }
   .tt-help-header {
-    color: #7abaff;
+    color: var(--tt-help-header);
     font-weight: 600;
   }
   .tt-help-body {
-    color: #b8d4f0;
+    color: var(--tt-help-body);
   }
 
   /* ---- Progress bar ---- */
   .tt-progress {
-    background: #13161d;
-    border: 1px solid #2d313c;
+    background: var(--tt-surface-base);
+    border: 1px solid var(--tt-outline);
     border-radius: 7px;
     overflow: hidden;
     height: 16px;
   }
   .tt-progress-chunk {
     height: 100%;
-    background: linear-gradient(90deg, #0071e3, #5ba8ff);
+    background: linear-gradient(90deg, var(--tt-action), var(--tt-primary));
     border-radius: 6px;
     transition: width 0.2s ease;
   }
-  /* Indeterminate sliding bar (used while bytes total is unknown / server is
-     processing a fully-uploaded file). */
   .tt-progress-indeterminate {
     animation: tt-progress-slide 1.1s ease-in-out infinite;
   }
@@ -455,14 +586,14 @@
     }
   }
 
-  /* ---- Board tree group row (plain text + disclosure triangle) ---- */
+  /* ---- Board tree group row ---- */
   .tt-group-row {
-    background: #0d1017;
-    color: #cfd4dc;
+    background: var(--tt-surface-deepest);
+    color: var(--tt-text-secondary);
     font-weight: 600;
   }
   .tt-group-tri {
-    color: #8a8f99;
+    color: var(--tt-text-muted);
     display: inline-block;
     width: 14px;
     font-size: 10px;
@@ -470,29 +601,23 @@
   }
   /* Segmented per-cell selection band */
   .tt-row-selected > td {
-    background: #16466e;
+    background: var(--tt-row-sel);
     color: #ffffff;
     box-shadow: inset 0 0 0 9999px rgba(22, 70, 110, 0);
   }
   .tt-row-selected > td:not(:last-child) {
-    border-right: 1px solid #0d1017;
+    border-right: 1px solid var(--tt-surface-deepest);
   }
 
-  /* ---- Dialog overlay ----
-   * NOTE: do NOT use backdrop-filter here. On portaled fixed overlays it
-   * causes intermittent paint failures in Chromium (the overlay + dialog
-   * stay in the DOM, hit-testable and opacity:1, but never composite). A
-   * slightly heavier solid scrim gives the same focus effect reliably. */
+  /* ---- Dialog overlay ---- */
   .tt-overlay {
     background: rgba(0, 0, 0, 0.62);
   }
   .tt-dialog {
-    background: #0d1017;
-    border: 1px solid #2d313c;
+    background: var(--tt-surface-deepest);
+    border: 1px solid var(--tt-outline);
     border-radius: 16px;
   }
-  /* One-shot entrance. Animation (not transition) so it settles and clears
-   * its own compositor layer — no persistent will-change that breaks paint. */
   .tt-dialog-enter {
     animation: tt-dialog-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
   }
@@ -514,9 +639,9 @@
 
   /* ---- Status bar ---- */
   .tt-statusbar {
-    background: #0d1017;
-    color: #7a7f8a;
-    border-top: 1px solid #1e2128;
+    background: var(--tt-surface-deepest);
+    color: var(--tt-text-dim);
+    border-top: 1px solid var(--tt-outline-soft);
     font-size: 8.5pt;
   }
 
@@ -525,21 +650,21 @@
     appearance: none;
     width: 16px;
     height: 16px;
-    border: 2px solid #4a4e58;
+    border: 2px solid var(--tt-text-disabled);
     border-radius: 5px;
-    background: #13161d;
+    background: var(--tt-surface-base);
     cursor: pointer;
     position: relative;
     flex-shrink: 0;
     transition: background 0.1s ease, border-color 0.1s ease;
   }
   .tt-check:hover {
-    border-color: #5ba8ff;
+    border-color: var(--tt-primary);
   }
   .tt-check:checked,
   .tt-check:indeterminate {
-    background: #0071e3;
-    border-color: #0071e3;
+    background: var(--tt-action);
+    border-color: var(--tt-action);
   }
   .tt-check:checked::after {
     content: "";
@@ -571,7 +696,7 @@
     list-style: revert;
   }
   .tt-html a {
-    color: #5ba8ff;
+    color: var(--tt-primary);
     text-decoration: underline;
   }
   .tt-html img {
@@ -584,7 +709,7 @@
   }
   .tt-html td,
   .tt-html th {
-    border: 1px solid #2d313c;
+    border: 1px solid var(--tt-outline);
     padding: 4px 8px;
   }
 }

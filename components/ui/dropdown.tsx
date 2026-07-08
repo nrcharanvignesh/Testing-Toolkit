@@ -61,14 +61,14 @@ export function Dropdown({
           {items.map((item, i) => (
             <div key={item.label}>
               {item.separatorBefore && i > 0 && (
-                <div className="my-1 h-px bg-[#1e2128]" />
+                <div className="my-1 h-px bg-[var(--tt-outline-soft)]" />
               )}
               <button
                 onClick={() => {
                   setOpen(false);
                   item.onClick();
                 }}
-                className="block w-full rounded-md px-3 py-1.5 text-left text-sm text-[#bfc4cc] transition-colors hover:bg-[#0071e3] hover:text-white"
+                className="block w-full rounded-md px-3 py-1.5 text-left text-sm text-[var(--tt-text-secondary)] transition-colors hover:bg-[var(--tt-action)] hover:text-white"
               >
                 {item.label}
               </button>

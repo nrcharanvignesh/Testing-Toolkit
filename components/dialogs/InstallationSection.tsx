@@ -96,7 +96,7 @@ export function InstallationSection() {
         )}
 
         {!checking && status?.update_available && (
-          <p className="text-[#7fd1b9]">
+          <p className="text-[var(--tt-success-soft)]">
             A new version (v{status.latest}) is available.
           </p>
         )}

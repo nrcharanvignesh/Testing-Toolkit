@@ -19,8 +19,11 @@ import { useCallback, useSyncExternalStore } from "react";
 
 export type PanelKey = "nav" | "detail" | "log";
 export type SizeKey = "navWidth" | "detailWidth" | "logHeight";
+export type ThemeMode = "dark" | "light";
 
 export interface UiPreferences {
+  /** Active color theme. Defaults to "dark" (the desktop app is dark-only). */
+  theme: ThemeMode;
   /** true = visible. Default shows nav + detail, hides the log. */
   panels: Record<PanelKey, boolean>;
   /** pixel sizes for the resizable regions. */
@@ -65,6 +68,7 @@ const KEY = "tt.ui.prefs.v3";
 // the log/progress bar is hidden (progress is surfaced inline so users don't
 // have to rely on the log). The tour has not run yet.
 const DEFAULTS: UiPreferences = {
+  theme: "dark",
   panels: { nav: true, detail: true, log: false },
   sizes: { navWidth: 224, detailWidth: 440, logHeight: 180 },
   tourCompleted: false,
@@ -86,6 +90,7 @@ function load(): UiPreferences {
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<UiPreferences>;
     return {
+      theme: parsed.theme === "light" ? "light" : "dark",
       panels: { ...DEFAULTS.panels, ...(parsed.panels ?? {}) },
       sizes: { ...DEFAULTS.sizes, ...(parsed.sizes ?? {}) },
       tourCompleted: !!parsed.tourCompleted,
@@ -147,6 +152,12 @@ export function getPreferences(): UiPreferences {
 export function setPanelPref(key: PanelKey, visible: boolean) {
   ensureLoaded();
   persist({ ...cache, panels: { ...cache.panels, [key]: visible } });
+}
+
+/** Non-hook setter for the active color theme (always persisted). */
+export function setThemePref(theme: ThemeMode) {
+  ensureLoaded();
+  persist({ ...cache, theme });
 }
 
 /**

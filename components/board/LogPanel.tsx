@@ -6,10 +6,10 @@ import { getPreferences, setSizePref } from "@/lib/preferences";
 import { ResizeHandle } from "@/components/ui/resizer";
 
 const LEVEL_COLOR: Record<LogLine["level"], string> = {
-  INFO: "#8a8f99",
-  SUCCESS: "#1aab5c",
-  WARN: "#f59e0b",
-  ERROR: "#e53e3e",
+  INFO: "var(--tt-text-muted)",
+  SUCCESS: "var(--tt-success)",
+  WARN: "var(--tt-warn)",
+  ERROR: "var(--tt-danger)",
 };
 
 export function LogPanel() {
@@ -37,9 +37,9 @@ export function LogPanel() {
         ariaLabel="Resize activity log"
       />
       <div className="tt-card flex min-h-0 flex-1 flex-col overflow-hidden p-0">
-        <div className="min-h-0 flex-1 overflow-auto bg-[#0d1017] px-3 py-2 font-mono text-xs leading-relaxed">
+        <div className="min-h-0 flex-1 overflow-auto bg-[var(--tt-surface-deepest)] px-3 py-2 font-mono text-xs leading-relaxed">
         {log.length === 0 ? (
-          <p className="text-[#5a5f6a]">No activity yet.</p>
+          <p className="text-[var(--tt-text-faint)]">No activity yet.</p>
         ) : (
           log.map((line) => {
             // Log lines are "[LEVEL] text" with no timestamp.
@@ -54,7 +54,7 @@ export function LogPanel() {
                 <span style={{ color: LEVEL_COLOR[line.level] }}>
                   [{line.level}]
                 </span>{" "}
-                <span className="text-[#bfc4cc]">{text}</span>
+                <span className="text-[var(--tt-text-secondary)]">{text}</span>
               </div>
             );
           })

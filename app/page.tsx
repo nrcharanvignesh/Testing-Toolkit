@@ -66,7 +66,7 @@ function LoadingScreen({ label }: { label: string }) {
   return (
     <div className="flex h-full items-center justify-center bg-background">
       <div className="flex flex-col items-center gap-4">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#2d313c] border-t-[#5ba8ff]" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--tt-outline)] border-t-[var(--tt-primary)]" />
         <p className="text-sm text-muted-foreground">{label}</p>
       </div>
     </div>

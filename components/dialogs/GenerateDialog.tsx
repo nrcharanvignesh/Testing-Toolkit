@@ -271,7 +271,7 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
           >
             Manual mode
           </button>
-          <label className="flex items-center gap-1.5 px-1 text-xs text-[#bfc4cc]">
+          <label className="flex items-center gap-1.5 px-1 text-xs text-[var(--tt-text-secondary)]">
             <input
               type="checkbox"
               className="tt-check"
@@ -305,17 +305,17 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
     >
       <div className="flex flex-col gap-4">
         {/* Content heading */}
-        <h3 className="text-[15px] font-bold text-[#edf0f5]">
+        <h3 className="text-[15px] font-bold text-[var(--tt-text-primary)]">
           {titleText}{" "}
-          <span className="font-normal text-[#8a8f99]">
+          <span className="font-normal text-[var(--tt-text-muted)]">
             ({ids.length} work item(s))
           </span>
         </h3>
 
         {/* Custom options (ADO target fields) */}
-        <div className="rounded-lg border border-[#2d313c] bg-[#13161d]">
+        <div className="rounded-lg border border-[var(--tt-outline)] bg-[var(--tt-surface-base)]">
           <button
-            className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-sm font-semibold text-[#7abaff]"
+            className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-sm font-semibold text-[var(--tt-primary-soft)]"
             onClick={() => setOptsOpen((o) => !o)}
           >
             {optsOpen ? (
@@ -352,7 +352,7 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
                 />
               </OptRow>
               <OptRow label="Inheritance">
-                <label className="flex items-center gap-2 text-sm text-[#bfc4cc]">
+                <label className="flex items-center gap-2 text-sm text-[var(--tt-text-secondary)]">
                   <input
                     type="checkbox"
                     className="tt-check"
@@ -367,8 +367,8 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Progress */}
-        <div className="rounded-lg border border-[#2d313c] bg-[#13161d] p-3">
-          <div className="mb-1.5 text-xs text-[#bfc4cc]">
+        <div className="rounded-lg border border-[var(--tt-outline)] bg-[var(--tt-surface-base)] p-3">
+          <div className="mb-1.5 text-xs text-[var(--tt-text-secondary)]">
             {busy
               ? progress?.stage || `Fetching ${ids.length} work item(s)...`
               : result
@@ -411,14 +411,14 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
         ) : (
           <>
             {/* Generation log pane */}
-            <div className="min-h-40 max-h-72 overflow-auto rounded-lg border border-[#2d313c] bg-[#0d1017] p-3 font-mono text-xs leading-relaxed">
+            <div className="min-h-40 max-h-72 overflow-auto rounded-lg border border-[var(--tt-outline)] bg-[var(--tt-surface-deepest)] p-3 font-mono text-xs leading-relaxed">
               {runLog.length === 0 ? (
-                <p className="text-[#5a5f6a]">
+                <p className="text-[var(--tt-text-faint)]">
                   Generation log will appear here.
                 </p>
               ) : (
                 runLog.map((l, i) => (
-                  <div key={i} className="whitespace-pre-wrap text-[#bfc4cc]">
+                  <div key={i} className="whitespace-pre-wrap text-[var(--tt-text-secondary)]">
                     {l}
                   </div>
                 ))
@@ -456,7 +456,7 @@ function OptRow({
 }) {
   return (
     <div className="grid grid-cols-[140px_1fr] items-center gap-3">
-      <label className="text-right text-sm text-[#bfc4cc]">{label}</label>
+      <label className="text-right text-sm text-[var(--tt-text-secondary)]">{label}</label>
       {children}
     </div>
   );
@@ -539,9 +539,9 @@ function RegenerateSection({
     !busy && !atLimit && (!!feedback.trim() || attachments.length > 0);
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-[#2d313c] bg-[#13161d] p-3">
-      <h4 className="text-sm font-bold text-[#edf0f5]">Regenerate with feedback</h4>
-      <p className="text-xs text-[#8a8f99]">
+    <div className="flex flex-col gap-2 rounded-lg border border-[var(--tt-outline)] bg-[var(--tt-surface-base)] p-3">
+      <h4 className="text-sm font-bold text-[var(--tt-text-primary)]">Regenerate with feedback</h4>
+      <p className="text-xs text-[var(--tt-text-muted)]">
         Describe the changes you want applied ({iteration}/{MAX_ITERATIONS}{" "}
         iterations used).
       </p>
@@ -557,14 +557,14 @@ function RegenerateSection({
           {attachments.map((a) => (
             <span
               key={a.name}
-              className="flex items-center gap-1.5 rounded-md border border-[#2d313c] bg-[#1b1f28] px-2 py-1 text-xs text-[#bfc4cc]"
+              className="flex items-center gap-1.5 rounded-md border border-[var(--tt-outline)] bg-[var(--tt-surface-base)] px-2 py-1 text-xs text-[var(--tt-text-secondary)]"
               title={`${a.chars.toLocaleString()} characters${a.truncated ? " (truncated)" : ""}`}
             >
-              <FileText className="h-3.5 w-3.5 shrink-0 text-[#6aa1ff]" />
+              <FileText className="h-3.5 w-3.5 shrink-0 text-[var(--tt-primary)]" />
               <span className="max-w-48 truncate">{a.name}</span>
               <button
                 type="button"
-                className="text-[#8a8f99] hover:text-[#edf0f5]"
+                className="text-[var(--tt-text-muted)] hover:text-[var(--tt-text-primary)]"
                 onClick={() => removeAttachment(a.name)}
                 disabled={busy}
                 aria-label={`Remove ${a.name}`}
@@ -575,7 +575,7 @@ function RegenerateSection({
           ))}
         </div>
       )}
-      {pushed && <p className="text-sm text-[#22c46a]">{pushed}</p>}
+      {pushed && <p className="text-sm text-[var(--tt-success-hover)]">{pushed}</p>}
       <div className="flex items-center justify-between">
         <input
           ref={fileInputRef}
@@ -594,7 +594,7 @@ function RegenerateSection({
         </button>
         <div className="flex items-center gap-3">
           <label
-            className="flex items-center gap-1.5 text-xs text-[#bfc4cc]"
+            className="flex items-center gap-1.5 text-xs text-[var(--tt-text-secondary)]"
             title="Use the faster model (skips decompose/verify) for this regeneration"
           >
             <input
@@ -674,7 +674,7 @@ function ManualMode({
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-xs leading-relaxed text-[#8a8f99]">
+      <p className="text-xs leading-relaxed text-[var(--tt-text-muted)]">
         Manual mode: copy the system prompt and work-item dump into any LLM
         session, then paste the returned JSON below and validate it. The review
         and push steps are identical to AI Generate.
@@ -696,7 +696,7 @@ function ManualMode({
       )}
 
       <div className="flex flex-col gap-1.5">
-        <label className="text-sm font-bold text-[#edf0f5]">
+        <label className="text-sm font-bold text-[var(--tt-text-primary)]">
           Paste JSON response
         </label>
         <textarea
@@ -705,7 +705,7 @@ function ManualMode({
           value={manualJson}
           onChange={(e) => setManualJson(e.target.value)}
         />
-        {jsonError && <p className="text-xs text-[#ef4444]">{jsonError}</p>}
+        {jsonError && <p className="text-xs text-[var(--tt-danger)]">{jsonError}</p>}
         <div className="flex justify-end">
           <button
             className="tt-btn-primary !px-4 !py-1.5 text-sm"
@@ -732,12 +732,12 @@ function CopyBlock({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-bold text-[#edf0f5]">{label}</span>
+        <span className="text-sm font-bold text-[var(--tt-text-primary)]">{label}</span>
         <button className="tt-btn-ghost !px-2 !py-1 text-xs" onClick={onCopy}>
           Copy
         </button>
       </div>
-      <pre className="max-h-40 overflow-auto rounded-lg border border-[#2d313c] bg-[#0d1017] p-2 font-mono text-xs text-[#bfc4cc]">
+      <pre className="max-h-40 overflow-auto rounded-lg border border-[var(--tt-outline)] bg-[var(--tt-surface-deepest)] p-2 font-mono text-xs text-[var(--tt-text-secondary)]">
         {text}
       </pre>
     </div>

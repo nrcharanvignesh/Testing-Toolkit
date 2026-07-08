@@ -83,12 +83,12 @@ export function UploadDialog({ onClose }: { onClose: () => void }) {
           Steps XML. The reviewed Excel is re-read so Skip=Yes edits are honored.
         </p>
         <div className="flex items-center justify-between">
-          <h4 className="text-xs font-bold uppercase tracking-wide text-[#7abaff]">
+          <h4 className="text-xs font-bold uppercase tracking-wide text-[var(--tt-primary-soft)]">
             Reviewed test-case files
           </h4>
           {loading && <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
         </div>
-        <div className="max-h-64 overflow-auto rounded-lg border border-[#2d313c] bg-[#13161d] p-2">
+        <div className="max-h-64 overflow-auto rounded-lg border border-[var(--tt-outline)] bg-[var(--tt-surface-base)] p-2">
           {files.length === 0 ? (
             <p className="px-2 py-1.5 text-sm text-muted-foreground">
               No reviewed Excel files found. Generate test cases first.
@@ -97,7 +97,7 @@ export function UploadDialog({ onClose }: { onClose: () => void }) {
             files.map((f) => (
               <label
                 key={f.path}
-                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-[#1a1d26]"
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-[var(--tt-surface-container)]"
               >
                 <input
                   type="radio"
@@ -106,8 +106,8 @@ export function UploadDialog({ onClose }: { onClose: () => void }) {
                   checked={selected === f.path}
                   onChange={() => setSelected(f.path)}
                 />
-                <FileText className="h-3.5 w-3.5 text-[#5ba8ff]" />
-                <span className="truncate text-[#bfc4cc]">{f.name}</span>
+                <FileText className="h-3.5 w-3.5 text-[var(--tt-primary)]" />
+                <span className="truncate text-[var(--tt-text-secondary)]">{f.name}</span>
               </label>
             ))
           )}

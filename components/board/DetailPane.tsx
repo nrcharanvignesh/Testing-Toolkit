@@ -66,8 +66,8 @@ export function DetailPane({ activeWiId }: DetailPaneProps) {
   // Tabs: selected tab is gray/inset (not bright blue).
   const tabStyle = (active: boolean): React.CSSProperties =>
     active
-      ? { background: "#252830", color: "#edf0f5", borderColor: "#2d313c" }
-      : { background: "transparent", color: "#8a8f99" };
+      ? { background: "var(--tt-surface-high)", color: "var(--tt-text-primary)", borderColor: "var(--tt-outline)" }
+      : { background: "transparent", color: "var(--tt-text-muted)" };
 
   return (
     <div className="tt-card flex h-full flex-col gap-2 p-2.5">
@@ -96,7 +96,7 @@ export function DetailPane({ activeWiId }: DetailPaneProps) {
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto rounded-[10px] border border-[#2d313c] bg-[#13161d] p-4">
+      <div className="min-h-0 flex-1 overflow-auto rounded-[10px] border border-[var(--tt-outline)] bg-[var(--tt-surface-base)] p-4">
         {mode === "detail" ? (
           <DetailContent
             loading={loading}
@@ -159,16 +159,16 @@ function DetailContent({
 
   return (
     <div className="flex flex-col gap-3 text-sm">
-      {/* Title line: "#1536963 · E30" */}
+      {/* Title line: "var(--tt-accent-border)3 · E30" */}
       <div className="flex flex-col gap-1.5">
-        <h3 className="text-[15px] font-bold text-[#edf0f5]">
-          <span className="text-[#5ba8ff]">#{detail.wi_id}</span>
+        <h3 className="text-[15px] font-bold text-[var(--tt-text-primary)]">
+          <span className="text-[var(--tt-primary)]">#{detail.wi_id}</span>
           {detail.title ? ` · ${detail.title}` : ""}
         </h3>
         {/* Metadata line */}
-        <div className="text-xs text-[#bfc4cc]">{metaParts.join("  ·  ")}</div>
+        <div className="text-xs text-[var(--tt-text-secondary)]">{metaParts.join("  ·  ")}</div>
         {/* Area / Iteration / Tags */}
-        <div className="flex flex-col gap-0.5 text-xs text-[#8a8f99]">
+        <div className="flex flex-col gap-0.5 text-xs text-[var(--tt-text-muted)]">
           <span>Area: {pathTail(detail.area_path) || "—"}</span>
           <span>Iteration: {pathTail(detail.iteration_path) || "—"}</span>
           <span>
@@ -177,7 +177,7 @@ function DetailContent({
         </div>
       </div>
 
-      <div className="border-t border-[#2d313c]" />
+      <div className="border-t border-[var(--tt-outline)]" />
 
       {detail.description_html && (
         <Section title="Description" html={detail.description_html} />
@@ -188,31 +188,31 @@ function DetailContent({
 
       {detail.comments_html?.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h4 className="text-sm font-bold text-[#edf0f5]">
+          <h4 className="text-sm font-bold text-[var(--tt-text-primary)]">
             {detail.comments_html.length} Comment
             {detail.comments_html.length === 1 ? "" : "s"}
           </h4>
           {detail.comments_html.map(([who, when, html], i) => (
             <div
               key={i}
-              className="flex flex-col gap-1.5 rounded-[10px] border border-[#2d313c] bg-[#1a1d25] p-3"
+              className="flex flex-col gap-1.5 rounded-[10px] border border-[var(--tt-outline)] bg-[var(--tt-surface-container)] p-3"
             >
               <div className="flex items-center gap-2">
                 <span
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#2d313c] text-[10px] font-bold text-[#bfc4cc]"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--tt-outline)] text-[10px] font-bold text-[var(--tt-text-secondary)]"
                   aria-hidden="true"
                 >
                   {initials(who)}
                 </span>
-                <span className="text-sm font-semibold text-[#7abaff]">
+                <span className="text-sm font-semibold text-[var(--tt-primary-soft)]">
                   {who}
                 </span>
-                <span className="text-xs text-[#7a7f8a]">
+                <span className="text-xs text-[var(--tt-text-dim)]">
                   commented {fmtComment(when)}
                 </span>
               </div>
               <div
-                className="tt-html text-sm leading-relaxed text-[#d6dae2] [&_a]:text-[#5ba8ff] [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md [&_img]:border [&_img]:border-[#2d313c]"
+                className="tt-html text-sm leading-relaxed text-[var(--tt-text-bright)] [&_a]:text-[var(--tt-primary)] [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md [&_img]:border [&_img]:border-[var(--tt-outline)]"
                 dangerouslySetInnerHTML={{ __html: html }}
               />
             </div>
@@ -222,7 +222,7 @@ function DetailContent({
 
       {detail.attachments?.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h4 className="text-sm font-bold text-[#edf0f5]">
+          <h4 className="text-sm font-bold text-[var(--tt-text-primary)]">
             Attachments ({detail.attachments.length})
           </h4>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -235,7 +235,7 @@ function DetailContent({
 
       {detail.hyperlinks?.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h4 className="text-sm font-bold text-[#edf0f5]">
+          <h4 className="text-sm font-bold text-[var(--tt-text-primary)]">
             Links ({detail.hyperlinks.length})
           </h4>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -245,12 +245,12 @@ function DetailContent({
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 rounded-[10px] border border-[#2d313c] bg-[#1a1d25] p-2.5 text-sm text-[#5ba8ff] transition-colors hover:border-[#3a4150] hover:bg-[#20242d]"
+                className="flex items-center gap-2 rounded-[10px] border border-[var(--tt-outline)] bg-[var(--tt-surface-container)] p-2.5 text-sm text-[var(--tt-primary)] transition-colors hover:border-[var(--tt-border-strong)] hover:bg-[var(--tt-surface-high)]"
                 title={url}
               >
                 <LinkIcon className="h-4 w-4 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{label || url}</span>
-                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[#7a7f8a]" />
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[var(--tt-text-dim)]" />
               </a>
             ))}
           </div>
@@ -304,10 +304,10 @@ function AttachmentCard({ attachment }: { attachment: Attachment }) {
       target="_blank"
       rel="noopener noreferrer"
       download={attachment.name}
-      className="group flex flex-col overflow-hidden rounded-[10px] border border-[#2d313c] bg-[#1a1d25] transition-colors hover:border-[#3a4150] hover:bg-[#20242d]"
+      className="group flex flex-col overflow-hidden rounded-[10px] border border-[var(--tt-outline)] bg-[var(--tt-surface-container)] transition-colors hover:border-[var(--tt-border-strong)] hover:bg-[var(--tt-surface-high)]"
       title={`Download ${attachment.name}`}
     >
-      <div className="flex h-24 items-center justify-center bg-[#0f1218]">
+      <div className="flex h-24 items-center justify-center bg-[var(--tt-surface-deepest)]">
         {isImage ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -316,20 +316,20 @@ function AttachmentCard({ attachment }: { attachment: Attachment }) {
             className="h-full w-full object-cover"
           />
         ) : (
-          <FileText className="h-8 w-8 text-[#7a7f8a]" />
+          <FileText className="h-8 w-8 text-[var(--tt-text-dim)]" />
         )}
       </div>
       <div className="flex items-center gap-1.5 p-2">
         {isImage ? (
-          <ImageIcon className="h-3.5 w-3.5 shrink-0 text-[#7a7f8a]" />
+          <ImageIcon className="h-3.5 w-3.5 shrink-0 text-[var(--tt-text-dim)]" />
         ) : (
-          <Download className="h-3.5 w-3.5 shrink-0 text-[#7a7f8a]" />
+          <Download className="h-3.5 w-3.5 shrink-0 text-[var(--tt-text-dim)]" />
         )}
-        <span className="min-w-0 flex-1 truncate text-xs text-[#cfd4dc]">
+        <span className="min-w-0 flex-1 truncate text-xs text-[var(--tt-text-secondary)]">
           {attachment.name}
         </span>
         {attachment.size > 0 && (
-          <span className="shrink-0 text-[10px] text-[#7a7f8a]">
+          <span className="shrink-0 text-[10px] text-[var(--tt-text-dim)]">
             {fmtSize(attachment.size)}
           </span>
         )}
@@ -341,9 +341,9 @@ function AttachmentCard({ attachment }: { attachment: Attachment }) {
 function Section({ title, html }: { title: string; html: string }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <h4 className="text-sm font-bold text-[#edf0f5]">{title}</h4>
+      <h4 className="text-sm font-bold text-[var(--tt-text-primary)]">{title}</h4>
       <div
-        className="tt-html text-sm leading-relaxed text-[#bfc4cc] [&_a]:text-[#5ba8ff] [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md [&_img]:border [&_img]:border-[#2d313c]"
+        className="tt-html text-sm leading-relaxed text-[var(--tt-text-secondary)] [&_a]:text-[var(--tt-primary)] [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md [&_img]:border [&_img]:border-[var(--tt-outline)]"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
@@ -548,14 +548,14 @@ function OutputsContent({
 
   return (
     <div className="flex h-full flex-col gap-2" onClick={() => setMenu(null)}>
-      <h3 className="text-sm font-bold text-[#edf0f5]">
+      <h3 className="text-sm font-bold text-[var(--tt-text-primary)]">
         Generated artifacts{projectLabel ? ` - ${projectLabel}` : ""}
       </h3>
-      <p className="text-xs text-[#8a8f99]">
+      <p className="text-xs text-[var(--tt-text-muted)]">
         {parsed.length} file(s) across {boardCount} board(s).
       </p>
 
-      <div className="min-h-0 flex-1 overflow-auto rounded-[8px] border border-[#2d313c] bg-[#0d1017]">
+      <div className="min-h-0 flex-1 overflow-auto rounded-[8px] border border-[var(--tt-outline)] bg-[var(--tt-surface-deepest)]">
         {parsed.length === 0 ? (
           <p style={{ color: COLOR_MUTED }} className="p-3 text-sm">
             No generated files yet. Generate test cases and they will appear
@@ -577,12 +577,12 @@ function OutputsContent({
                 }}
                 className="block w-full truncate px-3 py-1.5 text-left text-sm"
                 style={{
-                  background: isSel ? "#16466e" : "transparent",
-                  color: isSel ? "#ffffff" : "#cfd4dc",
+                  background: isSel ? "var(--tt-row-sel)" : "transparent",
+                  color: isSel ? "#ffffff" : "var(--tt-text-secondary)",
                 }}
                 title={f.name}
               >
-                <span className="text-[#8a8f99]">▸ </span>
+                <span className="text-[var(--tt-text-muted)]">▸ </span>
                 {`${p.board || GENERAL_GROUP} - ${p.when}${
                   p.phaseLabel && p.phaseLabel !== "General"
                     ? `  (${p.phaseLabel})`
@@ -628,7 +628,7 @@ function OutputsContent({
 
       {menu && (
         <div
-          className="fixed z-50 min-w-[210px] overflow-hidden rounded-md border border-[#2d313c] bg-[#1b1e26] py-1 shadow-xl"
+          className="fixed z-50 min-w-[210px] overflow-hidden rounded-md border border-[var(--tt-outline)] bg-[var(--tt-surface-base)] py-1 shadow-xl"
           style={{ left: menu.x, top: menu.y }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -659,7 +659,7 @@ function OutputsContent({
               />
             </>
           )}
-          <div className="my-1 border-t border-[#2d313c]" />
+          <div className="my-1 border-t border-[var(--tt-outline)]" />
           <ContextItem
             label="Delete"
             danger
@@ -686,8 +686,8 @@ function ContextItem({
   return (
     <button
       onClick={onClick}
-      className="block w-full px-3 py-1.5 text-left text-sm transition-colors hover:bg-[#262a33]"
-      style={{ color: danger ? "#f87171" : "#dfe3ea" }}
+      className="block w-full px-3 py-1.5 text-left text-sm transition-colors hover:bg-[var(--tt-surface-high)]"
+      style={{ color: danger ? "var(--tt-danger-hover)" : "var(--tt-text-bright)" }}
     >
       {label}
     </button>

@@ -55,7 +55,7 @@ export function ActionBar() {
       <span
         className="text-xs"
         style={{
-          color: count ? "#10b981" : COLOR_MUTED,
+          color: count ? "var(--tt-success)" : COLOR_MUTED,
           fontWeight: count ? 600 : 400,
         }}
       >

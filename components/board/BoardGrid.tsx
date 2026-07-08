@@ -148,7 +148,7 @@ export function BoardGrid() {
             <span
               className="text-xs"
               style={{
-                color: selected.size ? "#10b981" : COLOR_MUTED,
+                color: selected.size ? "var(--tt-success)" : COLOR_MUTED,
                 fontWeight: selected.size ? 600 : 400,
               }}
             >
@@ -205,7 +205,7 @@ export function BoardGrid() {
 
         {/* Grid */}
         <div
-          className="min-h-0 flex-1 overflow-auto rounded-[10px] border border-[#2d313c] bg-[#13161d]"
+          className="min-h-0 flex-1 overflow-auto rounded-[10px] border border-[var(--tt-outline)] bg-[var(--tt-surface-base)]"
           onClick={clearOnEmptyClick}
         >
           {boardLoading ? (
@@ -221,15 +221,15 @@ export function BoardGrid() {
             />
           ) : (
             <table className="w-full border-collapse text-sm">
-              <thead className="sticky top-0 z-10 bg-[#13161d]">
-                <tr className="text-left text-xs text-[#bfc4cc]">
-                  <th className="w-8 border-b border-[#2d313c] px-2 py-2" />
-                  <th className="border-b border-[#2d313c] px-2 py-2 font-semibold">ID</th>
-                  <th className="border-b border-[#2d313c] px-2 py-2 font-semibold">Title</th>
-                  <th className="border-b border-[#2d313c] px-2 py-2 font-semibold">Type</th>
-                  <th className="border-b border-[#2d313c] px-2 py-2 font-semibold">State</th>
-                  <th className="border-b border-[#2d313c] px-2 py-2 font-semibold">Assignee</th>
-                  <th className="border-b border-[#2d313c] px-2 py-2 font-semibold">Sprint</th>
+              <thead className="sticky top-0 z-10 bg-[var(--tt-surface-base)]">
+                <tr className="text-left text-xs text-[var(--tt-text-secondary)]">
+                  <th className="w-8 border-b border-[var(--tt-outline)] px-2 py-2" />
+                  <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">ID</th>
+                  <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">Title</th>
+                  <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">Type</th>
+                  <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">State</th>
+                  <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">Assignee</th>
+                  <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">Sprint</th>
                 </tr>
               </thead>
               <tbody>
@@ -328,10 +328,10 @@ function LaneGroup({
         </td>
         <td colSpan={6} className="px-2 py-1.5">
           <span className="tt-group-tri">▼</span>
-          <span className="text-sm font-semibold text-[#cfd4dc]">
+          <span className="text-sm font-semibold text-[var(--tt-text-secondary)]">
             {lane}
           </span>{" "}
-          <span className="text-xs text-[#8a8f99]">({laneRows.length})</span>
+          <span className="text-xs text-[var(--tt-text-muted)]">({laneRows.length})</span>
         </td>
       </tr>
       {laneRows.map((r) => {
@@ -341,8 +341,8 @@ function LaneGroup({
           <tr
             key={r.wi_id}
             onClick={() => onActivate(r.wi_id)}
-            className={`cursor-pointer border-b border-[#1e2128] transition-colors ${
-              isActive ? "tt-row-selected" : "hover:bg-[#1a1d26]"
+            className={`cursor-pointer border-b border-[var(--tt-outline-soft)] transition-colors ${
+              isActive ? "tt-row-selected" : "hover:bg-[var(--tt-surface-container)]"
             }`}
           >
             <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
@@ -353,16 +353,16 @@ function LaneGroup({
                 onChange={(e) => onToggleRow(r.wi_id, e.target.checked)}
               />
             </td>
-            <td className="px-2 py-1.5 font-semibold text-[#5ba8ff]">
+            <td className="px-2 py-1.5 font-semibold text-[var(--tt-primary)]">
               {r.wi_id}
             </td>
             <td
-              className="max-w-0 truncate px-2 py-1.5 text-[#edf0f5]"
+              className="max-w-0 truncate px-2 py-1.5 text-[var(--tt-text-primary)]"
               title={r.title}
             >
               {r.title}
             </td>
-            <td className="px-2 py-1.5 text-sm" style={{ color: tc ?? "#bfc4cc" }}>
+            <td className="px-2 py-1.5 text-sm" style={{ color: tc ?? "var(--tt-text-secondary)" }}>
               {r.wi_type}
             </td>
             <td
@@ -371,10 +371,10 @@ function LaneGroup({
             >
               {r.state || "n/a"}
             </td>
-            <td className="truncate px-2 py-1.5 text-sm text-[#bfc4cc]">
+            <td className="truncate px-2 py-1.5 text-sm text-[var(--tt-text-secondary)]">
               {r.assigned_to}
             </td>
-            <td className="truncate px-2 py-1.5 text-sm text-[#bfc4cc]">
+            <td className="truncate px-2 py-1.5 text-sm text-[var(--tt-text-secondary)]">
               {r.board_lane}
             </td>
           </tr>

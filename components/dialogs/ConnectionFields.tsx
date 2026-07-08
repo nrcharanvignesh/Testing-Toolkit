@@ -98,8 +98,8 @@ function Field({
 }) {
   return (
     <div className="grid grid-cols-[140px_1fr] items-center gap-3">
-      <label className="text-right text-sm text-[#bfc4cc]">
-        {label}:{required && <span className="text-[#e53e3e]"> *</span>}
+      <label className="text-right text-sm text-[var(--tt-text-secondary)]">
+        {label}:{required && <span className="text-[var(--tt-danger)]"> *</span>}
       </label>
       {children}
     </div>
@@ -212,7 +212,7 @@ function ModelCombo({
         </button>
       </div>
       {open && (
-        <div className="tt-dialog absolute z-[60] mt-1 max-h-64 w-full overflow-auto rounded-md border border-[#1e2128] py-1 shadow-2xl">
+        <div className="tt-dialog absolute z-[60] mt-1 max-h-64 w-full overflow-auto rounded-md border border-[var(--tt-outline-soft)] py-1 shadow-2xl">
           {allowBlank && (
             <button
               type="button"
@@ -347,9 +347,9 @@ export function ConnectionFields({
 
   const statusClass =
     statusColor === "warn"
-      ? "text-[#d69e2e]"
+      ? "text-[var(--tt-warn-alt)]"
       : statusColor === "success"
-        ? "text-[#48bb78]"
+        ? "text-[var(--tt-success)]"
         : "text-muted-foreground";
 
   // Auto-check on open (mirrors SettingsDialog._auto_check): if a key and base
@@ -446,7 +446,7 @@ export function ConnectionFields({
           onChange={(e) => set("organization", e.target.value)}
         />
       </Field>
-      <p className="pl-[152px] text-xs text-[#e53e3e]">* required</p>
+      <p className="pl-[152px] text-xs text-[var(--tt-danger)]">* required</p>
 
       <SectionHeader>Display</SectionHeader>
       <Field label="Strip project prefix">

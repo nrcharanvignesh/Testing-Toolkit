@@ -21,7 +21,7 @@ interface UploadItem {
 /** Thin determinate/indeterminate progress bar. value=null => indeterminate. */
 function ProgressBar({
   value,
-  color = "#5ba8ff",
+  color = "var(--tt-primary)",
 }: {
   value: number | null;
   color?: string;
@@ -29,7 +29,7 @@ function ProgressBar({
   const indeterminate = value === null;
   const pct = Math.round((value ?? 0) * 100);
   return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#2d313c]">
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--tt-outline)]">
       <div
         className={`h-full rounded-full transition-[width] duration-200 ease-out ${
           indeterminate ? "tt-progress-indeterminate w-2/5" : ""
@@ -53,10 +53,10 @@ function UploadRow({ item }: { item: UploadItem }) {
   };
   const color =
     item.status === "error"
-      ? "#e5484d"
+      ? "var(--tt-danger)"
       : item.status === "done"
-        ? "#1aab5c"
-        : "#5ba8ff";
+        ? "var(--tt-success)"
+        : "var(--tt-primary)";
   // Indeterminate while the agent processes the fully-uploaded bytes.
   const value =
     item.status === "queued"
@@ -69,8 +69,8 @@ function UploadRow({ item }: { item: UploadItem }) {
   return (
     <div className="flex flex-col gap-1 px-0.5 py-0.5">
       <div className="flex items-center gap-2 text-xs">
-        <FileText className="h-3.5 w-3.5 shrink-0 text-[#5ba8ff]" />
-        <span className="truncate text-[#bfc4cc]" title={item.name}>
+        <FileText className="h-3.5 w-3.5 shrink-0 text-[var(--tt-primary)]" />
+        <span className="truncate text-[var(--tt-text-secondary)]" title={item.name}>
           {item.name}
         </span>
         <span
@@ -115,7 +115,7 @@ export function ProjectKbDialog({ onClose }: { onClose: () => void }) {
       }
     >
       <div className="flex flex-col gap-5">
-        <h3 className="text-sm font-bold text-[#edf0f5]">
+        <h3 className="text-sm font-bold text-[var(--tt-text-primary)]">
           Knowledge base{projectLabel ? ` - ${projectLabel}` : ""}
         </h3>
         <DocumentsSection project={currentProject} pushLog={pushLog} />
@@ -315,7 +315,7 @@ function DocumentsSection({
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <h4 className="mr-auto text-sm font-bold text-[#edf0f5]">Documents</h4>
+        <h4 className="mr-auto text-sm font-bold text-[var(--tt-text-primary)]">Documents</h4>
         <button
           className="tt-btn-primary !px-3 !py-1.5 text-xs"
           disabled={busy || uploadingHere || !project}
@@ -352,7 +352,7 @@ function DocumentsSection({
 
       {docs.length > 0 && (
         <div className="flex items-center gap-2 px-1">
-          <label className="flex cursor-pointer items-center gap-2 text-xs text-[#bfc4cc]">
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-[var(--tt-text-secondary)]">
             <input
               type="checkbox"
               className="tt-check"
@@ -371,7 +371,7 @@ function DocumentsSection({
       )}
 
       <div
-        className="max-h-52 overflow-auto rounded-lg border border-[#2d313c] bg-[#13161d] p-1 focus:outline-none focus-visible:ring-1 focus-visible:ring-[#5ba8ff]"
+        className="max-h-52 overflow-auto rounded-lg border border-[var(--tt-outline)] bg-[var(--tt-surface-base)] p-1 focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--tt-primary)]"
         tabIndex={0}
         role="listbox"
         aria-multiselectable="true"
@@ -396,10 +396,10 @@ function DocumentsSection({
             return (
               <label
                 key={d}
-                className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-[#1a1d26]"
+                className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-[var(--tt-surface-container)]"
                 style={{
-                  background: isSel ? "#16466e" : "transparent",
-                  color: isSel ? "#ffffff" : "#bfc4cc",
+                  background: isSel ? "var(--tt-row-sel)" : "transparent",
+                  color: isSel ? "#ffffff" : "var(--tt-text-secondary)",
                 }}
               >
                 <input
@@ -408,7 +408,7 @@ function DocumentsSection({
                   checked={isSel}
                   onChange={(e) => toggleDoc(d, e.target.checked)}
                 />
-                <FileText className="h-3.5 w-3.5 shrink-0 text-[#5ba8ff]" />
+                <FileText className="h-3.5 w-3.5 shrink-0 text-[var(--tt-primary)]" />
                 <span className="truncate">{d}</span>
               </label>
             );
@@ -417,16 +417,16 @@ function DocumentsSection({
       </div>
 
       {uploads.length > 0 && (
-        <div className="flex flex-col gap-1.5 rounded-lg border border-[#2d313c] bg-[#13161d] p-2">
+        <div className="flex flex-col gap-1.5 rounded-lg border border-[var(--tt-outline)] bg-[var(--tt-surface-base)] p-2">
           <div className="flex items-center justify-between px-0.5">
-            <span className="text-xs font-semibold text-[#bfc4cc]">
+            <span className="text-xs font-semibold text-[var(--tt-text-secondary)]">
               {uploadingHere ? "Uploading" : "Uploaded"}{" "}
               {uploads.filter((u) => u.status === "done").length}/
               {uploads.length} file(s)
             </span>
             {!uploadingHere && (
               <button
-                className="text-xs text-[#8a8f99] hover:text-[#bfc4cc]"
+                className="text-xs text-[var(--tt-text-muted)] hover:text-[var(--tt-text-secondary)]"
                 onClick={clearKbUploads}
               >
                 Dismiss
@@ -441,16 +441,16 @@ function DocumentsSection({
 
       {indexing && (
         <div className="flex flex-col gap-1">
-          <div className="flex items-center justify-between font-mono text-xs text-[#d69e2e]">
+          <div className="flex items-center justify-between font-mono text-xs text-[var(--tt-warn-alt)]">
             <span>Rebuilding index</span>
             <span>{indexProgress}</span>
           </div>
-          <ProgressBar value={indexPct} color="#d69e2e" />
+          <ProgressBar value={indexPct} color="var(--tt-warn-alt)" />
         </div>
       )}
 
       {status && !indexing && (
-        <p className="text-xs leading-relaxed text-[#1aab5c]">
+        <p className="text-xs leading-relaxed text-[var(--tt-success)]">
           {status.indexed
             ? `Indexing ${status.n_documents ?? status.documents.length} document(s), ${
                 status.n_chunks ?? "?"
@@ -472,11 +472,11 @@ function TemplatesSection({
   const [phase, setPhase] = useState("Implementation");
   return (
     <section className="flex flex-col gap-2">
-      <h4 className="text-sm font-bold text-[#edf0f5]">
+      <h4 className="text-sm font-bold text-[var(--tt-text-primary)]">
         Test script templates (per phase)
       </h4>
       <div className="flex items-center gap-2">
-        <label className="text-sm text-[#bfc4cc]">Phase:</label>
+        <label className="text-sm text-[var(--tt-text-secondary)]">Phase:</label>
         <select
           className="tt-input w-auto min-w-44 cursor-pointer text-sm"
           value={phase}
@@ -611,8 +611,8 @@ function PromptsSection({
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <h4 className="text-sm font-bold text-[#edf0f5]">System prompt</h4>
-        <label className="ml-2 text-sm text-[#bfc4cc]">Scope:</label>
+        <h4 className="text-sm font-bold text-[var(--tt-text-primary)]">System prompt</h4>
+        <label className="ml-2 text-sm text-[var(--tt-text-secondary)]">Scope:</label>
         <select
           className="tt-input w-auto min-w-56 cursor-pointer text-sm"
           value={scope}

@@ -62,21 +62,21 @@ export function Modal({
         style={{ maxWidth: width }}
       >
         {/* Dialog header (title + close) */}
-        <header className="flex shrink-0 items-center justify-between border-b border-[#1e2128] px-6 py-3.5 select-none">
-          <h2 className="text-[14px] font-semibold tracking-tight text-[#e6e9ef]">
+        <header className="flex shrink-0 items-center justify-between border-b border-[var(--tt-outline-soft)] px-6 py-3.5 select-none">
+          <h2 className="text-[14px] font-semibold tracking-tight text-[var(--tt-text-primary)]">
             {title}
           </h2>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-[#94a3b8] transition-colors hover:bg-[#1e2128] hover:text-[#e6e9ef]"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--tt-text-muted)] transition-colors hover:bg-[var(--tt-outline-soft)] hover:text-[var(--tt-text-primary)]"
           >
             <X className="h-4 w-4" />
           </button>
         </header>
         <div className="flex-1 overflow-auto px-6 py-5">{children}</div>
         {footer && (
-          <footer className="flex items-center justify-end gap-2 border-t border-[#1e2128] px-6 py-4">
+          <footer className="flex items-center justify-end gap-2 border-t border-[var(--tt-outline-soft)] px-6 py-4">
             {footer}
           </footer>
         )}

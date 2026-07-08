@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { HelpCircle, Settings, Brain, ChevronLeft } from "lucide-react";
+import { HelpCircle, Settings, Brain, ChevronLeft, Sun, Moon } from "lucide-react";
 import { useAppState } from "@/lib/app-state";
+import { useTheme } from "@/lib/theme";
 import { Dropdown } from "@/components/ui/dropdown";
 import { agent } from "@/lib/agent-client";
 import { getPreferences, setSizePref } from "@/lib/preferences";
@@ -25,6 +26,8 @@ export function NavPanel() {
     pushLog,
   } = useAppState();
 
+  const { theme, toggleTheme } = useTheme();
+
   // Free-hand width — initialised once from saved prefs, persisted on commit.
   const [width, setWidth] = useState(() => getPreferences().sizes.navWidth);
 
@@ -46,7 +49,7 @@ export function NavPanel() {
       >
         {/* Projects */}
         <div className="flex items-center justify-between px-1">
-          <span className="text-sm font-semibold text-[#bfc4cc]">Projects</span>
+          <span className="text-sm font-semibold text-[var(--tt-text-secondary)]">Projects</span>
           <button
             className="tt-btn-ghost !px-2 !py-1 text-xs"
             onClick={reloadProjects}
@@ -79,7 +82,7 @@ export function NavPanel() {
 
         {/* Boards */}
         <div className="flex items-center justify-between px-1">
-          <span className="text-sm font-semibold text-[#bfc4cc]">Boards</span>
+          <span className="text-sm font-semibold text-[var(--tt-text-secondary)]">Boards</span>
           <button
             className="tt-btn-ghost !px-2 !py-1 text-xs"
             onClick={() => reloadBoards()}
@@ -145,6 +148,20 @@ export function NavPanel() {
             onClick={() => openDialog("kb")}
           >
             <Brain className="h-[18px] w-[18px]" strokeWidth={2} />
+          </button>
+          <button
+            title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            aria-label={
+              theme === "dark" ? "Switch to light theme" : "Switch to dark theme"
+            }
+            className="tt-btn-ghost h-8 w-8 !p-0"
+            onClick={toggleTheme}
+          >
+            {theme === "dark" ? (
+              <Sun className="h-[18px] w-[18px]" strokeWidth={2} />
+            ) : (
+              <Moon className="h-[18px] w-[18px]" strokeWidth={2} />
+            )}
           </button>
           <button
             title="Hide navigator"

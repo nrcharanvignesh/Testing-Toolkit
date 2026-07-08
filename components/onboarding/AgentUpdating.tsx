@@ -24,8 +24,8 @@ export function AgentUpdating({ progress }: { progress: AppUpdateProgress }) {
     >
       <div className="tt-dialog w-full max-w-md p-7">
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#f59e0b]/15">
-            <Download className="h-5 w-5 text-[#f59e0b]" strokeWidth={2} />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--tt-warn)]/15">
+            <Download className="h-5 w-5 text-[var(--tt-warn)]" strokeWidth={2} />
           </div>
           <div className="min-w-0">
             <h1
@@ -55,7 +55,7 @@ export function AgentUpdating({ progress }: { progress: AppUpdateProgress }) {
               className="flex items-center gap-2 text-foreground"
             >
               <RefreshCw
-                className="h-3.5 w-3.5 animate-spin text-[#f59e0b]"
+                className="h-3.5 w-3.5 animate-spin text-[var(--tt-warn)]"
                 strokeWidth={2}
               />
               {progress.message}
@@ -68,7 +68,7 @@ export function AgentUpdating({ progress }: { progress: AppUpdateProgress }) {
           </div>
 
           <div
-            className="h-2 w-full overflow-hidden rounded-full bg-[#2d313c]"
+            className="h-2 w-full overflow-hidden rounded-full bg-[var(--tt-outline)]"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={100}
@@ -76,7 +76,7 @@ export function AgentUpdating({ progress }: { progress: AppUpdateProgress }) {
             aria-label="Update progress"
           >
             <div
-              className={`h-full rounded-full bg-[#f59e0b] transition-[width] duration-300 ease-out ${
+              className={`h-full rounded-full bg-[var(--tt-warn)] transition-[width] duration-300 ease-out ${
                 progress.indeterminate ? "tt-progress-indeterminate w-2/5" : ""
               }`}
               style={

@@ -22,8 +22,8 @@ function Metric({
 }) {
   return (
     <span className="flex items-center gap-1" title={title}>
-      <span className="text-[#8a8f99]">{label}</span>
-      <span className="font-medium tabular-nums text-[#c7ccd6]">{value}</span>
+      <span className="text-[var(--tt-text-muted)]">{label}</span>
+      <span className="font-medium tabular-nums text-[var(--tt-text-bright)]">{value}</span>
     </span>
   );
 }
@@ -54,7 +54,7 @@ function Chip({
   /** Explicit dot color; takes precedence over the ok/warn mapping. */
   color?: string;
 }) {
-  const color = colorOverride ?? (ok ? "#1aab5c" : warn ? "#f59e0b" : "#5a5f6a");
+  const color = colorOverride ?? (ok ? "var(--tt-success)" : warn ? "var(--tt-warn)" : "var(--tt-text-faint)");
   return (
     <span className="flex items-center gap-1.5" title={title}>
       <Dot color={color} pulse={pulse} />
@@ -64,10 +64,10 @@ function Chip({
 }
 
 const KB_COLOR: Record<KbState, string> = {
-  none: "#e53e3e",
-  indexing: "#f59e0b",
-  ready: "#1aab5c",
-  error: "#e53e3e",
+  none: "var(--tt-danger)",
+  indexing: "var(--tt-warn)",
+  ready: "var(--tt-success)",
+  error: "var(--tt-danger)",
 };
 
 export function StatusBar() {
@@ -123,32 +123,32 @@ export function StatusBar() {
           toggleLogs();
         }
       }}
-      className="tt-statusbar flex h-7 cursor-pointer items-center justify-between px-3 outline-none focus-visible:ring-1 focus-visible:ring-[#3b82f6]"
+      className="tt-statusbar flex h-7 cursor-pointer items-center justify-between px-3 outline-none focus-visible:ring-1 focus-visible:ring-[var(--tt-info)]"
     >
       <div className="flex items-center gap-2">
-        <span className="text-[#8a8f99]">{activity}</span>
+        <span className="text-[var(--tt-text-muted)]">{activity}</span>
         {kbUploading ? (
           <>
-            <span className="font-medium text-[#5ba8ff]">
+            <span className="font-medium text-[var(--tt-primary)]">
               Uploading {uploadDone}/{uploadTotal} file(s)
             </span>
             <span
-              className="h-1.5 w-28 overflow-hidden rounded-full bg-[#2d313c]"
+              className="h-1.5 w-28 overflow-hidden rounded-full bg-[var(--tt-outline)]"
               aria-label="Knowledge base upload progress"
             >
               <span
-                className="block h-full rounded-full bg-[#5ba8ff] transition-[width] duration-200 ease-out"
+                className="block h-full rounded-full bg-[var(--tt-primary)] transition-[width] duration-200 ease-out"
                 style={{ width: `${Math.round(uploadFrac * 100)}%` }}
               />
             </span>
-            <span className="tabular-nums text-[#8a8f99]">
+            <span className="tabular-nums text-[var(--tt-text-muted)]">
               {Math.round(uploadFrac * 100)}%
             </span>
           </>
         ) : (
           <span
             title={kbMessage}
-            style={{ color: kbReady ? "#1aab5c" : KB_COLOR[kbState] }}
+            style={{ color: kbReady ? "var(--tt-success)" : KB_COLOR[kbState] }}
             className="font-medium"
           >
             {kbMessage}
@@ -157,11 +157,11 @@ export function StatusBar() {
         {kbState === "indexing" && (
           <>
             <span
-              className="h-1.5 w-28 overflow-hidden rounded-full bg-[#2d313c]"
+              className="h-1.5 w-28 overflow-hidden rounded-full bg-[var(--tt-outline)]"
               aria-label="Knowledge base indexing progress"
             >
               <span
-                className={`block h-full rounded-full bg-[#f59e0b] transition-[width] duration-200 ease-out ${
+                className={`block h-full rounded-full bg-[var(--tt-warn)] transition-[width] duration-200 ease-out ${
                   kbProgress === null ? "tt-progress-indeterminate w-2/5" : ""
                 }`}
                 style={
@@ -172,7 +172,7 @@ export function StatusBar() {
               />
             </span>
             {kbProgress !== null && (
-              <span className="tabular-nums text-[#8a8f99]">
+              <span className="tabular-nums text-[var(--tt-text-muted)]">
                 {Math.round(kbProgress * 100)}%
               </span>
             )}
@@ -181,7 +181,7 @@ export function StatusBar() {
       </div>
       <div className="flex items-center gap-4">
         {metrics && (
-          <div className="flex items-center gap-3 border-r border-[#2d313c] pr-4">
+          <div className="flex items-center gap-3 border-r border-[var(--tt-outline)] pr-4">
             {/* CPU, RAM and Data are always shown — scoped to the app alone,
                 not the whole machine. RAM and Data are shown as actual amounts
                 (MB/GB), not percentages. */}

@@ -105,7 +105,7 @@ export function GuidedTour({ onDone }: { onDone: () => void }) {
             <span
               key={i}
               className={`h-1.5 rounded-full transition-all ${
-                i === step ? "w-5 bg-primary" : "w-1.5 bg-[#2d313c]"
+                i === step ? "w-5 bg-primary" : "w-1.5 bg-[var(--tt-outline)]"
               }`}
             />
           ))}

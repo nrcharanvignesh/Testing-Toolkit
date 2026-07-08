@@ -85,7 +85,7 @@ export function ResizeHandle({
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
-      className={`shrink-0 rounded-full bg-transparent transition-colors hover:bg-[#3b82f6]/50 ${base} ${className}`}
+      className={`shrink-0 rounded-full bg-transparent transition-colors hover:bg-[var(--tt-info)]/50 ${base} ${className}`}
     />
   );
 }

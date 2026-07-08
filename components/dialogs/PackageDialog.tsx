@@ -126,16 +126,16 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
 
         {usingSelection ? (
           <div className="flex flex-col gap-1.5">
-            <h4 className="text-xs font-bold uppercase tracking-wide text-[#7abaff]">
+            <h4 className="text-xs font-bold uppercase tracking-wide text-[var(--tt-primary-soft)]">
               Selected work items ({selectedIds.length})
             </h4>
-            <div className="max-h-32 overflow-auto rounded-lg border border-[#2d313c] bg-[#13161d] p-2 text-sm text-[#bfc4cc]">
+            <div className="max-h-32 overflow-auto rounded-lg border border-[var(--tt-outline)] bg-[var(--tt-surface-base)] p-2 text-sm text-[var(--tt-text-secondary)]">
               {selectedIds.join(", ")}
             </div>
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
-            <h4 className="text-xs font-bold uppercase tracking-wide text-[#7abaff]">
+            <h4 className="text-xs font-bold uppercase tracking-wide text-[var(--tt-primary-soft)]">
               Work item IDs
             </h4>
             <textarea
@@ -148,7 +148,7 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
         )}
 
         <div className="flex items-center gap-3">
-          <h4 className="text-xs font-bold uppercase tracking-wide text-[#7abaff]">
+          <h4 className="text-xs font-bold uppercase tracking-wide text-[var(--tt-primary-soft)]">
             Paper size
           </h4>
           <div className="flex gap-1.5">
@@ -170,11 +170,11 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         {result && (
-          <div className="rounded-lg border border-[#1aab5c]/40 bg-[#0d2a1c] p-3 text-sm">
-            <p className="text-[#22c46a]">
+          <div className="rounded-lg border border-[var(--tt-success)]/40 bg-[var(--tt-success-bg)] p-3 text-sm">
+            <p className="text-[var(--tt-success-hover)]">
               Packaged {result.n} work item(s). PDFs written to:
             </p>
-            <code className="break-all text-xs text-[#bfc4cc]">{result.dir}</code>
+            <code className="break-all text-xs text-[var(--tt-text-secondary)]">{result.dir}</code>
             {downloads.length === 0 && (
               <p className="mt-1 text-xs text-muted-foreground">
                 Open the Outputs tab on a work item to download the packets.

@@ -95,7 +95,7 @@ export function DiagnosticsSection() {
 
 function OverallBadge({ status }: { status: DoctorReport["status"] }) {
   const map = {
-    pass: { text: "All checks passed", cls: "text-[#7fd1b9]" },
+    pass: { text: "All checks passed", cls: "text-[var(--tt-success-soft)]" },
     warn: { text: "Some optional checks need attention", cls: "text-amber-300" },
     fail: { text: "One or more required checks failed", cls: "text-red-300" },
   } as const;
@@ -140,7 +140,7 @@ function StatusIcon({
 }) {
   const cls = `h-3.5 w-3.5 shrink-0 ${className}`;
   if (status === "pass")
-    return <CheckCircle2 className={`${cls} text-[#7fd1b9]`} strokeWidth={2} />;
+    return <CheckCircle2 className={`${cls} text-[var(--tt-success-soft)]`} strokeWidth={2} />;
   if (status === "fail")
     return <XCircle className={`${cls} text-red-400`} strokeWidth={2} />;
   return <AlertTriangle className={`${cls} text-amber-400`} strokeWidth={2} />;

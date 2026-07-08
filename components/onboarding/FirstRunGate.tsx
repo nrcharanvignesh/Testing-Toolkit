@@ -133,7 +133,7 @@ function SetupWizard({
         </h2>
         <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
           Enter your LLM API and Azure DevOps details. On{" "}
-          <b className="text-[#bfc4cc]">Save &amp; Connect</b> the app stores
+          <b className="text-[var(--tt-text-secondary)]">Save &amp; Connect</b> the app stores
           credentials, verifies the PAT, and loads your projects. No API key?
           You can still proceed and use Manual Mode.
         </p>
@@ -143,9 +143,9 @@ function SetupWizard({
         </div>
 
         {logs.length > 0 && (
-          <div className="mt-4 max-h-28 overflow-auto rounded-lg border border-[#2d313c] bg-[#0d1017] p-3 font-mono text-xs">
+          <div className="mt-4 max-h-28 overflow-auto rounded-lg border border-[var(--tt-outline)] bg-[var(--tt-surface-deepest)] p-3 font-mono text-xs">
             {logs.map((l, i) => (
-              <div key={i} className="text-[#bfc4cc]">
+              <div key={i} className="text-[var(--tt-text-secondary)]">
                 {l}
               </div>
             ))}

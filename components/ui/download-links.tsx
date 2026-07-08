@@ -42,9 +42,9 @@ export function DownloadLinks({
   if (!items.length) return null;
   return (
     <div
-      className={`flex flex-col gap-2 rounded-lg border border-[#1aab5c]/40 bg-[#0d2a1c] p-3 ${className}`}
+      className={`flex flex-col gap-2 rounded-lg border border-[var(--tt-success)]/40 bg-[var(--tt-success-bg)] p-3 ${className}`}
     >
-      <h4 className="text-xs font-bold uppercase tracking-wide text-[#22c46a]">
+      <h4 className="text-xs font-bold uppercase tracking-wide text-[var(--tt-success-hover)]">
         {title}
       </h4>
       <ul className="flex flex-col gap-1.5">
@@ -55,13 +55,13 @@ export function DownloadLinks({
               download={it.name}
               target="_blank"
               rel="noopener noreferrer"
-              className="group flex items-center gap-2 rounded-md border border-[#2d313c] bg-[#13161d] px-2.5 py-1.5 text-sm text-[#7abaff] transition-colors hover:border-[#3a6ea5] hover:text-[#a9d0ff]"
+              className="group flex items-center gap-2 rounded-md border border-[var(--tt-outline)] bg-[var(--tt-surface-base)] px-2.5 py-1.5 text-sm text-[var(--tt-primary-soft)] transition-colors hover:border-[var(--tt-link-hover-border)] hover:text-[var(--tt-primary-bright)]"
               title={`Download ${it.name}`}
             >
               <Download className="h-4 w-4 shrink-0" />
               <span className="truncate">{it.name}</span>
               {it.note && (
-                <span className="ml-auto shrink-0 text-xs text-[#8a8f99]">
+                <span className="ml-auto shrink-0 text-xs text-[var(--tt-text-muted)]">
                   {it.note}
                 </span>
               )}
