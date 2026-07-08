@@ -70,7 +70,7 @@ export function GuidedTour({ onDone }: { onDone: () => void }) {
             Quick tour · {step + 1} of {STEPS.length}
           </span>
           <button
-            className="text-xs text-muted-foreground hover:text-white"
+            className="text-xs text-muted-foreground hover:text-[var(--tt-text-bright)]"
             onClick={onDone}
           >
             Skip tour
@@ -89,7 +89,7 @@ export function GuidedTour({ onDone }: { onDone: () => void }) {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.18 }}
             >
-              <h2 className="mt-4 text-lg font-bold tracking-tight text-white text-balance">
+              <h2 className="mt-4 text-lg font-bold tracking-tight text-[var(--tt-text-bright)] text-balance">
                 {current.title}
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground text-pretty">
