@@ -95,26 +95,28 @@
   --tt-text-disabled: #4a4e58;
   --tt-on-accent: #ffffff;
 
-  --tt-primary: #5ba8ff;
-  --tt-primary-soft: #7abaff;
-  --tt-primary-bright: #a9d0ff;
-  --tt-action: #0071e3;
-  --tt-action-hover: #0077ed;
-  --tt-action-press: #005bb5;
+  /* Calmer steel-blue accent (was an electric #5ba8ff) */
+  --tt-primary: #6f9ac9;
+  --tt-primary-soft: #86abd4;
+  --tt-primary-bright: #a8c6e6;
+  --tt-action: #2f6fb0;
+  --tt-action-hover: #3a7cbf;
+  --tt-action-press: #275d94;
 
-  --tt-success: #1aab5c;
-  --tt-success-hover: #22c46a;
-  --tt-success-press: #148a49;
-  --tt-success-soft: #7fd1b9;
-  --tt-success-bg: #0d2a1c;
+  /* Muted semantic colors — professional, not neon */
+  --tt-success: #3d8f66;
+  --tt-success-hover: #47a074;
+  --tt-success-press: #2f7351;
+  --tt-success-soft: #6fae97;
+  --tt-success-bg: #142a20;
 
-  --tt-danger: #e53e3e;
-  --tt-danger-hover: #f05252;
-  --tt-danger-press: #c53030;
+  --tt-danger: #c05f5f;
+  --tt-danger-hover: #cc6f6f;
+  --tt-danger-press: #a44e4e;
 
-  --tt-warn: #f59e0b;
-  --tt-warn-alt: #d69e2e;
-  --tt-info: #3b82f6;
+  --tt-warn: #c2984a;
+  --tt-warn-alt: #b08a42;
+  --tt-info: #5b82b0;
 
   --tt-accent-bg: #0d1f3d;
   --tt-accent-border: #153060;
@@ -132,21 +134,21 @@
   --tt-teal-dim:  #0d6f6f;
   --tt-teal-bg:   rgba(21,154,154,0.10);
 
-  /* Work-item type accent colors */
-  --tt-type-story:   #5ba8ff;
-  --tt-type-bug:     #e53e3e;
-  --tt-type-task:    #f59e0b;
-  --tt-type-epic:    #a855f7;
-  --tt-type-feature: #22c55e;
-  --tt-type-issue:   #e53e3e;
+  /* Work-item type accent colors — muted, harmonious, no purple */
+  --tt-type-story:   #6d8fb5;
+  --tt-type-bug:     #b56b6b;
+  --tt-type-task:    #b89a5e;
+  --tt-type-epic:    #8a8fa3;
+  --tt-type-feature: #6a9d81;
+  --tt-type-issue:   #b56b6b;
   --tt-type-default: #8a8f99;
 
   /* Type soft backgrounds (for badges) */
-  --tt-type-story-bg:   rgba(91,168,255,0.12);
-  --tt-type-bug-bg:     rgba(229,62,62,0.12);
-  --tt-type-task-bg:    rgba(245,158,11,0.12);
-  --tt-type-epic-bg:    rgba(168,85,247,0.12);
-  --tt-type-feature-bg: rgba(34,197,94,0.12);
+  --tt-type-story-bg:   rgba(109,143,181,0.14);
+  --tt-type-bug-bg:     rgba(181,107,107,0.14);
+  --tt-type-task-bg:    rgba(184,154,94,0.14);
+  --tt-type-epic-bg:    rgba(138,143,163,0.14);
+  --tt-type-feature-bg: rgba(106,157,129,0.14);
 
   /* Elevation shadows */
   --tt-shadow-sm: 0 1px 3px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.2);
@@ -154,11 +156,11 @@
   --tt-shadow-lg: 0 8px 28px rgba(0,0,0,0.55), 0 4px 8px rgba(0,0,0,0.3);
 
   /* State badge colors */
-  --tt-state-active: #1aab5c;
-  --tt-state-resolved: #5ba8ff;
+  --tt-state-active: #3d8f66;
+  --tt-state-resolved: #6d8fb5;
   --tt-state-closed: #8a8f99;
-  --tt-state-new: #f59e0b;
-  --tt-state-removed: #e53e3e;
+  --tt-state-new: #c2984a;
+  --tt-state-removed: #c05f5f;
 
   /* shadcn tokens mapped onto the palette */
   --background: var(--tt-surface-deepest);
@@ -212,26 +214,26 @@
   --tt-text-disabled: #b3b8c1;
   --tt-on-accent: #ffffff;
 
-  --tt-primary: #0071e3;
-  --tt-primary-soft: #0a63c4;
-  --tt-primary-bright: #005bb5;
-  --tt-action: #0071e3;
-  --tt-action-hover: #0077ed;
-  --tt-action-press: #005bb5;
+  --tt-primary: #3a6ea5;
+  --tt-primary-soft: #315f8e;
+  --tt-primary-bright: #274d75;
+  --tt-action: #3a6ea5;
+  --tt-action-hover: #427ab5;
+  --tt-action-press: #2f5c8a;
 
-  --tt-success: #12924e;
-  --tt-success-hover: #16a558;
-  --tt-success-press: #0e7a41;
-  --tt-success-soft: #0e7a41;
-  --tt-success-bg: #e6f6ee;
+  --tt-success: #2f7d54;
+  --tt-success-hover: #368a5e;
+  --tt-success-press: #266644;
+  --tt-success-soft: #266644;
+  --tt-success-bg: #eaf4ee;
 
-  --tt-danger: #d92d2d;
-  --tt-danger-hover: #e14444;
-  --tt-danger-press: #b52424;
+  --tt-danger: #b34a4a;
+  --tt-danger-hover: #c25a5a;
+  --tt-danger-press: #9c3d3d;
 
-  --tt-warn: #b7791f;
-  --tt-warn-alt: #a06d1c;
-  --tt-info: #2563eb;
+  --tt-warn: #9c7a2e;
+  --tt-warn-alt: #8a6c29;
+  --tt-info: #46699e;
 
   --tt-accent-bg: #e3f0ff;
   --tt-accent-border: #a9ceff;
@@ -249,30 +251,30 @@
   --tt-teal-dim:  #0a5e5e;
   --tt-teal-bg:   rgba(14,122,122,0.08);
 
-  /* Work-item type accent colors (light) */
-  --tt-type-story:   #0071e3;
-  --tt-type-bug:     #d92d2d;
-  --tt-type-task:    #b7791f;
-  --tt-type-epic:    #7c3aed;
-  --tt-type-feature: #12924e;
-  --tt-type-issue:   #d92d2d;
+  /* Work-item type accent colors (light) — muted, no purple */
+  --tt-type-story:   #4a6d99;
+  --tt-type-bug:     #a84a4a;
+  --tt-type-task:    #8a6c29;
+  --tt-type-epic:    #6b7180;
+  --tt-type-feature: #2f7d54;
+  --tt-type-issue:   #a84a4a;
   --tt-type-default: #656b78;
 
-  --tt-type-story-bg:   rgba(0,113,227,0.08);
-  --tt-type-bug-bg:     rgba(217,45,45,0.08);
-  --tt-type-task-bg:    rgba(183,121,31,0.08);
-  --tt-type-epic-bg:    rgba(124,58,237,0.08);
-  --tt-type-feature-bg: rgba(18,146,78,0.08);
+  --tt-type-story-bg:   rgba(74,109,153,0.10);
+  --tt-type-bug-bg:     rgba(168,74,74,0.10);
+  --tt-type-task-bg:    rgba(138,108,41,0.10);
+  --tt-type-epic-bg:    rgba(107,113,128,0.12);
+  --tt-type-feature-bg: rgba(47,125,84,0.10);
 
   --tt-shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.05);
   --tt-shadow-md: 0 4px 12px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.06);
   --tt-shadow-lg: 0 8px 28px rgba(0,0,0,0.14), 0 4px 8px rgba(0,0,0,0.08);
 
-  --tt-state-active: #12924e;
-  --tt-state-resolved: #0071e3;
+  --tt-state-active: #2f7d54;
+  --tt-state-resolved: #4a6d99;
   --tt-state-closed: #656b78;
-  --tt-state-new: #b7791f;
-  --tt-state-removed: #d92d2d;
+  --tt-state-new: #9c7a2e;
+  --tt-state-removed: #b34a4a;
 
   /* shadcn tokens */
   --background: var(--tt-surface-deepest);
@@ -783,19 +785,19 @@
     color: var(--tt-text-muted);
   }
   .tt-badge-success {
-    background: rgba(26,171,92,0.14);
+    background: rgba(61,143,102,0.16);
     color: var(--tt-success);
   }
   .tt-badge-warn {
-    background: rgba(245,158,11,0.14);
+    background: rgba(194,152,74,0.16);
     color: var(--tt-warn);
   }
   .tt-badge-danger {
-    background: rgba(229,62,62,0.14);
+    background: rgba(192,95,95,0.16);
     color: var(--tt-danger);
   }
   .tt-badge-info {
-    background: rgba(91,168,255,0.14);
+    background: rgba(111,154,201,0.16);
     color: var(--tt-primary);
   }
 

@@ -63,8 +63,8 @@ export function CoverageBar() {
         <span
           className="tt-metric-chip"
           style={{
-            background: "rgba(91,168,255,0.10)",
-            borderColor: "rgba(91,168,255,0.3)",
+            background: "rgba(111,154,201,0.12)",
+            borderColor: "rgba(111,154,201,0.3)",
             color: "var(--tt-primary)",
           }}
           title={`${selectedCount} items selected for generation`}
@@ -86,11 +86,11 @@ export function CoverageBar() {
             className="tt-metric-chip"
             style={{
               background: lastRun.failed === 0
-                ? "rgba(26,171,92,0.10)"
-                : "rgba(229,62,62,0.10)",
+                ? "rgba(61,143,102,0.12)"
+                : "rgba(192,95,95,0.12)",
               borderColor: lastRun.failed === 0
-                ? "rgba(26,171,92,0.3)"
-                : "rgba(229,62,62,0.3)",
+                ? "rgba(61,143,102,0.3)"
+                : "rgba(192,95,95,0.3)",
               color: lastRun.failed === 0
                 ? "var(--tt-success)"
                 : "var(--tt-danger)",

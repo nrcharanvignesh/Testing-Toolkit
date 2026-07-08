@@ -271,7 +271,7 @@ function DetailContent({
               key={tag}
               className="tt-badge"
               style={{
-                background: "rgba(91,168,255,0.10)",
+                background: "rgba(111,154,201,0.12)",
                 color: "var(--tt-primary)",
               }}
             >
