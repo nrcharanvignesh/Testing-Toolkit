@@ -160,9 +160,11 @@ async def metrics() -> dict:
 
     Every field is fail-safe and degrades to ``None`` when it can't be read, so
     this never raises and never requires a dependency that may be missing.
-    ``cpu_percent`` / ``proc_mem_mb`` use psutil when it is importable; RAM uses
-    core.hardware's OS-level readers (which have their own non-psutil
-    fallbacks); GPU uses core.hardware's accelerator detection.
+    ``cpu_percent`` / ``proc_mem_mb`` come from core.process_metrics, which uses
+    platform-native APIs (Windows ctypes, Linux /proc, os.times) and needs NO
+    external dependency — matching the desktop app. psutil, when importable, is
+    used only as an optional refinement. RAM uses core.hardware's OS-level
+    readers; GPU uses core.hardware's accelerator detection.
     """
     data: dict = {
         # All resource figures below are scoped to THIS app/agent process alone,
@@ -185,22 +187,39 @@ async def metrics() -> dict:
         "gpu": None,
     }
 
-    # Per-process CPU% + resident memory for THIS agent (best-effort via psutil).
+    # Per-process CPU% + resident memory for THIS agent. Primary source is the
+    # dependency-free core.process_metrics (platform-native APIs) so this works
+    # on every install without psutil — exactly like the desktop app. CPU% is a
+    # delta between successive calls; the status bar polls every few seconds so
+    # the reading converges after the first poll.
+    try:
+        from core.process_metrics import _get_cpu_percent, _get_memory_mb
+
+        cpu = _get_cpu_percent()
+        if cpu is not None:
+            data["cpu_percent"] = round(float(cpu), 1)
+        mem = _get_memory_mb()
+        if mem and mem > 0:
+            data["proc_mem_mb"] = int(mem)
+    except Exception:
+        pass
+
+    # Optional refinement via psutil when it happens to be installed (not
+    # bundled by default). Only overrides when it returns a usable value.
     try:
         import psutil  # type: ignore
 
         proc = _proc()
         if proc is not None:
-            # cpu_percent can exceed 100% on multi-core boxes (sum across cores);
-            # normalize to a share of total machine capacity so "the app alone"
-            # reads intuitively (0-100%).
             raw = float(proc.cpu_percent(interval=None))
             cores = psutil.cpu_count(logical=True) or 1
-            data["cpu_percent"] = round(min(100.0, raw / cores), 1)
+            # psutil's first call after priming can read 0.0; keep the native
+            # value in that case so the display isn't reset to zero.
+            pct = round(min(100.0, raw / cores), 1)
+            if pct > 0 or data["cpu_percent"] is None:
+                data["cpu_percent"] = pct
             try:
-                data["proc_mem_mb"] = int(
-                    proc.memory_info().rss / (1024 * 1024)
-                )
+                data["proc_mem_mb"] = int(proc.memory_info().rss / (1024 * 1024))
             except Exception:
                 pass
     except Exception:
