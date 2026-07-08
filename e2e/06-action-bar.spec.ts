@@ -27,8 +27,10 @@ test.describe("Action bar button states (no project selected)", () => {
   });
 
   test("project-dependent buttons are disabled when no project is selected", async ({ page }) => {
+    // These buttons require a project to be loaded; they are disabled until one
+    // is selected. Package PDFs is intentionally excluded: it always stays
+    // enabled because it opens the PDF Packager dialog even with no items.
     for (const label of [
-      "Package PDFs",
       "Upload to ADO",
       "Defect Upload",
       "Retrieval Preview",
@@ -40,6 +42,14 @@ test.describe("Action bar button states (no project selected)", () => {
       await expect(btn).toBeVisible();
       await expect(btn).toBeDisabled();
     }
+  });
+
+  test("Package PDFs button is always enabled (opens packager with no items)", async ({ page }) => {
+    // Package PDFs is special: it opens the PDF Packager dialog regardless of
+    // project or selection state. It must NEVER be disabled.
+    const btn = page.getByRole("button", { name: "Package PDFs" });
+    await expect(btn).toBeVisible();
+    await expect(btn).toBeEnabled();
   });
 
   test("generate buttons are disabled when no work items are selected", async ({ page }) => {
