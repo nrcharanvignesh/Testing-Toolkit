@@ -4,3 +4,7 @@ agent-bundle/
 
 # Archives ship via GitHub only - not deployed to Vercel
 *.zip
+
+# Desktop app source — kept in-repo as the canonical parity reference only,
+# never deployed or built by the web app.
+desktop-reference/

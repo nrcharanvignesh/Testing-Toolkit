@@ -52,3 +52,8 @@ test-results/
 /blob-report/
 .playwright/
 .pytest_cache/
+
+# Desktop app clone — local parity reference only. Never tracked in this repo
+# (it carries its own Git LFS objects that would break pushes here).
+desktop-reference/
+agent-bundle/.venv/
