@@ -257,13 +257,71 @@ def _extract_html(path: Path) -> str:
 
 
 def _read_text_file(path: Path) -> str:
+    """Read text with a size cap to prevent OOM on huge logs/dumps."""
     try:
+        size = path.stat().st_size
+        if size > _MAX_TEXT_BYTES:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                return f.read(_MAX_TEXT_BYTES)
         return path.read_text(encoding="utf-8", errors="replace")
     except Exception:
         try:
-            return path.read_bytes().decode("utf-8", errors="replace")
+            raw = path.read_bytes()[:_MAX_TEXT_BYTES]
+            return raw.decode("utf-8", errors="replace")
         except Exception:
             return ""
+
+
+def _extract_archive(path: Path) -> str:
+    """Extract text from a .zip archive by iterating contained files,
+    extracting each to a temp dir, and calling extract_text (skipping nested
+    archives to prevent recursion bombs).
+    Guards: path traversal (zip-slip), decompression bomb, total text cap."""
+    import tempfile
+    import zipfile as _zf
+
+    if not _zf.is_zipfile(str(path)):
+        return ""
+    parts: list[str] = []
+    total_chars = 0
+    try:
+        with _zf.ZipFile(str(path), "r") as zf:
+            names = [n for n in zf.namelist()
+                     if not n.endswith("/") and not n.startswith("__MACOSX")]
+            with tempfile.TemporaryDirectory(prefix="kb_zip_") as td:
+                td_path = Path(td)
+                td_resolved = td_path.resolve()
+                for name in names[:500]:  # cap at 500 files per archive
+                    try:
+                        member_ext = Path(name).suffix.lower()
+                        # Skip nested archives to prevent recursion bombs
+                        if member_ext in _ARCHIVE_EXT:
+                            continue
+                        # Guard: path traversal (zip-slip)
+                        target = (td_path / name).resolve()
+                        if not str(target).startswith(str(td_resolved)):
+                            continue
+                        # Guard: decompression bomb per member
+                        info = zf.getinfo(name)
+                        if info.file_size > _MAX_TEXT_BYTES:
+                            continue
+                        zf.extract(name, td)
+                        member = td_path / name
+                        if member.is_file() and member.stat().st_size > 0:
+                            text = extract_text(member)
+                            if text.strip():
+                                parts.append(f"--- {name} ---\n{text}")
+                                total_chars += len(text)
+                                if total_chars > _MAX_TEXT_BYTES:
+                                    break
+                    except Exception:
+                        continue
+    except Exception:
+        return ""
+    result = "\n\n".join(parts)
+    del parts
+    gc.collect()
+    return result
 
 
 def extract_text(path: Path) -> str:
@@ -286,6 +344,8 @@ def extract_text(path: Path) -> str:
         return _extract_rtf(path)
     if ext in (".html", ".htm"):
         return _extract_html(path)
+    if ext == ".zip":
+        return _extract_archive(path)
     if ext in _TEXT_EXT:
         return _read_text_file(path)
     # Multimedia formats: delegate to the isolated multimedia extractor.
