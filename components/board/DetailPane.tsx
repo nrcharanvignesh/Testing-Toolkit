@@ -394,6 +394,38 @@ function DetailContent({
           </div>
         </div>
       )}
+
+      {/* Related work items (desktop board_grid._render_detail 'Links' → related) */}
+      {detail.related?.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h4 className="text-sm font-bold text-[var(--tt-text-primary)]">
+            Related work items ({detail.related.length})
+          </h4>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {detail.related.map(([name, wid, url], i) => (
+              <a
+                key={`${wid}-${i}`}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 rounded-[10px] border border-[var(--tt-outline)] bg-[var(--tt-surface-container)] p-2.5 text-sm text-[var(--tt-primary)] transition-colors hover:border-[var(--tt-border-strong)] hover:bg-[var(--tt-surface-high)]"
+                title={`Open ${name}${wid ? ` #${wid}` : ""}`}
+              >
+                <GitBranch className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate text-[var(--tt-text-primary)]">
+                  {name}
+                </span>
+                {wid ? (
+                  <span className="shrink-0 font-mono text-xs text-[var(--tt-text-muted)]">
+                    #{wid}
+                  </span>
+                ) : null}
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[var(--tt-text-dim)]" />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -522,6 +554,14 @@ function AttachmentCard({ attachment }: { attachment: Attachment }) {
           </span>
         )}
       </div>
+      {attachment.comment ? (
+        <p
+          className="truncate px-2 pb-2 text-[10px] text-[var(--tt-text-muted)]"
+          title={attachment.comment}
+        >
+          {attachment.comment}
+        </p>
+      ) : null}
     </a>
   );
 }
