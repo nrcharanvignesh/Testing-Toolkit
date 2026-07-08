@@ -1,7 +1,7 @@
 {
-  "version": "2.5.0",
+  "version": "2.6.0",
   "ref": "main",
-  "generatedAt": "2026-07-08T06:21:49.387Z",
+  "generatedAt": "2026-07-08T07:38:11.317Z",
   "files": [
     {
       "path": "ado/__init__.py",
@@ -11,12 +11,12 @@
     {
       "path": "ado/api.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/ado/api.py?ref=main",
-      "hash": "c071ee9e085beb07e8dc3a21b5cdaca929ae05d9793550585524b0893b8619f3"
+      "hash": "bd73bf222a12eed6c3e22162679a1e26f75d677fcc19e7a1bd1f45378511c0a5"
     },
     {
       "path": "ado/boards.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/ado/boards.py?ref=main",
-      "hash": "edf9115993e2f09534c5ab974014b6534ea4184c9bd5cabe2c9d0589029794d7"
+      "hash": "99a44c98aee87612dc22a13a717f74499d87f4802cfc36e442f483e9834ab1e4"
     },
     {
       "path": "ado/extract.py",
@@ -26,7 +26,7 @@
     {
       "path": "ado/testcase_creator.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/ado/testcase_creator.py?ref=main",
-      "hash": "8bee4fb1597ad79c50bc8fc49f52a785cb657e63982c16b01448bef0528d5dd5"
+      "hash": "8723108d137b2a0eb9d3a295b6695b156403a93eaea5efe7b714ee335149a525"
     },
     {
       "path": "agent/__init__.py",
@@ -91,7 +91,7 @@
     {
       "path": "agent/routes/generate.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/generate.py?ref=main",
-      "hash": "6e517831eb10b0394b36b90c042bacd860f41126e970d626dc0b12b31675119d"
+      "hash": "8c976ca6a2c9aef0a3ff43ea8189c024b8dd0ec4dc714905c721a00a56591fa3"
     },
     {
       "path": "agent/routes/health.py",
@@ -151,7 +151,7 @@
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "b251d5cf033a701c7998a440ead673c54212de2001284b29dc8676f79d0b5d0e"
+      "hash": "4c6003eeaffe23f6a212558714833e60b601f76567ed65330d661d4152ca9095"
     },
     {
       "path": "automation/__init__.py",
@@ -206,12 +206,12 @@
     {
       "path": "core/anthropic_client.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/anthropic_client.py?ref=main",
-      "hash": "2de45b39f7ff10ffa7d6732059cd89e38c60c4e21972e0b27aa7a48a3fb525a7"
+      "hash": "3eed3f20b7a96d6a35605707d58cecd1f720876a4a1c9a5b91d1632046256e11"
     },
     {
       "path": "core/app_config.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/app_config.py?ref=main",
-      "hash": "3dfaa239765e9b963c65ca26ab76091226044d1958211328f3966fed9df7f2da"
+      "hash": "5107eb3aa3b896ffc101f20edd5f6533ea45a3244c2fa62361b2d116eb00da0a"
     },
     {
       "path": "core/app_logging.py",
@@ -244,9 +244,24 @@
       "hash": "2e60f5d4577585858aae4faceb846e9859d845215c19b9a0141d9c18cfd41617"
     },
     {
+      "path": "core/mcp_bridge.py",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/mcp_bridge.py?ref=main",
+      "hash": "3051ad40a2af0895bc444a9e51c271573310f4185cdc3be53094f39a152111ca"
+    },
+    {
       "path": "core/model_cache.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/model_cache.py?ref=main",
       "hash": "ff64acccc3f9dc99ad30364f8423d19989704a91c83557d6b718ede758459e31"
+    },
+    {
+      "path": "core/model_router.py",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/model_router.py?ref=main",
+      "hash": "397ac1cee522543142440f5590428f0ae1b7422fcc73cc00f066f436570caf1e"
+    },
+    {
+      "path": "core/network_status.py",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/network_status.py?ref=main",
+      "hash": "dfa6912c426138b057dd74cff435f996310911ac94ba4e117635a71505d6215e"
     },
     {
       "path": "core/orchestrator.py",
@@ -256,7 +271,7 @@
     {
       "path": "core/pat_store.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/pat_store.py?ref=main",
-      "hash": "5129e933924c1233afb2170ce8bb828f6708369994d10c18a81e0a6527b2d4db"
+      "hash": "c0aac3fb03921bdc7473b7ac49a7e85750cdb2f6f7ef715f24bfbb1342cbb628"
     },
     {
       "path": "core/prefs_store.py",
@@ -266,7 +281,7 @@
     {
       "path": "core/project_store.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/project_store.py?ref=main",
-      "hash": "40e42bfcf0148f0242966e344c6ecb13e4b2ae06f9af20215af7cc006c98ee91"
+      "hash": "8b27be399f788be0622ff26e5244b82b2f50f4a51af3a94a1090f57c3d2cb43c"
     },
     {
       "path": "core/runtime_config.py",
@@ -346,12 +361,17 @@
     {
       "path": "kb/bm25.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/bm25.py?ref=main",
-      "hash": "34ca6f41c859f212905789986c14015f88e19973c2cf5908bc241089cd6f7cb9"
+      "hash": "3509bab23fe930b5965093a55f8166d72f4c1f9f314448ba9a4f563af603f12a"
     },
     {
       "path": "kb/bundle.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/bundle.py?ref=main",
       "hash": "ff2e2bb5d50a423b193122d9faf10f1923a59c061468459213fbffc798a1902c"
+    },
+    {
+      "path": "kb/context_summary.py",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/context_summary.py?ref=main",
+      "hash": "96c3432271516ff5568d34305e655f097efa8e4d3f38f23ef3fd3671cff52c72"
     },
     {
       "path": "kb/contextual.py",
@@ -361,7 +381,7 @@
     {
       "path": "kb/embeddings.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/embeddings.py?ref=main",
-      "hash": "a1540c2b17d0825a4fc5d14204c5a04d32416aa12500a9e1d935179e93f0644c"
+      "hash": "b8f7627f7f43ab62ea67af16c9cdfe9958d65886e6fc8e575073510fe0a51123"
     },
     {
       "path": "kb/file_sig.py",
@@ -371,12 +391,17 @@
     {
       "path": "kb/indexer.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/indexer.py?ref=main",
-      "hash": "bd1165e01a98669eb034d0ef340241ccd59c1418f2ae00527aeeddd7adb3be2b"
+      "hash": "1a486e16bc102389ed05dd10ce50dbcc990df6ecde2002f5ca6bad183da9b955"
+    },
+    {
+      "path": "kb/kb_crypto.py",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/kb_crypto.py?ref=main",
+      "hash": "8797c83db82ae598be064a76b2ab5add724037c81ec224f9d571cfdfb6fefd8d"
     },
     {
       "path": "kb/legacy_docs.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/legacy_docs.py?ref=main",
-      "hash": "a4cab36d6d4435c99368f29439cc2cb1c2207ead28b8801331a1ac52a5cc976a"
+      "hash": "cb483d338c5dcde6bca6e39cd9eae94b0e17b86333ba3a1fd1e50ea80ce46bf9"
     },
     {
       "path": "kb/model_bundle.py",
@@ -386,32 +411,37 @@
     {
       "path": "kb/multimedia.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/multimedia.py?ref=main",
-      "hash": "aa0fde8ebb58ea768fbe575127d446c3c9d86353edf6a72688ed405c1bf0145d"
+      "hash": "8b412cd5716fc9fbef0de605aebd126191d648f099dbe693a0dca9be09087126"
     },
     {
       "path": "kb/ocr.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/ocr.py?ref=main",
-      "hash": "623e3d8eee8ac4e2ef014c08df0a0400eaca7cbe1ae91c7317f013028325fc20"
+      "hash": "1727b8f229dbd641509fde2668edc03da21b4d54a13459fc3c33bb25aacfb879"
     },
     {
       "path": "kb/reranker.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/reranker.py?ref=main",
-      "hash": "09db27a168ca44587f7acb4eba2c9f77911d0fdfc524c7e84fc74bb53b087eb1"
+      "hash": "18d13af9ca055700fe50f1c1ae6495a4a8964051bea60d2349796865a8e102e0"
     },
     {
       "path": "kb/retrieval.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/retrieval.py?ref=main",
-      "hash": "b57b00019860dfc2ae233c6074c5a73e6d014c59177be3f2702c15ee1c577126"
+      "hash": "a29503605e9cf26d65255c3e96b8451fd2d5539804794cab4f0a1ab6b9617975"
     },
     {
       "path": "kb/store.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/store.py?ref=main",
-      "hash": "857e78adfe48b8a51e5f24474632f4363a1e333b5dc43413ef9f74ad72268f65"
+      "hash": "374af109fdd713e04829c6d0b213d8f97d1f968f16ac6fcb78ec3a151907ba08"
     },
     {
       "path": "kb/vector_store.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/vector_store.py?ref=main",
-      "hash": "edccb797b3251567bfa6edcb12f0433b9644df91953865a8aca5556ac2fc8684"
+      "hash": "d94a772ca21d749bab8ec6983759feecdff475493d8a51750280f9ba512b98ae"
+    },
+    {
+      "path": "prompt.md",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/prompt.md?ref=main",
+      "hash": "e1b25d04569ca6b5cb7c3f276a68926088203e331bdf6b73b3bacd71719b6fa3"
     },
     {
       "path": "testgen/__init__.py",
@@ -436,12 +466,12 @@
     {
       "path": "testgen/rlm.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/testgen/rlm.py?ref=main",
-      "hash": "4222a493c8b9fa8fe833fd93d10aeeb76d46be76b914ae7344fa960d3094a026"
+      "hash": "db41611e68f9d5b8b36306395c33b0369dad5f82393f6d8a57fe2cc3da6597df"
     },
     {
       "path": "testgen/tc_types.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/testgen/tc_types.py?ref=main",
-      "hash": "3e3510923f0c97d35f1e3a331a48a4c76db65472af1180849ee6cb323a72140c"
+      "hash": "f8b4b72e56fd1a9eb5cda95f6c8723ae475810a4a5b5ec5518b2b2aeffe21114"
     },
     {
       "path": "testgen/template_analyzer.py",
