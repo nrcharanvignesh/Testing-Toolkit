@@ -3,10 +3,14 @@ import { defineConfig, devices } from "@playwright/test";
 /**
  * Playwright E2E config for the Testing Toolkit web app.
  *
- * IMPORTANT: these tests must run on a machine where the local compute agent
- * (http://127.0.0.1:7842) is running and configured with a real ADO PAT + LLM
- * key. The web app talks to that agent directly from the browser, so the agent
- * cannot be reached from a CI sandbox or any other machine.
+ * The specs drive the app against a MOCKED local agent (see mockAgent in
+ * e2e/helpers.ts), which fulfills the agent HTTP contract at the network layer.
+ * This means the full suite runs deterministically in CI/sandbox with NO real
+ * agent, PAT, or LLM key. ADO-write endpoints are additionally hard-blocked by
+ * guardAdoWrites so a test can never mutate real ADO data.
+ *
+ * To instead run against a real local agent, simply do not install mockAgent in
+ * a spec; the app will talk to http://127.0.0.1:7842 directly.
  *
  * Target either your local dev server or the deployed app:
  *   PLAYWRIGHT_BASE_URL=http://localhost:3000            (local dev)

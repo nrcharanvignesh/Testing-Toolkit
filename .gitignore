@@ -51,3 +51,4 @@ playwright-report/
 test-results/
 /blob-report/
 .playwright/
+.pytest_cache/

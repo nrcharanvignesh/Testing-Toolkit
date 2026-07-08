@@ -18,8 +18,10 @@ test.describe("Generate test cases (no ADO push)", () => {
     const haveProject = await selectFirstProject(page);
     test.skip(!haveProject, "no projects for this PAT");
 
+    // Boards load asynchronously after the project is selected; wait for the
+    // board row (2nd [data-selected]) rather than counting immediately.
     const boards = page.locator('[data-selected]');
-    test.skip((await boards.count()) < 2, "no board to load");
+    await expect(boards.nth(1)).toBeVisible({ timeout: 30_000 });
     await boards.nth(1).click();
     await expect(page.getByText(/Loading work items\.\.\./)).toHaveCount(0, { timeout: 60_000 });
 
@@ -42,8 +44,10 @@ test.describe("Generate test cases (no ADO push)", () => {
     // "Push to ADO" exists but we never click it.
     await expect(page.getByRole("button", { name: "Push to ADO" })).toBeVisible();
 
-    // Close the dialog instead of pushing.
-    await page.getByRole("button", { name: "Close" }).click();
+    // Close the dialog instead of pushing. There is an icon "Close" (aria-label)
+    // and the footer text button (both accessible name "Close"); target the
+    // footer text button by its visible text node.
+    await page.locator("button.tt-btn-ghost", { hasText: /^Close$/ }).click();
 
     // HARD ASSERTION: nothing was ever pushed to ADO.
     expect(guard.blocked(), `blocked ADO-write attempts: ${guard.blocked().join(", ")}`).toHaveLength(0);

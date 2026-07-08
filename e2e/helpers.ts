@@ -41,19 +41,6 @@ export function guardAdoWrites(page: Page): { blocked: () => string[] } {
   return { blocked: () => blocked };
 }
 
-/** True when the local agent reports it is configured (has PAT + LLM key). */
-export async function agentConfigured(page: Page): Promise<boolean> {
-  try {
-    const base = (process.env.AGENT_URL ?? "http://127.0.0.1:7842").replace(/\/$/, "");
-    const res = await page.request.get(`${base}/settings`);
-    if (!res.ok()) return false;
-    const json = await res.json();
-    return Boolean(json?.configured);
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Get past the first-run gate. If the agent is configured we land directly in
  * the shell; otherwise we click "Skip (manual mode)" to enter manual mode.
@@ -138,19 +125,25 @@ export async function mockAgent(
     tour_completed: tourCompleted,
     jira_configured: false,
   };
-  const workItems = [
-    {
-      wi_id: 101,
-      wi_type: "User Story",
-      title: "As a user I can sign in",
-      state: "Active",
-      assigned_to: "Alice",
-      board_column: "Doing",
-      tags: [],
-      description: "Login story",
-      acceptance_criteria: "Given valid creds, I can sign in.",
-    },
-  ];
+  const workItemRow = {
+    wi_id: 101,
+    title: "As a user I can sign in",
+    wi_type: "User Story",
+    state: "Active",
+    board_column: "Doing",
+    board_lane: "",
+    assigned_to: "Alice",
+    tags: [] as string[],
+    iteration_path: "Sprint 1",
+  };
+  const workItemDetail = {
+    ...workItemRow,
+    area_path: "Demo",
+    description_html: "<p>Login story</p>",
+    acceptance_criteria_html: "<p>Given valid creds, I can sign in.</p>",
+    repro_steps_html: "",
+    url: "https://demo-org/_workitems/edit/101",
+  };
 
   await page.route(`${AGENT_ORIGIN}/**`, (route: Route) => {
     const url = new URL(route.request().url());
@@ -162,21 +155,50 @@ export async function mockAgent(
       return json(route, settings);
     if (path === "/settings") return json(route, settings); // POST save
     if (path === "/settings/tour") return json(route, { ok: true });
-    if (path === "/sources/projects")
-      return json(route, { projects: projects.map((name) => ({ name })) });
-    if (path === "/sources/boards")
-      return json(route, {
-        boards: [
-          { id: "b1", name: "Board 1", team_id: "t1", team_name: "Team 1" },
-        ],
+    // /sources/projects -> string[]
+    if (path === "/sources/projects") return json(route, projects);
+    // /sources/boards/{project} -> Board[]
+    if (path.startsWith("/sources/boards"))
+      return json(route, [
+        {
+          id: "b1",
+          name: "Board 1",
+          team_id: "t1",
+          team_name: "Team 1",
+          label: "Board 1",
+        },
+      ]);
+    // /sources/workitems/stream -> Server-Sent Events (batch + done). The
+    // board loader consumes this first and only falls back to the blocking
+    // endpoint if the stream throws, so it must be real SSE.
+    if (path === "/sources/workitems/stream") {
+      const body =
+        `data: ${JSON.stringify({
+          type: "batch",
+          items: [workItemRow],
+          columns: ["Doing"],
+        })}\n\n` +
+        `data: ${JSON.stringify({
+          type: "done",
+          columns: ["Doing"],
+          total: 1,
+        })}\n\n`;
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body,
       });
-    if (path === "/sources/workitems" || path === "/sources/workitems/stream")
+    }
+    // /sources/workitems (POST) blocking fallback
+    if (path === "/sources/workitems")
       return json(route, {
-        columns: [{ id: "Doing", name: "Doing", column_type: "" }],
-        rows: workItems,
+        columns: ["Doing"],
+        groups: [{ column: "Doing", items: [workItemRow] }],
+        total: 1,
       });
+    // /sources/workitem/{project}/{id} -> RawWorkItemDetail
     if (path.startsWith("/sources/workitem/"))
-      return json(route, workItems[0]);
+      return json(route, workItemDetail);
 
     // --- Generation flow (local, safe; never touches ADO) ---
     if (path === "/generate/start")
