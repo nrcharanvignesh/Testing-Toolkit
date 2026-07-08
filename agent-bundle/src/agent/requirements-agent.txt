@@ -2,9 +2,13 @@
 # Testing Toolkit Agent - Web API Dependencies (no GUI)
 # =====================================================================
 # Slim subset for the FastAPI local agent. Excludes PySide6 and build tools.
-# Audio/video transcription (faster-whisper + bundled ffmpeg) is INCLUDED and
-# enabled by default; wheels ship in the wheelhouse and the whisper model ships
-# under models/faster-whisper-base for fully-offline use.
+#
+# API-FIRST: embeddings, reranking, OCR and audio transcription are all served
+# by the GenAI proxy API (see kb/embeddings.py, kb/reranker.py, kb/ocr.py,
+# kb/multimedia.py). No local ML runtime ships — fastembed / onnx / onnxruntime
+# / rapidocr-onnxruntime / faster-whisper were removed in the API-first
+# migration. PyMuPDF (PDF rasterize for the OCR API) and imageio-ffmpeg (local
+# video->audio track extraction, a format-conversion step) are kept.
 #
 # Install offline:  pip install --no-index --find-links=../wheelhouse -r requirements-agent.txt
 # Install online:   pip install -r requirements-agent.txt
@@ -36,21 +40,15 @@ xlrd>=2.0,<3.0
 striprtf>=0.0.26
 olefile>=0.47
 
-# --- Numerics (BM25 + vector store) ---
+# --- Numerics (BM25 + local vector store) ---
 numpy>=1.26
 
-# --- Dense retrieval (ONNX CPU) ---
-fastembed>=0.3
-onnx
-onnxruntime>=1.17
-
-# --- Vector DB (large KBs) ---
+# --- Vector DB (large KBs, embedded/local) ---
 lancedb>=0.6
 
-# --- OCR (scanned PDFs) ---
-rapidocr-onnxruntime>=1.3
+# --- PDF rasterize for the OCR API (scanned PDFs -> images -> vision API) ---
 PyMuPDF>=1.24
 
-# --- Audio/video transcription (enabled by default, fully offline) ---
-faster-whisper>=1.0
+# --- Local video->audio track extraction (format conversion for the
+#     audio-transcription API; the transcription itself is done via API) ---
 imageio-ffmpeg>=0.5

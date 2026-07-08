@@ -12,7 +12,6 @@ Resources are resolved relative to this file:
       install.py          <- you are here
       requirements.txt
       wheelhouse/         <- offline pip packages (--find-links)
-      models/             <- ONNX models
       src/                <- agent source code
       runtime/<os>-<arch> <- optional bundled portable Python
 
@@ -49,13 +48,8 @@ _CF = CREATE_NO_WINDOW if os.name == "nt" else 0
 # --- Resolve bundle layout (everything is relative to this file) ----------
 BUNDLE_DIR = Path(__file__).resolve().parent
 WHEELHOUSE = BUNDLE_DIR / "wheelhouse"
-MODELS_SRC = BUNDLE_DIR / "models"
-# The two local models that dense indexing requires (Hugging Face cache folder
-# names). Both must ship in the bundle so retrieval runs fully offline.
-REQUIRED_MODELS = (
-    "models--qdrant--bge-small-en-v1.5-onnx-q",   # dense embedder
-    "models--Xenova--ms-marco-MiniLM-L-6-v2",     # cross-encoder reranker
-)
+# No local ML models are bundled — embeddings/reranking/OCR/audio are all
+# served by the GenAI proxy API (see the API-first migration).
 SRC_DIR = BUNDLE_DIR / "src"
 RUNTIME_DIR = BUNDLE_DIR / "runtime"
 REQUIREMENTS = BUNDLE_DIR / "requirements.txt"
@@ -253,8 +247,8 @@ def purge_stale_packages() -> None:
         if d.exists():
             info(f"  Removing stored environment: {d}")
             shutil.rmtree(d, ignore_errors=True)
-    # Transient model cache fastembed may have written on a previous run (the
-    # old offline-failure source). The real models ship in the bundle.
+    # Transient model cache a previous (pre-API) build may have written.
+    # Nothing writes here anymore, but clean it up if an old install left it.
     transient = [
         Path(tempfile.gettempdir()) / "fastembed_cache",
         INSTALL_DIR / ".cache",
@@ -595,7 +589,7 @@ def install_via_target(python_exe: str, online: bool = False) -> str | None:
 
 
 # --------------------------------------------------------------------------
-# Copy source + models
+# Copy source
 # --------------------------------------------------------------------------
 def copy_tree(src: Path, dst: Path) -> None:
     if not src.exists():
@@ -1165,21 +1159,6 @@ def start_agent(launch_python: str, use_pythonpath: bool) -> None:
     warn(f"Full log: {log_path}")
 
 
-def _model_populated(model_dir: Path) -> bool:
-    """True if a bundled HF model cache folder has at least one non-empty
-    snapshot (i.e. the model files are really present, not just an empty dir)."""
-    snapshots = model_dir / "snapshots"
-    try:
-        if not snapshots.is_dir():
-            return False
-        for snap in snapshots.iterdir():
-            if snap.is_dir() and any(snap.iterdir()):
-                return True
-    except OSError:
-        return False
-    return False
-
-
 # --------------------------------------------------------------------------
 # Optional playwright post-install (E2E browser automation)
 # --------------------------------------------------------------------------
@@ -1693,26 +1672,9 @@ def main() -> int:
         error("Make sure you run this from inside the full agent-bundle folder.")
         return 1
 
-    # Validate BOTH local models ship in the bundle. Dense indexing is enforced
-    # (TT_ENFORCE_DENSE), so a model-less install would fail at index time -
-    # catch it here and fail loudly up front instead. Set TT_ENFORCE_DENSE=0 to
-    # allow a lexical-only install (models become optional, warn-only).
-    enforce_dense = (os.environ.get("TT_ENFORCE_DENSE", "1").strip() or "1") != "0"
-    missing_models = [
-        name for name in REQUIRED_MODELS
-        if not _model_populated(MODELS_SRC / name)
-    ]
-    if missing_models:
-        if enforce_dense:
-            error("Bundle is missing required local model(s): "
-                  f"{', '.join(missing_models)}")
-            error("Dense indexing is enforced and needs both bundled models. "
-                  "Re-download the full installer, or set TT_ENFORCE_DENSE=0 to "
-                  "install with lexical-only retrieval.")
-            return 1
-        warn("Local model(s) missing: " + ", ".join(missing_models) +
-             ". Installing anyway (TT_ENFORCE_DENSE=0); retrieval will be "
-             "lexical-only until the models are present.")
+    # No local-model validation: dense embeddings + reranking are served by
+    # the GenAI proxy API (kb/embeddings.py uses _APIEmbedder only). Nothing
+    # to ship or check here.
 
     progress("cleaning", "Preparing a clean install", 66)
     # Remove any previous build first (keeps user data) so re-installs are clean.
@@ -1819,12 +1781,13 @@ def main() -> int:
     # Non-fatal: agent starts without MCP tools; mcp_bridge degrades gracefully.
     _install_mcp_servers()
 
-    # --- Copy source + models --------------------------------------------
+    # --- Copy source -----------------------------------------------------
+    # No local ML models are bundled: embeddings, reranking, OCR and audio
+    # are all served by the GenAI proxy API (see kb/embeddings.py). The old
+    # ONNX/fastembed model copy was removed in the API-first migration.
     progress("copying", "Installing agent files", 91)
     info("Installing agent source...")
     copy_tree(SRC_DIR, AGENT_DIR / "src")
-    info("Installing ONNX models...")
-    copy_tree(MODELS_SRC, AGENT_DIR / "models")
 
     # --- Auto-update config ----------------------------------------------
     write_update_config()
