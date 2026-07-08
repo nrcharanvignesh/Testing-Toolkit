@@ -147,6 +147,12 @@ export interface SettingsResponse {
   tls_mode?: string;
   /** Server-persisted: true once the first-run guided tour is done/skipped. */
   tour_completed?: boolean;
+  // -- JIRA source (secondary work-item source) --
+  jira_configured?: boolean;
+  has_jira_pat?: boolean;
+  jira_url?: string;
+  jira_user?: string;
+  jira_project_prefix?: string;
 }
 
 export interface SaveSettingsPayload {
@@ -158,7 +164,19 @@ export interface SaveSettingsPayload {
   project_prefix?: string;
   api_key?: string;
   pat?: string;
+  // -- JIRA source --
+  jira_url?: string;
+  jira_user?: string;
+  jira_pat?: string;
+  jira_project_prefix?: string;
 }
+
+/**
+ * A work-item identifier. ADO work items are numeric ids; JIRA issues are
+ * string keys (e.g. "PROJ-123"). The board grid, selection set, and generation
+ * calls all accept either so both sources share one UI.
+ */
+export type WiId = string | number;
 
 // ---------------------------------------------------------------------------
 // ADO board model (ado/boards.py)
@@ -178,7 +196,7 @@ export interface BoardColumn {
 }
 
 export interface WorkItemRow {
-  wi_id: number;
+  wi_id: WiId;
   title: string;
   wi_type: string;
   state: string;
@@ -206,7 +224,7 @@ export interface Attachment {
 }
 
 export interface WorkItemDetail {
-  wi_id: number;
+  wi_id: WiId;
   title: string;
   wi_type: string;
   state: string;
@@ -220,7 +238,7 @@ export interface WorkItemDetail {
   comments_html: Array<[string, string, string]>; // [author, when, html]
   attachments: Attachment[];
   hyperlinks: Array<[string, string]>; // [label, url]
-  related: Array<[string, number, string]>; // [name, wi_id, url]
+  related: Array<[string, WiId, string]>; // [name, wi_id, url]
 }
 
 // ---------------------------------------------------------------------------
@@ -520,7 +538,7 @@ interface RawWorkItemsResponse {
 }
 
 interface RawWorkItemDetail {
-  wi_id: number;
+  wi_id: WiId;
   title: string;
   wi_type: string;
   state: string;
@@ -537,7 +555,7 @@ interface RawWorkItemDetail {
   comments_html?: Array<{ when: string; author: string; html: string }>;
   attachments: Array<{ name: string; url: string; size: number; comment?: string }>;
   hyperlinks: Array<{ url: string; comment: string }>;
-  related: Array<{ name: string; wi_id: number; url: string }>;
+  related: Array<{ name: string; wi_id: WiId; url: string }>;
 }
 
 // Hosts whose <img>/attachment blobs require the stored PAT and must be proxied
@@ -662,21 +680,28 @@ export const agent = {
     });
   },
 
-  // -- ADO --
+  // -- Work-item sources (ADO + JIRA via the unified /sources facade) --
+  // The facade merges projects from every configured source and dispatches
+  // boards / work items / detail to the right backend by project-name suffix.
   async verifyPat(): Promise<{ ok: boolean; detail: string }> {
-    return agentFetch("/ado/verify");
+    const r = await agentFetch<{ ok: boolean; detail?: string }>(
+      "/sources/verify"
+    );
+    return { ok: r.ok, detail: r.detail ?? "" };
   },
 
   async listProjects(): Promise<string[]> {
-    return agentFetch<string[]>("/ado/projects");
+    return agentFetch<string[]>("/sources/projects");
   },
 
   async listBoards(project: string): Promise<Board[]> {
-    return agentFetch<Board[]>(`/ado/boards/${encodeURIComponent(project)}`);
+    return agentFetch<Board[]>(
+      `/sources/boards/${encodeURIComponent(project)}`
+    );
   },
 
   async boardView(project: string, board: Board): Promise<BoardView> {
-    const raw = await agentFetch<RawWorkItemsResponse>("/ado/workitems", {
+    const raw = await agentFetch<RawWorkItemsResponse>("/sources/workitems", {
       method: "POST",
       body: JSON.stringify({
         project,
@@ -701,9 +726,11 @@ export const agent = {
     return { columns, rows };
   },
 
-  async workItemDetail(project: string, wiId: number): Promise<WorkItemDetail> {
+  async workItemDetail(project: string, wiId: WiId): Promise<WorkItemDetail> {
     const d = await agentFetch<RawWorkItemDetail>(
-      `/ado/workitem/${encodeURIComponent(project)}/${wiId}`
+      `/sources/workitem/${encodeURIComponent(project)}/${encodeURIComponent(
+        String(wiId)
+      )}`
     );
     return {
       wi_id: d.wi_id,
@@ -749,7 +776,7 @@ export const agent = {
         (h) => [h.comment || h.url, h.url] as [string, string]
       ),
       related: (d.related ?? []).map(
-        (r) => [r.name, r.wi_id, r.url] as [string, number, string]
+        (r) => [r.name, r.wi_id, r.url] as [string, WiId, string]
       ),
     };
   },

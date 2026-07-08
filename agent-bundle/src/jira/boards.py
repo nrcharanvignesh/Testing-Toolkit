@@ -267,6 +267,111 @@ async def get_issue_detail(
     return {}
 
 
+# ------------------------------------------------------------------
+# Work-item dump (feeds the generation pipeline)
+# ------------------------------------------------------------------
+# Common JIRA custom-field names used for acceptance criteria across
+# templates. Checked in order; first non-empty wins. Best-effort only.
+_AC_FIELD_HINTS: tuple[str, ...] = (
+    "Acceptance Criteria",
+    "Acceptance criteria",
+    "AcceptanceCriteria",
+)
+
+
+def _issue_meta(detail: dict[str, Any]) -> dict[str, Any]:
+    """Flatten one raw JIRA issue JSON (from get_issue_detail) into the
+    duck-typed record shape build_work_item_dump() consumes. The issue KEY
+    is used as the identifier so the generator emits it as the parent id,
+    which the JIRA upload path then maps straight back to parent_key."""
+    fields = detail.get("fields") or {}
+    rendered = detail.get("renderedFields") or {}
+    names = detail.get("names") or {}
+
+    key = str(detail.get("key", "")).strip()
+    itype = fields.get("issuetype") or {}
+    status = fields.get("status") or {}
+
+    # Description: prefer plain wiki-markup text (API v2) over rendered HTML.
+    desc = str(fields.get("description") or "").strip()
+    if not desc:
+        desc = str(rendered.get("description") or "").strip()
+
+    # Acceptance criteria: scan custom fields by display name (best-effort).
+    ac = ""
+    for field_id, disp in names.items():
+        if any(h.lower() == str(disp).lower() for h in _AC_FIELD_HINTS):
+            val = fields.get(field_id)
+            if isinstance(val, str) and val.strip():
+                ac = val.strip()
+                break
+
+    # Comments -> [{text, author}] shape build_work_item_dump understands.
+    comments: list[dict[str, str]] = []
+    comment_obj = fields.get("comment") or {}
+    for c in comment_obj.get("comments", []) or []:
+        author = ((c.get("author") or {}).get("displayName", "")) or ""
+        body = str(c.get("body", "") or "").strip()
+        if body:
+            comments.append({"author": author, "text": body})
+
+    return {
+        "wi_id": key,                       # string id; not cast to int here
+        "title": str(fields.get("summary", "")).strip(),
+        "wi_type": (
+            itype.get("name", "") if isinstance(itype, dict) else str(itype)
+        ),
+        "state": (
+            status.get("name", "")
+            if isinstance(status, dict) else str(status)
+        ),
+        "area_path": "",
+        "iteration_path": "",
+        "tags": list(fields.get("labels") or []),
+        "description_text": desc,
+        "acceptance_text": ac,
+        "comments": comments,
+    }
+
+
+def build_jira_work_item_dump(details: list[dict[str, Any]]) -> str:
+    """Format raw JIRA issue JSON into the same 'work item dump' text the
+    generation pipeline expects, keyed by issue KEY (e.g. PROJ-123).
+
+    Mirrors testgen.rlm.build_work_item_dump but keeps the string key as the
+    identifier (JIRA keys are not integers), so the generated payload's
+    parent_work_item_id carries the key for a clean round-trip on upload.
+    """
+    blocks: list[str] = []
+    for detail in details:
+        m = _issue_meta(detail)
+        key = m["wi_id"]
+        if not key:
+            continue
+        lines: list[str] = []
+        lines.append("=" * 72)
+        lines.append(
+            f"WORK ITEM #{key} [{m['wi_type']}] - {m['title']}"
+        )
+        lines.append(f"State: {m['state'] or 'n/a'}")
+        if m["tags"]:
+            lines.append("Tags: " + ", ".join(str(t) for t in m["tags"]))
+        lines.append("")
+        lines.append("DESCRIPTION:")
+        lines.append(m["description_text"] or "(none)")
+        lines.append("")
+        lines.append("ACCEPTANCE CRITERIA:")
+        lines.append(m["acceptance_text"] or "(none)")
+        if m["comments"]:
+            lines.append("")
+            lines.append("COMMENTS:")
+            for c in m["comments"]:
+                who = c.get("author", "") or "unknown"
+                lines.append(f"- ({who}) {c.get('text', '')}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
 async def tag_issue(
     url: str, user: str, pat: str, issue_key: str, label: str,
     cfg: RuntimeConfig,

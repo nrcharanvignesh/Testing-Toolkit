@@ -32,22 +32,95 @@ router = APIRouter()
 # ---------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------
-def _require_pat_org() -> tuple[str, str]:
-    from core.settings_store import get_setting, load_pat_value, KEY_ORG
-
-    pat = load_pat_value()
-    org = get_setting(KEY_ORG)
-    if not pat or not org:
-        raise HTTPException(400, "PAT or organization not configured")
-    return pat, org
-
-
 def _build_cfg(project: str):
     from core.settings_store import build_runtime_config
 
     cfg = build_runtime_config()
     cfg.project = project
     return cfg
+
+
+async def _fetch_work_item_dump(
+    project: str,
+    wi_ids: list[int],
+    wi_keys: list[str],
+    *,
+    on_progress=None,
+    on_log=None,
+) -> tuple[str, list[str], int]:
+    """Fetch work-item detail for ADO ids OR JIRA keys and build the
+    generation dump. Returns (combined_dump, per_item_dumps, n_items).
+
+    The source is resolved from the (possibly suffixed) project name so ADO
+    and JIRA share one generation pipeline. Project-store keys (KB, prompt,
+    outputs) keep the FULL project name, so each source has its own KB.
+    """
+    from core.source_resolver import resolve
+    from core.source_types import SourceType
+
+    rs = resolve(project)
+
+    if rs.source is SourceType.JIRA:
+        from core.settings_store import build_jira_runtime_config
+        from jira.boards import build_jira_work_item_dump, get_issue_detail
+
+        cfg = build_jira_runtime_config()
+        total = len(wi_keys)
+        details: list[dict[str, Any]] = []
+        for i, key in enumerate(wi_keys):
+            if on_progress:
+                on_progress(i, total)
+            d = await get_issue_detail(rs.url, rs.user, rs.pat, key, cfg)
+            if d:
+                details.append(d)
+            elif on_log:
+                on_log(f"[WARN] Could not fetch JIRA issue {key}")
+        if on_progress:
+            on_progress(total, total)
+        if not details:
+            return "", [], 0
+        combined = build_jira_work_item_dump(details)
+        per_item = [build_jira_work_item_dump([d]) for d in details]
+        return combined, per_item, len(details)
+
+    # -- ADO (default) --
+    from ado.boards import fetch_details_async
+    from testgen.rlm import build_work_item_dump
+
+    cfg = _build_cfg(rs.project)
+    cfg.pat = rs.pat
+    cfg.organization = rs.organization
+    details = await fetch_details_async(
+        rs.organization, rs.project, wi_ids, cfg,
+        on_progress=on_progress,
+        on_log=on_log,
+    )
+    if not details:
+        return "", [], 0
+    combined = build_work_item_dump(details)
+    per_item = [build_work_item_dump([d]) for d in details]
+    return combined, per_item, len(details)
+
+
+def _to_jira_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Transform the generated ADO-style payload into the JIRA upload schema.
+
+    Generated stories carry parent_work_item_id (which, for a JIRA run, is the
+    issue KEY the dump was built from). The JIRA creator wants parent_key, so
+    map it straight across. Step/tc fields (action/expected/tags/preconditions)
+    are identical between the two creators, so no per-step remapping is needed.
+    """
+    stories_out: list[dict[str, Any]] = []
+    for s in payload.get("stories") or []:
+        parent = str(
+            s.get("parent_work_item_id") or s.get("work_item_id") or ""
+        ).strip()
+        stories_out.append({
+            "parent_key": parent,
+            "parent_title": s.get("title", ""),
+            "test_cases": s.get("test_cases") or [],
+        })
+    return {"schema_version": 1, "stories": stories_out}
 
 
 def _regen_system_prompt(base_prompt: str, feedback: str, payload: dict) -> str:
@@ -77,31 +150,30 @@ def _regen_system_prompt(base_prompt: str, feedback: str, payload: dict) -> str:
 # ---------------------------------------------------------------------
 class DumpRequest(BaseModel):
     project: str
-    wi_ids: list[int]
+    wi_ids: list[int] = []
+    wi_keys: list[str] = []
     tc_type: str = ""
 
 
 @router.post("/dump")
 async def build_dump(req: DumpRequest) -> dict[str, Any]:
     """Return the work-item text dump + the phase system prompt so the user
-    can run an LLM session manually (no API key path)."""
+    can run an LLM session manually (no API key path). Works for both ADO
+    (wi_ids) and JIRA (wi_keys) projects."""
     import core.project_store as ps
-    from ado.boards import fetch_details_async
-    from testgen.rlm import build_work_item_dump
 
-    pat, org = _require_pat_org()
-    cfg = _build_cfg(req.project)
-    cfg.pat = pat
-    cfg.organization = org
     try:
-        details = await fetch_details_async(org, req.project, req.wi_ids, cfg)
+        dump, _per, n_items = await _fetch_work_item_dump(
+            req.project, req.wi_ids, req.wi_keys,
+        )
+    except ValueError as e:  # not configured
+        raise HTTPException(400, str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Failed to fetch work item detail: {e}")
-    if not details:
+    if not dump:
         raise HTTPException(404, "No work item detail could be fetched")
-    dump = build_work_item_dump(details)
     prompt = ps.read_system_prompt(req.project, req.tc_type or None)
-    return {"dump": dump, "system_prompt": prompt, "n_items": len(details)}
+    return {"dump": dump, "system_prompt": prompt, "n_items": n_items}
 
 
 # ---------------------------------------------------------------------
@@ -183,6 +255,7 @@ async def extract_attachments(
 class StartRequest(BaseModel):
     project: str
     wi_ids: list[int] = []
+    wi_keys: list[str] = []
     tc_type: str = ""
     board: str = ""
     manual_payload: dict[str, Any] | None = None
@@ -211,14 +284,12 @@ def _board_token(board: str) -> str:
 
 async def _run_generate(job: Job, req: StartRequest) -> None:
     import core.project_store as ps
-    from ado.boards import fetch_details_async
     from ado.testcase_creator import normalize_payload, validate_payload
     from core.settings_store import build_llm_client, model_pair
     from testgen.gen_cache import GenCache
     from testgen.quality_scorer import score_payload
     from testgen.rlm import (
         StopRequested,
-        build_work_item_dump,
         generate_test_cases_rlm_async,
     )
     from testgen.test_data import enrich_payload
@@ -240,30 +311,25 @@ async def _run_generate(job: Job, req: StartRequest) -> None:
                     + "; ".join(rep.errors[:8])
                 )
         else:
-            pat, org = _require_pat_org()
-            cfg = _build_cfg(req.project)
-            cfg.pat = pat
-            cfg.organization = org
+            from core.settings_store import build_runtime_config
 
-            client = build_llm_client(cfg)
+            client = build_llm_client(build_runtime_config())
             if client is None:
                 raise RuntimeError(
                     "No API key configured. Use Manual Mode, or add a key in "
                     "Settings."
                 )
 
-            job.log(f"[INFO] Fetching detail for {len(req.wi_ids)} work item(s)...")
-            job.set_progress("fetch", 0, len(req.wi_ids))
-            details = await fetch_details_async(
-                org, req.project, req.wi_ids, cfg,
+            n_expected = len(req.wi_ids) or len(req.wi_keys)
+            job.log(f"[INFO] Fetching detail for {n_expected} work item(s)...")
+            job.set_progress("fetch", 0, n_expected)
+            dump, per_item, _n = await _fetch_work_item_dump(
+                req.project, req.wi_ids, req.wi_keys,
                 on_progress=lambda c, t: job.set_progress("fetch", c, t),
                 on_log=job.log,
             )
-            if not details:
+            if not dump:
                 raise RuntimeError("No work item detail could be fetched")
-
-            dump = build_work_item_dump(details)
-            per_item = [build_work_item_dump([d]) for d in details]
 
             job.log("[INFO] Loading project knowledge base index...")
             index = await asyncio.to_thread(ps.get_index, req.project)
@@ -461,7 +527,7 @@ async def _run_generate(job: Job, req: StartRequest) -> None:
 
 @router.post("/start")
 async def start_generate(req: StartRequest) -> dict[str, str]:
-    if req.manual_payload is None and not req.wi_ids:
+    if req.manual_payload is None and not req.wi_ids and not req.wi_keys:
         raise HTTPException(400, "No work items selected")
     job = JOBS.create("generate")
     job.log("[INFO] Starting test case generation...")
@@ -481,14 +547,58 @@ class PushRequest(BaseModel):
     test_category_field: str = "Custom.TestCategory"
 
 
-async def _run_push(job: Job, req: PushRequest, pat: str, org: str) -> None:
+async def _run_push_jira(job: Job, req: PushRequest, rs) -> None:
+    """Create the reviewed test cases as issues in JIRA (Xray if present,
+    else standard issues with a step table in the description)."""
+    from core.settings_store import build_jira_runtime_config
+    from jira.testcase_creator import create_test_cases as jira_create
+
+    jira_payload = _to_jira_payload(req.payload)
+    if not any(s.get("test_cases") for s in jira_payload["stories"]):
+        raise RuntimeError("Payload contains no test cases to create")
+    cfg = build_jira_runtime_config()
+    batch = await jira_create(
+        payload=jira_payload,
+        url=rs.url,
+        user=rs.user,
+        pat=rs.pat,
+        project_key=rs.project,
+        cfg=cfg,
+        on_progress=lambda s, c, t: job.set_progress(s, c, t),
+        on_log=job.log,
+    )
+    job.finish({
+        "n_ok": batch.n_ok,
+        "n_failed": batch.n_failed,
+        "created": [
+            {
+                "parent_id": r.parent_key,
+                "title": r.title,
+                "created_id": r.created_key,
+                "created_url": r.created_url,
+                "ok": r.ok,
+                "error": r.error,
+            }
+            for r in batch.results
+        ],
+    })
+
+
+async def _run_push(job: Job, req: PushRequest) -> None:
     from ado.testcase_creator import (
         create_test_cases_async,
         normalize_payload,
         validate_payload,
     )
+    from core.source_resolver import resolve
+    from core.source_types import SourceType
 
     try:
+        rs = resolve(req.project)
+        if rs.source is SourceType.JIRA:
+            await _run_push_jira(job, req, rs)
+            return
+
         payload = req.payload
         normalize_payload(payload)
         rep = validate_payload(payload)
@@ -496,14 +606,14 @@ async def _run_push(job: Job, req: PushRequest, pat: str, org: str) -> None:
             raise RuntimeError(
                 "Payload failed validation: " + "; ".join(rep.errors[:8])
             )
-        cfg = _build_cfg(req.project)
-        cfg.pat = pat
-        cfg.organization = org
+        cfg = _build_cfg(rs.project)
+        cfg.pat = rs.pat
+        cfg.organization = rs.organization
         batch = await create_test_cases_async(
             payload=payload,
-            org=org,
-            project=req.project,
-            pat=pat,
+            org=rs.organization,
+            project=rs.project,
+            pat=rs.pat,
             area_override=req.area_override,
             iteration_override=req.iteration_override,
             inherit_paths=req.inherit_paths,
@@ -534,10 +644,16 @@ async def _run_push(job: Job, req: PushRequest, pat: str, org: str) -> None:
 
 @router.post("/push")
 async def push_test_cases(req: PushRequest) -> dict[str, str]:
-    pat, org = _require_pat_org()
+    from core.source_resolver import resolve
+
+    try:
+        rs = resolve(req.project)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     job = JOBS.create("push")
-    job.log("[INFO] Creating test cases in Azure DevOps...")
-    asyncio.create_task(_run_push(job, req, pat, org))
+    dest = "JIRA" if rs.source.value == "jira" else "Azure DevOps"
+    job.log(f"[INFO] Creating test cases in {dest}...")
+    asyncio.create_task(_run_push(job, req))
     return {"job_id": job.id}
 
 
@@ -561,9 +677,13 @@ async def push_test_cases_from_xlsx(req: PushXlsxRequest) -> dict[str, str]:
     review spreadsheet (so Skip=Yes rows and manual title/step edits are
     honored) instead of pushing the originally generated payload.
     """
+    from core.source_resolver import resolve
     from testgen.testcase_excel import ExcelParseError, xlsx_to_payload
 
-    pat, org = _require_pat_org()
+    try:
+        resolve(req.project)  # validates the resolved source is configured
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     path = Path(req.xlsx_path)
     if not path.exists():
         raise HTTPException(404, f"Reviewed Excel not found: {req.xlsx_path}")
@@ -584,7 +704,7 @@ async def push_test_cases_from_xlsx(req: PushXlsxRequest) -> dict[str, str]:
     )
     job = JOBS.create("push")
     job.log(f"[INFO] Creating test cases from {path.name}...")
-    asyncio.create_task(_run_push(job, push_req, pat, org))
+    asyncio.create_task(_run_push(job, push_req))
     return {"job_id": job.id}
 
 
@@ -622,14 +742,32 @@ async def load_test_cases_from_xlsx(req: LoadXlsxRequest) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, f"Could not read artifact: {e}")
 
+    # Recover parent identifiers so a regeneration can re-fetch detail.
+    # ADO ids are integers; JIRA keys are strings (e.g. "PROJ-123"). Return
+    # both lists so the caller re-fetches from the correct source.
     stories = payload.get("stories") or []
     wi_ids: list[int] = []
-    seen: set[int] = set()
+    wi_keys: list[str] = []
+    seen_ids: set[int] = set()
+    seen_keys: set[str] = set()
     for s in stories:
         sid = s.get("parent_work_item_id")
-        if isinstance(sid, int) and sid not in seen:
-            seen.add(sid)
-            wi_ids.append(sid)
+        if isinstance(sid, bool):
+            continue
+        if isinstance(sid, int):
+            if sid not in seen_ids:
+                seen_ids.add(sid)
+                wi_ids.append(sid)
+        elif isinstance(sid, str) and sid.strip():
+            key = sid.strip()
+            if key.isdigit():
+                n = int(key)
+                if n not in seen_ids:
+                    seen_ids.add(n)
+                    wi_ids.append(n)
+            elif key not in seen_keys:
+                seen_keys.add(key)
+                wi_keys.append(key)
     n_tcs = sum(len(s.get("test_cases") or []) for s in stories)
     return {
         "payload": payload,
@@ -638,6 +776,7 @@ async def load_test_cases_from_xlsx(req: LoadXlsxRequest) -> dict[str, Any]:
         "xlsx_path": str(path),
         "xlsx_name": path.name,
         "wi_ids": wi_ids,
+        "wi_keys": wi_keys,
     }
 
 
