@@ -34,9 +34,6 @@ export function AppShell() {
     reloadProjects,
     reindexAllKbs,
     pushLog,
-    currentProject,
-    currentBoard,
-    displayName,
   } = useAppState();
   const { check, apply, ensureConfigured, progress } = useAppUpdate(pushLog);
   const bootstrapped = useRef(false);
@@ -191,49 +188,6 @@ export function AppShell() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* ── Title bar ──────────────────────────────────────────────── */}
-      <header
-        className="flex h-9 shrink-0 items-center gap-3 border-b px-3"
-        style={{
-          background: "var(--tt-teal)",
-          borderColor: "var(--tt-teal-dim)",
-        }}
-      >
-        {/* Wordmark */}
-        <span className="text-sm font-bold tracking-tight text-white">
-          Testing Toolkit
-        </span>
-        {/* Breadcrumb */}
-        {currentProject && (
-          <>
-            <span className="select-none text-white/40" aria-hidden>/</span>
-            <span className="truncate text-xs font-medium text-white/80">
-              {displayName(currentProject)}
-            </span>
-          </>
-        )}
-        {currentBoard && (
-          <>
-            <span className="text-white/40 select-none">/</span>
-            <span className="truncate text-xs text-white/60">
-              {currentBoard.team_name || currentBoard.name}
-            </span>
-          </>
-        )}
-        <div className="flex-1" />
-        {/* Agent version badge */}
-        <span
-          className="rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums"
-          style={{
-            background: "rgba(0,0,0,0.22)",
-            color: "rgba(255,255,255,0.75)",
-          }}
-          title={`Required agent v${REQUIRED_AGENT_VERSION}`}
-        >
-          web&nbsp;{REQUIRED_AGENT_VERSION}
-        </span>
-      </header>
-
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {navVisible ? <NavPanel /> : <ActivityBar />}
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">

@@ -65,7 +65,7 @@ export function NavPanel() {
         style={{ width }}
       >
         {/* ── Projects ───────────────────────────────────────────── */}
-        <div>
+        <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center justify-between px-1 pb-1.5">
             <span className="tt-section-header">Projects</span>
             <button
@@ -77,7 +77,7 @@ export function NavPanel() {
               Refresh
             </button>
           </div>
-          <div className="min-h-[60px] overflow-auto rounded-[8px] border border-[var(--tt-outline-soft)] bg-[var(--tt-surface-base)] p-1">
+          <div className="min-h-[60px] flex-1 overflow-auto rounded-[8px] border border-[var(--tt-outline-soft)] bg-[var(--tt-surface-base)] p-1">
             {projects.length === 0 ? (
               <p className="px-2 py-2 text-xs text-muted-foreground">
                 No projects. Configure ADO in Settings.
