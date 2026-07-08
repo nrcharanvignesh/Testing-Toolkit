@@ -37,6 +37,15 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class ChatImage(BaseModel):
+    """A pasted/attached image for a multi-modal user turn (desktop parity:
+    chat_dialog.py pending images). `data_b64` is the raw base64 (no data-URL
+    prefix); `media_type` is e.g. "image/png" / "image/jpeg"."""
+
+    media_type: str = "image/png"
+    data_b64: str
+
+
 class ChatRequest(BaseModel):
     project: str
     messages: list[ChatMessage]
@@ -46,6 +55,9 @@ class ChatRequest(BaseModel):
     # Extra reference text (extracted from user attachments) folded into the
     # latest user turn by the caller; kept separate so we can log its size.
     attachment_text: str = ""
+    # Images attached to the latest user turn (multi-modal). Sent to the LLM as
+    # Anthropic image content blocks folded into the last user message.
+    images: list[ChatImage] = []
 
 
 def _base_system_prompt(project: str) -> str:
@@ -167,6 +179,37 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
                     + "\n\n=== ATTACHED REFERENCE FILES ===\n"
                     + req.attachment_text.strip()
                 )
+                break
+
+    # Fold attached images into the last user turn as Anthropic image content
+    # blocks (desktop chat parity). Text stays as a leading text block so the
+    # model sees the prompt alongside the screenshots.
+    if req.images and api_messages:
+        for i in range(len(api_messages) - 1, -1, -1):
+            if api_messages[i]["role"] == "user":
+                text_part = str(api_messages[i]["content"] or "")
+                blocks: list[dict[str, Any]] = []
+                if text_part.strip():
+                    blocks.append({"type": "text", "text": text_part})
+                for img in req.images:
+                    data = (img.data_b64 or "").strip()
+                    if not data:
+                        continue
+                    # Tolerate a data-URL prefix if the client sent one.
+                    if "," in data and data.lower().startswith("data:"):
+                        data = data.split(",", 1)[1]
+                    blocks.append(
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": img.media_type or "image/png",
+                                "data": data,
+                            },
+                        }
+                    )
+                if blocks:
+                    api_messages[i]["content"] = blocks
                 break
 
     async def _sse(obj: dict[str, Any]) -> str:

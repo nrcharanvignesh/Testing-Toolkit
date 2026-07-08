@@ -141,6 +141,33 @@ def to_openai_messages(
             out.append(entry)
             continue
 
+        # Any other list content. If it carries image blocks, emit an OpenAI
+        # multi-modal content array (text parts + image_url parts); otherwise
+        # flatten text blocks to a plain string.
+        image_blocks = [
+            b for b in content
+            if isinstance(b, dict) and b.get("type") == "image"
+        ]
+        if image_blocks:
+            parts: list[dict[str, Any]] = []
+            text = _text_from_blocks(content)
+            if text:
+                parts.append({"type": "text", "text": text})
+            for img in image_blocks:
+                src = img.get("source", {}) or {}
+                data = str(src.get("data", "")).strip()
+                if not data:
+                    continue
+                media = src.get("media_type", "image/png")
+                url = (
+                    data
+                    if data.lower().startswith("data:")
+                    else f"data:{media};base64,{data}"
+                )
+                parts.append({"type": "image_url", "image_url": {"url": url}})
+            out.append({"role": role, "content": parts})
+            continue
+
         # Any other list content: flatten text blocks.
         out.append({"role": role, "content": _text_from_blocks(content)})
 
