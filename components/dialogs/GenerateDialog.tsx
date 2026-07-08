@@ -307,12 +307,13 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
             Store Excel
           </button>
           <button
-            className="tt-btn-success"
+            className="tt-btn-success inline-flex items-center gap-1.5"
             onClick={push}
             disabled={busy || !result}
             title="Create the reviewed test cases in Azure DevOps"
           >
-            {busy ? "Working..." : "Push to ADO"}
+            {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {busy ? "Pushing..." : "Push to ADO"}
           </button>
           <button className="tt-btn-ghost" onClick={onClose} disabled={busy}>
             Close
