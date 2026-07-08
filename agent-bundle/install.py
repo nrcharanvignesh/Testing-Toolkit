@@ -1196,6 +1196,111 @@ def _install_playwright_optional(launch_python: str, use_pythonpath: bool) -> No
 
 
 # --------------------------------------------------------------------------
+# Optional MCP server install (ADO, JIRA, Playwright via npm)
+# --------------------------------------------------------------------------
+# The three MCP servers require Node.js and are installed into a local
+# node_modules folder under INSTALL_DIR/mcp_servers/ so they are available
+# without relying on globally-installed npm packages. Node.js itself must
+# already be present (it is not bundled); the install is non-fatal so the
+# agent still starts if npm is absent or blocked by a corporate proxy.
+#
+# Package names:
+#   @azure-devops/mcp   - Azure DevOps work items, boards, PRs
+#   @atlassian/jira-mcp - Jira issues, projects, sprints
+#   @playwright/mcp     - Browser automation via Playwright
+#
+# The mcp_bridge.py resolver checks INSTALL_DIR/mcp_servers/node_modules/
+# first (written here), then the global npm prefix as a fallback.
+MCP_SERVERS_DIR = INSTALL_DIR / "mcp_servers"
+_MCP_PACKAGES = [
+    "@azure-devops/mcp",
+    "@atlassian/jira-mcp",
+    "@playwright/mcp",
+]
+
+
+def _find_node() -> str | None:
+    """Find node: system PATH only (not bundled here)."""
+    return shutil.which("node")
+
+
+def _find_npm() -> str | None:
+    """Find npm: system PATH only."""
+    return shutil.which("npm")
+
+
+def _install_mcp_servers_optional() -> None:
+    """Install MCP server npm packages into INSTALL_DIR/mcp_servers/.
+
+    Non-fatal: any failure is logged and the agent still starts. The
+    mcp_bridge degrades gracefully when a server is not found.
+    """
+    node = _find_node()
+    npm = _find_npm()
+
+    if not node:
+        warn(
+            "Node.js not found in PATH. MCP servers (ADO, JIRA, Playwright) "
+            "require Node.js 18+. Install from https://nodejs.org and re-run."
+        )
+        return
+
+    info(f"Node.js found: {node}")
+
+    if not npm:
+        warn("npm not found in PATH. Cannot install MCP servers (non-fatal).")
+        return
+
+    info(f"npm found: {npm}")
+    info(
+        "Installing MCP servers into "
+        f"{MCP_SERVERS_DIR} (this may take a minute)..."
+    )
+    progress("installing_mcp", "Installing MCP servers (ADO, JIRA, Playwright)", 93)
+
+    try:
+        MCP_SERVERS_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        warn(f"Could not create MCP servers directory (non-fatal): {exc}")
+        return
+
+    _sp_kwargs: dict = {}
+    if os.name == "nt":
+        _sp_kwargs = {"creationflags": CREATE_NO_WINDOW}
+
+    for pkg in _MCP_PACKAGES:
+        info(f"  Installing {pkg}...")
+        try:
+            r = _run(
+                [npm, "install", "--prefix", str(MCP_SERVERS_DIR),
+                 "--no-audit", "--no-fund", "--loglevel=error", pkg],
+                capture_output=True, text=True, timeout=300,
+                **_sp_kwargs,
+            )
+            if r.returncode == 0:
+                ok(f"  {pkg} installed.")
+            else:
+                warn(f"  {pkg} install failed (non-fatal). "
+                     "Some MCP tools will be unavailable.")
+                trace(f"  npm stderr: {r.stderr}")
+        except Exception as exc:
+            warn(f"  {pkg} install raised an exception (non-fatal): {exc}")
+
+    # Verify installs by checking entry points
+    for pkg, scope, name, dist in [
+        ("@azure-devops/mcp",  "@azure-devops", "mcp",      "dist/index.js"),
+        ("@atlassian/jira-mcp", "@atlassian",   "jira-mcp", "dist/index.js"),
+        ("@playwright/mcp",    "@playwright",   "mcp",      "dist/index.js"),
+    ]:
+        entry = MCP_SERVERS_DIR / "node_modules" / scope / name / dist
+        if entry.exists():
+            ok(f"  Verified: {pkg} -> {entry}")
+        else:
+            warn(f"  Not found after install: {entry} "
+                 f"(the {pkg} MCP server will be unavailable).")
+
+
+# --------------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------------
 def main() -> int:
@@ -1356,6 +1461,14 @@ def main() -> int:
         _install_playwright_optional(launch_python, use_pythonpath)
     else:
         info("Skipping optional playwright install (TT_OFFLINE_ONLY=1).")
+
+    # --- Optional MCP servers (ADO, JIRA, Playwright) via npm -------------
+    # Non-fatal: agent starts without them; mcp_bridge degrades gracefully.
+    # Skipped in offline-only mode since npm must pull packages from the internet.
+    if not offline_only:
+        _install_mcp_servers_optional()
+    else:
+        info("Skipping optional MCP server install (TT_OFFLINE_ONLY=1).")
 
     # --- Copy source + models --------------------------------------------
     progress("copying", "Installing agent files", 91)

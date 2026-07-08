@@ -1,6 +1,6 @@
 # Testing Toolkit — Feature Reference
 
-> Web v3.0.0 / Agent v2.8.2 — July 2026
+> Web v3.0.0 / Agent v2.9.0 — July 2026
 
 This document is the complete feature reference for the Testing Toolkit
 platform: what every feature does, how to use it, workspace layout, runtime
@@ -298,6 +298,37 @@ The **provider format** determines the wire protocol:
 
 Both paths are supported by the LiteLLM proxy. The `core/openai_transport.py`
 module handles all message/tool translation between the two formats.
+
+### MCP servers (Model Context Protocol)
+
+The agent ships with three MCP servers installed automatically by `install.py`
+when Node.js 18+ is present:
+
+| Server | npm package | Provides |
+|---|---|---|
+| ADO | `@azure-devops/mcp` | Work items, boards, PRs, pipelines, wikis |
+| JIRA | `@atlassian/jira-mcp` | Issues, projects, sprints, boards, transitions |
+| Playwright | `@playwright/mcp` | Live browser automation, screenshots, navigation |
+
+Installed into `~/TestingToolkitWeb/mcp_servers/node_modules/`. The bridge
+(`core/mcp_bridge.py`) resolves each entry point locally first, then falls
+back to globally-installed npm packages.
+
+**Startup**: servers are started in a background thread at agent boot. Each
+server communicates over stdio (the MCP standard transport). The bridge
+provides a thread-safe synchronous interface to the async MCP session.
+
+**Degradation**: if Node.js is missing or an npm install fails, the bridge
+returns an empty tool list for that server and the agent continues normally.
+Configure credentials in **Settings** to enable ADO and JIRA MCP tools.
+
+**Credentials**:
+
+| Server | Required settings |
+|---|---|
+| ADO MCP | Organization URL + PAT (same as core ADO integration) |
+| JIRA MCP | JIRA URL + Email + API Token (same as core JIRA integration) |
+| Playwright MCP | None — starts headless automatically |
 
 ---
 

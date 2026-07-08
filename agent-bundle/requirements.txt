@@ -49,6 +49,12 @@ olefile>=0.47
 # --- Numerics (BM25 + local vector store) ---
 numpy>=1.26
 
+# --- MCP (Model Context Protocol) client SDK ---
+# Required by core/mcp_bridge.py to communicate with all bundled MCP servers
+# (ADO, JIRA, Playwright) over stdio transport. Optional in the same way as
+# playwright: if install fails the bridge degrades gracefully (no MCP tools).
+mcp>=1.0
+
 # --- Vector DB (large KBs, embedded/local) ---
 lancedb>=0.6
 

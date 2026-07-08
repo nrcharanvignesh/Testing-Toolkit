@@ -2,19 +2,30 @@
 mcp_bridge.py
 MCP server lifecycle management and tool routing for the Testing Toolkit.
 
-Manages the long-running ADO MCP server subprocess (Node.js), converts MCP
-tool schemas to Claude tool_use format, and routes tool calls to the server.
+Manages long-running MCP server subprocesses (Node.js), converts MCP tool
+schemas to Claude tool_use format, and routes tool calls to each server.
 
-Graceful degradation: if the MCP server fails to start, the bridge returns
-an empty tool list and logs a warning. The custom tools in chat_tools.py
-remain the guaranteed fallback.
+Bundled MCP servers (installed into ~/TestingToolkitWeb/mcp_servers/ by
+install.py during setup, falling back to globally-installed npm packages):
+  - ADO       @azure-devops/mcp       - Azure DevOps work items, boards, PRs
+  - JIRA      @atlassian/jira-mcp     - Jira issues, projects, sprints
+  - Playwright @playwright/mcp        - Browser automation via Playwright
+
+Graceful degradation: if any MCP server fails to start the bridge returns an
+empty tool list for that server and logs a warning. All other servers and the
+custom tools in chat_tools.py remain available as the guaranteed fallback.
+
+ponytail: single event loop thread for all MCP servers; dedicated loops per
+server if contention becomes an issue.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import os
 import shutil
+import subprocess
 import sys
 import threading
 from dataclasses import dataclass, field
@@ -23,50 +34,79 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-# ponytail: single event loop thread for all MCP servers; dedicated
-# loops per server if contention becomes an issue.
-
 
 # ---------------------------------------------------------------------
-# Path resolution
+# Install-dir resolution (must match install.py INSTALL_DIR constant)
 # ---------------------------------------------------------------------
+def _install_dir() -> Path:
+    """~/TestingToolkitWeb — the single root where install.py writes everything."""
+    return Path(
+        os.environ.get("TT_INSTALL_DIR", Path.home() / "TestingToolkitWeb")
+    ).expanduser()
+
+
 def _mcp_servers_dir() -> Path:
-    """Locate bundled MCP servers directory."""
+    """Locally-installed MCP servers (npm --prefix).
+
+    install.py writes these under ~/TestingToolkitWeb/mcp_servers/ so the agent
+    never needs a globally-installed npm package. Falls back to a path relative
+    to this file when running from source during development.
+    """
+    local = _install_dir() / "mcp_servers"
+    if local.is_dir():
+        return local
     mei = getattr(sys, "_MEIPASS", "")
     if mei:
         return Path(mei) / "mcp_servers"
-    # Dev: relative to src/core/mcp_bridge.py -> src/mcp_servers/
+    # Dev fallback: src/mcp_servers/ sibling of src/core/
     return Path(__file__).resolve().parent.parent / "mcp_servers"
 
 
+# ---------------------------------------------------------------------
+# Node.js resolution
+# ---------------------------------------------------------------------
 def _node_exe() -> Path | None:
-    """Find node.exe: bundled first, then system PATH."""
+    """Find node: bundled mcp_servers/node.exe -> system PATH."""
     bundled = _mcp_servers_dir() / "node.exe"
     if bundled.exists():
         return bundled
+    # On macOS/Linux the bundled node is named `node`, not `node.exe`
+    bundled_posix = _mcp_servers_dir() / "node"
+    if bundled_posix.exists():
+        return bundled_posix
     which = shutil.which("node")
     return Path(which) if which else None
 
 
-def _ado_global_entry() -> Path | None:
-    """Find the globally-installed @azure-devops/mcp entry point.
-    npm global packages on Windows live under AppData/Roaming/npm/node_modules.
-    Falls back to checking `npm prefix -g` output."""
-    import os
-    # Primary: well-known Windows global path
+# ---------------------------------------------------------------------
+# Per-server entry-point resolution
+# (locally-installed first, then global npm, then None)
+# ---------------------------------------------------------------------
+def _npm_local_entry(pkg_scope: str, pkg_name: str, dist_index: str) -> Path | None:
+    """Look up a locally-installed MCP server entry point.
+
+    Resolves under <mcp_servers_dir>/node_modules/<pkg_scope>/<pkg_name>/dist/index.js
+    where dist_index may be e.g. 'dist/index.js' or 'dist/server.js'.
+    """
+    base = _mcp_servers_dir() / "node_modules"
+    entry = base / pkg_scope / pkg_name / dist_index
+    if entry.exists():
+        return entry
+    return None
+
+
+def _npm_global_entry(pkg_scope: str, pkg_name: str, dist_index: str) -> Path | None:
+    """Look up a globally-installed MCP server entry point via AppData or `npm prefix -g`."""
     appdata = os.environ.get("APPDATA", "")
     if appdata:
         entry = (
-            Path(appdata) / "npm" / "node_modules"
-            / "@azure-devops" / "mcp" / "dist" / "index.js"
+            Path(appdata) / "npm" / "node_modules" / pkg_scope / pkg_name / dist_index
         )
         if entry.exists():
             return entry
-    # Fallback: ask npm for its global prefix
     npm = shutil.which("npm")
     if npm:
-        import subprocess
-        _sp_kwargs: dict[str, object] = {}
+        _sp_kwargs: dict[str, Any] = {}
         if sys.platform == "win32":
             _si = subprocess.STARTUPINFO()
             _si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -83,15 +123,34 @@ def _ado_global_entry() -> Path | None:
             )
             prefix = result.stdout.strip()
             if prefix:
-                entry = (
-                    Path(prefix) / "node_modules"
-                    / "@azure-devops" / "mcp" / "dist" / "index.js"
-                )
+                entry = Path(prefix) / "node_modules" / pkg_scope / pkg_name / dist_index
                 if entry.exists():
                     return entry
         except (OSError, subprocess.TimeoutExpired):
             pass
     return None
+
+
+def _resolve_mcp_entry(pkg_scope: str, pkg_name: str, dist_index: str) -> Path | None:
+    """Local install first, then global npm fallback."""
+    return (
+        _npm_local_entry(pkg_scope, pkg_name, dist_index)
+        or _npm_global_entry(pkg_scope, pkg_name, dist_index)
+    )
+
+
+def _ado_entry() -> Path | None:
+    return _resolve_mcp_entry("@azure-devops", "mcp", "dist/index.js")
+
+
+def _jira_entry() -> Path | None:
+    # @atlassian/jira-mcp ships its entry at dist/index.js
+    return _resolve_mcp_entry("@atlassian", "jira-mcp", "dist/index.js")
+
+
+def _playwright_entry() -> Path | None:
+    # @playwright/mcp ships its entry at dist/index.js
+    return _resolve_mcp_entry("@playwright", "mcp", "dist/index.js")
 
 
 # ---------------------------------------------------------------------
@@ -118,7 +177,7 @@ def mcp_tool_to_claude_schema(mcp_tool: Any) -> dict[str, Any]:
 # ---------------------------------------------------------------------
 @dataclass(slots=True)
 class MCPServerConfig:
-    """Configuration for one MCP server."""
+    """Configuration for one MCP server subprocess."""
     server_id: str
     command: str
     args: list[str] = field(default_factory=list)
@@ -130,7 +189,7 @@ class MCPServerConfig:
 # Single server manager
 # ---------------------------------------------------------------------
 class MCPServerManager:
-    """Manages a single MCP server subprocess and its client session."""
+    """Manages a single MCP server subprocess and its stdio session."""
 
     def __init__(self, config: MCPServerConfig) -> None:
         self._config = config
@@ -157,7 +216,7 @@ class MCPServerManager:
         return self._tool_names
 
     async def start(self) -> bool:
-        """Start the MCP server subprocess and initialize session."""
+        """Start the MCP server subprocess and initialize the stdio session."""
         try:
             from mcp import ClientSession, StdioServerParameters
             from mcp.client.stdio import stdio_client
@@ -180,14 +239,12 @@ class MCPServerManager:
             )
             await self._session.initialize()
 
-            # List and convert tools
             response = await self._session.list_tools()
             raw_tools = response.tools if response else []
 
             self._tools = []
             self._tool_names = set()
             for t in raw_tools:
-                # Apply filter if set
                 if self._config.tool_filter and t.name not in self._config.tool_filter:
                     continue
                 schema = mcp_tool_to_claude_schema(t)
@@ -196,7 +253,7 @@ class MCPServerManager:
 
             self._healthy = True
             log.info(
-                "[INFO] MCP server '%s' started: %d tools available",
+                "[INFO] MCP server '%s' started: %d tools",
                 self._config.server_id, len(self._tools),
             )
             return True
@@ -211,12 +268,11 @@ class MCPServerManager:
             return False
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
-        """Invoke a tool. Returns JSON string result."""
+        """Invoke a tool by name. Returns a JSON-serialisable string result."""
         if not self.is_healthy or name not in self._tool_names:
             return json.dumps({"error": f"Tool '{name}' unavailable"})
         try:
             result = await self._session.call_tool(name, arguments)
-            # MCP returns content blocks - extract text
             parts: list[str] = []
             for block in (result.content if result else []):
                 if hasattr(block, "text"):
@@ -225,13 +281,10 @@ class MCPServerManager:
                     parts.append(str(block.data))
             return "\n".join(parts) if parts else json.dumps({"result": "ok"})
         except Exception as e:
-            log.warning(
-                "[WARN] MCP tool '%s' call failed: %s", name, e,
-            )
+            log.warning("[WARN] MCP tool '%s' call failed: %s", name, e)
             return json.dumps({"error": str(e)})
 
     async def stop(self) -> None:
-        """Graceful shutdown."""
         self._healthy = False
         await self._cleanup()
 
@@ -246,11 +299,11 @@ class MCPServerManager:
 
 
 # ---------------------------------------------------------------------
-# Bridge (orchestrates multiple servers)
+# Bridge (orchestrates all servers)
 # ---------------------------------------------------------------------
 class MCPBridge:
     """Orchestrates multiple MCP servers. Thread-safe interface for
-    the AgenticStreamWorker to call tools."""
+    AgenticStreamWorker to query tools and invoke them."""
 
     def __init__(self) -> None:
         self._servers: dict[str, MCPServerManager] = {}
@@ -264,8 +317,7 @@ class MCPBridge:
         return self._started and self._ready.is_set()
 
     def start_servers(self, configs: list[MCPServerConfig]) -> None:
-        """Start all configured MCP servers in a background thread.
-        Non-blocking - returns immediately."""
+        """Start all configured MCP servers in a background thread. Non-blocking."""
         if self._started:
             return
         self._started = True
@@ -279,7 +331,6 @@ class MCPBridge:
                 log.warning("[WARN] MCP bridge startup error: %s", e)
             finally:
                 self._ready.set()
-            # Keep loop alive for call_tool submissions
             try:
                 self._loop.run_forever()
             except Exception:
@@ -289,7 +340,6 @@ class MCPBridge:
         self._thread.start()
 
     async def _start_all(self, configs: list[MCPServerConfig]) -> None:
-        """Start each server sequentially (low memory footprint)."""
         for cfg in configs:
             mgr = MCPServerManager(cfg)
             ok = await mgr.start()
@@ -297,8 +347,7 @@ class MCPBridge:
                 self._servers[cfg.server_id] = mgr
 
     def get_tool_definitions(self) -> list[dict[str, Any]]:
-        """All tools from all healthy servers (Claude format).
-        Thread-safe, no async needed."""
+        """Return all tools from all healthy servers in Claude format."""
         if not self.is_ready:
             return []
         tools: list[dict[str, Any]] = []
@@ -308,19 +357,16 @@ class MCPBridge:
         return tools
 
     def has_tool(self, name: str) -> bool:
-        """Check if any server owns this tool name."""
         for mgr in self._servers.values():
             if mgr.is_healthy and name in mgr.tool_names:
                 return True
         return False
 
     def call_tool(self, name: str, arguments: dict[str, Any]) -> str | None:
-        """Route a tool call to the correct server.
-        Returns None if no server owns this tool name.
-        Thread-safe - submits to the bridge event loop."""
+        """Route a tool call to the correct server. Thread-safe.
+        Returns None if no healthy server owns this tool name."""
         if not self._loop or not self.is_ready:
             return None
-
         for mgr in self._servers.values():
             if mgr.is_healthy and name in mgr.tool_names:
                 future = asyncio.run_coroutine_threadsafe(
@@ -333,50 +379,123 @@ class MCPBridge:
         return None
 
     def stop_all(self) -> None:
-        """Stop all servers and join the event loop thread."""
+        """Stop all servers and join the background thread."""
         if not self._loop:
             return
-        # Schedule stop for each server
         for mgr in list(self._servers.values()):
             asyncio.run_coroutine_threadsafe(mgr.stop(), self._loop)
-        # Stop the event loop
         self._loop.call_soon_threadsafe(self._loop.stop)
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=5)
         self._servers.clear()
         self._started = False
 
+    def server_ids(self) -> list[str]:
+        """IDs of all currently healthy servers."""
+        return [sid for sid, mgr in self._servers.items() if mgr.is_healthy]
+
 
 # ---------------------------------------------------------------------
-# Config builder (creates MCPServerConfig from ToolContext fields)
+# Config builder
 # ---------------------------------------------------------------------
 def build_mcp_configs(
     ado_org: str = "",
     ado_pat: str = "",
     ado_project: str = "",
     ado_url: str = "",
+    jira_url: str = "",
+    jira_email: str = "",
+    jira_token: str = "",
+    playwright_headless: bool = True,
 ) -> list[MCPServerConfig]:
-    """Build MCP server configs based on available credentials.
-    Returns only configs for servers that CAN be started."""
-    configs: list[MCPServerConfig] = []
+    """Build MCPServerConfig entries for each server that can be started.
 
-    # ADO MCP (Node.js via globally-installed @azure-devops/mcp)
+    All four servers share the same locally-installed npm packages under
+    ~/TestingToolkitWeb/mcp_servers/ (written by install.py). Each config is
+    only created when the required credentials are present AND the entry-point
+    JS file is found on disk (local install first, global npm fallback).
+
+    Servers:
+      ado        @azure-devops/mcp        - requires ado_org + ado_pat
+      jira       @atlassian/jira-mcp      - requires jira_url + jira_email + jira_token
+      playwright @playwright/mcp          - always available when node is found
+    """
+    configs: list[MCPServerConfig] = []
     node = _node_exe()
-    entry = _ado_global_entry()
-    if node and entry and ado_org and ado_pat:
+
+    if not node:
+        log.warning(
+            "[WARN] Node.js not found — MCP servers require Node.js 18+. "
+            "Install Node.js from https://nodejs.org and re-run install.py."
+        )
+        return configs
+
+    # ------------------------------------------------------------------ ADO --
+    entry_ado = _ado_entry()
+    if entry_ado and ado_org and ado_pat:
         base_url = ado_url or f"https://dev.azure.com/{ado_org}"
         configs.append(MCPServerConfig(
             server_id="ado",
             command=str(node),
-            args=[str(entry)],
+            args=[str(entry_ado)],
             env={
                 "AZURE_DEVOPS_URL": base_url,
                 "AZURE_DEVOPS_PAT": ado_pat,
                 "AZURE_DEVOPS_PROJECT": ado_project,
                 "AZURE_DEVOPS_COLLECTION": "DefaultCollection",
             },
-            # Accept all tools (server is read-only anyway)
-            tool_filter=None,
         ))
+        log.info("[INFO] ADO MCP server configured: %s / %s", base_url, ado_project)
+    elif not entry_ado:
+        log.info(
+            "[INFO] ADO MCP server not found — run install.py or "
+            "npm install -g @azure-devops/mcp to enable it."
+        )
+    else:
+        log.info("[INFO] ADO MCP server skipped (no credentials configured).")
+
+    # ---------------------------------------------------------------- JIRA --
+    entry_jira = _jira_entry()
+    if entry_jira and jira_url and jira_email and jira_token:
+        configs.append(MCPServerConfig(
+            server_id="jira",
+            command=str(node),
+            args=[str(entry_jira)],
+            env={
+                "JIRA_URL": jira_url,
+                "JIRA_EMAIL": jira_email,
+                "JIRA_API_TOKEN": jira_token,
+            },
+        ))
+        log.info("[INFO] JIRA MCP server configured: %s", jira_url)
+    elif not entry_jira:
+        log.info(
+            "[INFO] JIRA MCP server not found — run install.py or "
+            "npm install -g @atlassian/jira-mcp to enable it."
+        )
+    else:
+        log.info("[INFO] JIRA MCP server skipped (no credentials configured).")
+
+    # ----------------------------------------------------------- Playwright --
+    entry_pw = _playwright_entry()
+    if entry_pw:
+        configs.append(MCPServerConfig(
+            server_id="playwright",
+            command=str(node),
+            args=[
+                str(entry_pw),
+                "--headless" if playwright_headless else "--headed",
+            ],
+            env={},
+        ))
+        log.info(
+            "[INFO] Playwright MCP server configured (headless=%s).",
+            playwright_headless,
+        )
+    else:
+        log.info(
+            "[INFO] Playwright MCP server not found — run install.py or "
+            "npm install -g @playwright/mcp to enable it."
+        )
 
     return configs
