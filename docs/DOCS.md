@@ -1,813 +1,420 @@
-# Testing Toolkit v2.0.0 - Technical Documentation
+# Testing Toolkit — Feature Reference
 
-A unified Azure DevOps desktop application (PySide6, dark glass UI) that
-consolidates test case generation, bulk defect upload, and work-item PDF
-packaging into a single board-driven experience.
+> Web v3.0.0 / Agent v2.8.2 — July 2026
+
+This document is the complete feature reference for the Testing Toolkit
+platform: what every feature does, how to use it, workspace layout, runtime
+dependencies, and known constraints.
 
 ---
 
-## Quick Start
+## Table of contents
 
-### From Source (connected machine with Python 3.10+)
+1. [Quick start](#1-quick-start)
+2. [UI overview](#2-ui-overview)
+3. [Features](#3-features)
+4. [First-run setup](#4-first-run-setup)
+5. [Workspace layout](#5-workspace-layout)
+6. [Settings reference](#6-settings-reference)
+7. [AI stack](#7-ai-stack)
+8. [E2E automation engine](#8-e2e-automation-engine)
+9. [Knowledge base management](#9-knowledge-base-management)
+10. [Hardware utilization](#10-hardware-utilization)
+11. [Runtime dependencies](#11-runtime-dependencies)
+
+---
+
+## 1. Quick start
+
+**Web app (browser — Vercel-hosted)**
+
+Open the app in any modern browser. If no local agent is detected, the
+onboarding screen offers a one-click installer per OS.
+
+**Local agent (from source)**
 
 ```bash
-cd src
-python build.py     # one command: cleans, installs, checks, builds
+cd agent-bundle/src
+python -m agent.server        # starts on http://127.0.0.1:7842
 ```
 
-`build.py` handles everything automatically in one command:
+**Web app (local development)**
 
-- Cleans old build/dist artifacts
-- Installs all required packages (no manual pip)
-- Runs environment verification + auto-resolves issues
-- Produces a one-folder build in `src/dist/TestingToolkit/`
-
-To run from source instead: `cd src && python main.py`
-
-To run the test suite: `cd src && python tests/test_full_e2e.py`
-
-### Portable Zero-Install (air-gapped / restricted machines)
-
-```
-Windows:    double-click install.cmd
-macOS:      ./install.sh
-Linux:      ./install.sh
+```bash
+npm install
+npm run dev                   # http://localhost:3000
+npm test                      # vitest unit tests (10 tests)
 ```
 
-Each launcher does a full clean-install-build-launch cycle on every run:
+**Agent test suite**
 
-1. Cleans old `build/` and `dist/` directories + all `__pycache__`
-2. Installs all packages from offline wheelhouse (pip + app deps + PyInstaller)
-3. Builds the `.exe` via PyInstaller (bundles models, assets, all backends)
-4. Launches the built `TestingToolkit.exe`
-
-`install.cmd` is native cmd.exe (NO Git Bash dependency). `install.sh` is
-for macOS/Linux. No Python, pip, or network access required on the target
-machine - everything is bundled.
+```bash
+cd agent-bundle
+python -m pytest tests/ -q    # 177+ tests
+```
 
 ---
 
-## What It Does
+## 2. UI overview
 
-1. **Generate Test Cases** - Recursive Language Model with extended thinking,
-   requirement decomposition, and coverage verification produces ADO Test
-   Cases with per-client template support. Iterative regeneration with user
-   feedback (up to 10 iterations per session).
-2. **Bulk Defect Upload** - Parse defect documents (Word, Excel, PowerPoint,
-   PDF) with adaptive heading detection and LLM fallback, generate a review
-   Excel, then upload Bug work items to ADO with inherited board positions.
-3. **Package PDFs** - bundles work items into per-WI PDFs, a combined PDF,
-   and a KB-ready chunk folder.
+The interface follows a VS Code-style three-pane layout:
+
+```
++----+------------------+--------------------------------------+----------+
+| AB |   NAV PANEL      |    BOARD GRID                        |  DETAIL  |
+|    |                  |    ActionBar (Generate/Publish/Tools) |  PANE    |
+|    |  Projects        |    CoverageBar (metrics strip)       |          |
+|    |  Boards          |    Swim-lane work-item grid          |          |
+|    |                  |    LogPanel (collapsible)            |          |
++----+------------------+--------------------------------------+----------+
+| STATUS BAR: agent health, ADO connection, KB state, last sync           |
++-------------------------------------------------------------------------+
+```
+
+**Activity Bar (AB)** — icon rail buttons from top:
+- Refresh — check for agent updates
+- Folder — open project/board navigator
+- Grid — open board navigator
+- Layers — open AI Stack explorer
+- Settings — open settings dialog
+- Brain — open Project KB dialog (badge dot shows KB state)
+- Help — open help
+
+**CoverageBar** — slim strip between ActionBar and BoardGrid showing:
+- Total work items on the board
+- Currently selected count
+- Active board name
+
+**BoardGrid** — swim-lane table with:
+- Per-type left-border color accent (Story=blue, Bug=red, Task=amber,
+  Epic=purple, Feature=green)
+- Type and state badge pills
+- Lane group headers with count badges
+- Monospace ID column with type-colored left border
+
+**DetailPane** — right panel when a work item is selected:
+- Header with type/state/column badge pills
+- 2-column property grid: Assigned, Area, Iteration, Column
+- Tag chip bubbles (teal) with inline Add Tag for ADO items
+- Description and Acceptance Criteria rendered as HTML
+- Comments with name-hue colored avatars
+- Attachments and links
+- Outputs tab: generated test cases, download links
 
 ---
 
-## Architecture
+## 3. Features
 
-### VS Code-Style Navigation
+### 3.1 Test case generation (Recursive Language Model)
 
-The app uses a dual-state navigation pattern:
+Select one or more work items and a phase. The RLM pipeline:
 
-- **Expanded**: Full nav panel with Projects list, Boards list, and action
-  buttons (Settings, KB, Collapse)
-- **Collapsed**: Thin activity bar (44px) with center-aligned SVG icon
-  buttons (folder, board, gear, brain, expand chevron)
+1. **Gather context** — work-item text, attachments, and project KB
+2. **Navigate / Map / Reduce** — if KB exceeds ~150k tokens, a fast model
+   selects and summarizes relevant chunks
+3. **Decompose** — fast model enumerates atomic testable requirements as a
+   numbered checklist (field validations, boundaries, state transitions, errors)
+4. **Generate** — primary model produces test cases covering the decomposed
+   requirements
+5. **Coverage verification + gap-fill** — a second pass identifies uncovered
+   acceptance criteria and produces additional test cases for gaps
 
-Toggle between states via the chevron button or keyboard shortcut. All buttons
-auto-size to content - no hardcoded dimensions anywhere in the UI.
-
-### Three-Pane Layout
-
-```
-+---+----------+----------------------------------------------+-----------+
-| A | PROJECTS |  Kanban Board (columns x iterations)         |  Detail   |
-| c |  (list)  |  [cards with id, title, state, assignee]     |  (HTML)   |
-| t +----------+                                              |           |
-| i | BOARDS   |  [Generate TC] [Package PDFs] [Bulk Defects] |           |
-| v |  (list)  |  [Upload to ADO] [Manual Mode]              |           |
-| i | [Gear]   |  log/progress panel (collapsible)            |           |
-| t | [Brain]  |                                              |           |
-| y | [Chevron]|                                              |           |
-+---+----------+----------------------------------------------+-----------+
-| status bar: connection state, TLS mode, build info                       |
-+--------------------------------------------------------------------------+
-```
-
-### Package Structure
-
-```
-Testing Toolkit/
-    install.cmd             # Windows native launcher (cmd.exe, no Git Bash)
-    install.sh              # macOS/Linux launcher (clean + build + launch)
-    python-embed/           # Portable Python (~27MB, created by make_portable.py)
-    docs/
-        DOCS.md             # This file
-        Working_Reference.md # Local models & search technical overview
-        rule_list.md        # Canonical bug/enhancement/constraint reference
-    src/
-        main.py             # Entry point (hardware init + bootstrap)
-        build.py            # One-command OS-agnostic build pipeline
-        doctor.py           # Environment preflight checks
-        make_portable.py    # Downloads portable Python for offline deployment
-        make_wheelhouse.py  # Wheel bundle builder for air-gapped installs
-        requirements.txt    # Pinned dependencies
-        clean_old_installs.py   # Remove old build artifacts safely
-        fetch_models.py     # Offline model downloader
-        assets/             # SVG icons (folder, board, gear, brain, chevrons)
-        core/               # Configuration, logging, storage, TLS, API client, hardware
-        ui/                 # PySide6 GUI: windows, dialogs, theming, animations
-        ado/                # Azure DevOps API: boards, extraction, upload
-        kb/                 # Knowledge base: storage, indexing, retrieval, OCR
-        testgen/            # Test case generation: RLM, templates, Excel I/O
-        defects/            # Bulk defect parsing: doc extraction, review Excel, ADO upload
-        tools/              # PDF packaging, office conversion, Visio conversion
-        wheelhouse/         # Pre-downloaded .whl files (created by make_wheelhouse.py)
-        tests/              # E2E test suite + fixture generator
-        build/              # PyInstaller build artifacts
-        dist/               # Built distribution output
-```
-
-### Key Design Principles
-
-- **Modular** - clean package separation with explicit boundaries between concerns
-- **Dark-only** Material Design 3 theme with Apple HIG motion design
-- **Animated** - all dialogs fade-in, buttons pulse on press, progress bars animate
-- **Offline-first** - works behind air-gapped networks with bundled models
-- **Zero-install portable** - bundled Python + pip + wheels; runs on bare machines
-- **Blazing fast startup** - one-folder build, lazy imports, no splash screen
-- **Hardware-aware** - auto-detects CPU cores, GPU (CUDA/DML/Metal), RAM; scales
-  thread pools, batch sizes, and execution providers accordingly
-- **Cross-platform** - Windows (x64/ARM64), macOS (Intel/Apple Silicon), Linux (x64)
-- **Cross-architecture** - ARM/Apple Silicon native support with Metal/CoreML detection
-- **LLM-provider neutral** - works with any API-compatible LLM provider
-- **OS keyring** for credential storage (no plaintext secrets)
-- **Combined TLS bundle** for corporate proxy compatibility (Zscaler)
-- **Deterministic** - same inputs produce same outputs
-- **Memory-agnostic** - streaming and chunked processing; works on 4GB RAM
-
-### Dependency Flow (No Circular Imports)
-
-```
-core  <-  ado  <-  kb  <-  testgen  <-  tools
-  ^                                       ^
-  +---------------- ui -------------------+
-```
-
-- core imports NOTHING from other internal packages
-- ado imports from core only
-- kb imports from core + tools (for office_convert)
-- testgen imports from core + kb + ado
-- tools imports from core only
-- ui imports from EVERYTHING (it's the integration layer)
-
----
-
-## Features
-
-### 1. Test Case Generation (Recursive Language Model)
-
-The RLM pipeline maximizes test case quality through multiple stages:
-
-1. **Navigate** - fast model examines a chunk map and selects relevant
-   chunks for the work items.
-2. **Map** - each selected chunk is distilled to relevant facts.
-3. **Decompose** - fast model enumerates atomic testable requirements as
-   a numbered checklist (field validations, boundaries, state transitions,
-   error conditions).
-4. **Generate** - primary model with **Extended Thinking** (10k token
-   reasoning budget) plans test strategy before producing JSON. The
-   decomposed requirements are included as an explicit coverage target.
-5. **Verify + Gap-Fill** - a second pass maps requirements to generated
-   test cases, identifies uncovered acceptance criteria, and produces
-   additional test cases for gaps. Always-on by default.
-
-KBs up to ~375 pages (150k tokens) skip navigate/map and are passed
-whole for 100% information coverage. Projects with no KB generate from
-work items alone.
-
-**Quality Features:**
-- Extended Thinking (temperature=1.0, cached for determinism)
-- Few-Shot Examples (3 gold-standard TCs in system prompt)
-- Requirement Decomposition (atomic coverage checklist)
-- Coverage Verification + Gap-Fill (always-on)
-- Context Prioritization (longer=more relevant, sorted first)
-- Query Decomposition (multi-sub-query retrieval for multi-criteria stories)
-- Contextual Retrieval (LLM-generated situating prefixes per chunk, 49-67%
+**Quality features:**
+- Few-shot examples (gold-standard TCs in system prompt)
+- Requirement decomposition (atomic coverage checklist)
+- Coverage verification + gap-fill (always-on)
+- Context prioritization (longer = more relevant, sorted first)
+- Query decomposition (multi-sub-query retrieval for multi-criteria stories)
+- Contextual retrieval (LLM-generated situating prefixes per chunk, 49-67%
   fewer retrieval misses)
-- Cache-first determinism (first run non-deterministic with thinking;
-  result cached; re-runs are byte-identical)
 
-**Regeneration with Feedback:**
-After generation, users can provide change instructions (paragraph input)
-and the entire test set is regenerated incorporating the feedback. Up to
-10 regeneration iterations per session per set of work items.
+**Regeneration with feedback** — after generation, write change instructions and
+the entire test set is regenerated incorporating the feedback. Up to 10
+iterations per session per set of work items.
 
-**Models used:**
-- Primary: configurable (generation quality + extended thinking)
-- Fast: configurable (retrieval navigation, decomposition, contextual retrieval)
+**Output** — a reviewable Excel workbook written to `project/generated/`. The
+GenerateDialog shows:
+- Animated stage label with pulse dot
+- TC count badge with pop animation on completion
+- Quality/coverage pill badges (green = threshold met, amber = gaps)
+- Level-colored log lines with left-border stripes
 
-### 2. Per-Client Template Support
+### 3.2 Per-client template support
 
-Upload a client's Excel test-script template (one per testing phase:
-Implementation / SIT / UAT). Templates are typically workbooks with
-existing test data for another scenario — the app analyzes the
-**structure, formatting, styling, sheet organization, merged cells,
-column widths, and data patterns** to understand the layout.
+Upload a client's Excel test-script template (one per phase: Implementation /
+SIT / UAT) via the Project KB dialog > Templates tab.
 
-**LLM-Assisted Analysis (automatic on upload):**
+On upload, the LLM analyzes the template's full structure — header row, column
+purposes, row organization — even with non-English headers or unconventional
+layouts. The result is cached as a deterministic spec; all subsequent renders
+use it with zero LLM calls.
 
-- The template's full structure is sent to the LLM for semantic analysis
-- The LLM identifies the header row, column purposes, and row organization
-  even with non-English headers, custom abbreviations, or unconventional layouts
-- The analysis examines data patterns to confirm field mappings (e.g., a
-  column titled "Description" containing step-by-step actions maps to "action")
-- The result is saved as a deterministic spec — all subsequent renders use
-  the cached spec with zero LLM calls
-- Falls back to heuristic detection if no API key is configured
+Generated test cases are then rendered into a **copy of the original template**,
+preserving its headers, branding, column widths, and styles.
 
-**Deterministic Rendering:**
-Once analyzed, the spec drives a deterministic renderer that fills a *copy
-of the original template* (preserving its headers, branding, column widths,
-and styles) with generated test cases. Same inputs = same outputs, always.
+### 3.3 E2E automation
 
-**Flow:** Project KB dialog > Templates tab > Upload template (auto-analyzed
-by AI) > Generate test cases > template version auto-rendered.
+The E2E dialog generates and runs Playwright automation scripts directly from
+test case steps.
 
-### 3. PDF Packaging
+See [Section 8](#8-e2e-automation-engine) for the full engine specification.
+
+The E2EDialog shows:
+- Test case list with last-run status badge per row (pass/fail/skip)
+- Last-run summary bar: pass count, fail count, skip count, timestamp
+- Level-colored progress log with left-border stripes
+- Stop button (wired to server-side `stop_fn` propagated at TC and step level)
+
+### 3.4 PDF packaging
 
 **Per-WI PDFs** contain:
-- Cover page (title, metadata, description with inline images,
-  acceptance criteria, comments)
-- Attachments separator
+- Cover page (title, metadata, description with inline images, acceptance
+  criteria, comments)
 - All attachments converted to PDF (Office, images, existing PDFs)
 
 **Combined PDF** (`All_WIs_Combined.pdf`) merges all selected WI PDFs.
 
-**KB Bundle** (`Upload to KB/` folder) splits the combined PDF into
-AI knowledge base-ready chunks:
-- Text chunks (each < 700 KB / ~175k tokens)
-- Image-lookup PDFs (one image per page, labeled)
-- index.json + README.md
+**KB Bundle** (`Upload to KB/`) splits the combined PDF into AI knowledge
+base-ready chunks: text chunks, image-lookup PDFs, `index.json` and `README.md`.
 
-### 4. Hybrid Retrieval
-
-For KBs exceeding the 150k-token direct threshold, hybrid retrieval
-selects the top 32 most relevant chunks (from a pool of 96 candidates):
-
-- **BM25** lexical search (always active)
-- **Dense vectors** (fastembed ONNX, bge-small-en-v1.5)
-- **Reciprocal Rank Fusion** combining both
-- **Cross-encoder reranking** (ms-marco-MiniLM-L-6-v2)
-- **Contextual Retrieval** (LLM-generated situating prefixes per chunk,
-  applied at index time, improves retrieval accuracy 49-67%)
-- **Query Decomposition** (heuristic sub-query extraction from acceptance
-  criteria; multi-query retrieval unions results for better recall)
-
-Falls back to BM25-only when dense models are absent.
-
-### 5. Knowledge Base Management
-
-Per-project KB supports:
-- Documents: .md .txt .pdf .docx .xlsx .pptx .html .csv .json
-- Scanned PDFs: automatic OCR via RapidOCR + PyMuPDF rasterizer
-- Images: OCR text extraction
-- Audio/Video: transcription via faster-whisper (optional)
-- Legacy formats: .doc .ppt .msg .odt .eml .epub via olefile
-
-Index rebuilds automatically when documents change. Resumable
-background indexing with progress reporting.
-
-### 6. Upload to ADO
+### 3.5 Upload to ADO
 
 Push reviewed test cases to Azure DevOps:
-
 - Creates Test Cases as children of parent stories
 - ADO-compliant Steps XML
-- Re-reads the reviewed Excel (honors Skip=Yes edits)
+- Re-reads the reviewed Excel (respects `Skip=Yes` edits)
 
-### 7. Bulk Defect Upload
+### 3.6 Bulk defect upload
 
-Parse defect documents and create Bug work items in ADO:
+1. **Select** — one or more documents (Word, Excel, PowerPoint, PDF)
+2. **Parse** — adaptive heading detection extracts parent ID, title, description,
+   repro steps, severity, expected/actual results, images; LLM fallback on parse
+   failure
+3. **Review** — generates an Excel with all defects + embedded images; mark
+   `Skip=Yes` to exclude
+4. **Upload** — creates Bug work items in ADO; Area Path, Iteration Path, and
+   Board Column are derived from the parent work item
 
-1. **Select** - one or more documents (Word, Excel, PowerPoint, PDF)
-2. **Parse** - adaptive heading detection extracts parent ID, title,
-   description, repro steps, severity, expected/actual results, images.
-   Falls back to LLM parsing silently when programmatic parsing fails.
-3. **Review** - generates an Excel with all defects + embedded images.
-   User edits (mark Skip=Yes to exclude).
-4. **Upload** - creates Bug work items in ADO. Area Path, Iteration Path,
-   and Board Column are automatically derived from the parent work item.
-   Bugs are placed in "Ready for Triage" or equivalent column.
+### 3.7 AI Stack explorer
 
-**Supported heading patterns** (case-insensitive, adaptive):
+Open via the Layers button in the Activity Bar. Shows all 7 layers of the
+platform's AI architecture in an expandable accordion, with:
 
-- Title: "Bug Title", "Defect Summary", "Issue Name", etc.
-- Repro Steps: "Steps to Reproduce", "Repro Steps", "Scenario", etc.
-- Severity: "Severity", "Priority", "Impact", etc.
-- Parent: "Parent Work Item", "User Story ID", "Linked WI", etc.
+- Per-layer status chip (Connected / Partial / Not configured) driven by live
+  settings state
+- Active component with model ID, description, and a Configure shortcut
+- Full ecosystem alternatives list from the Full AI Stack reference
 
-### 8. Manual Mode
+Layers: LLMs, Vector DB, Text Embeddings, Data Extraction, Open LLM Access,
+Framework, Evaluation.
 
-When no API key is set (or key is rejected mid-run):
+### 3.8 Retrieval + RAG chat
 
-- Copy system prompt + work-item dump into any LLM session
-- Paste JSON back into the app
-- Same review > push flow
+The Retrieval dialog runs ad-hoc semantic search against the project KB —
+useful for testing what context the generator will receive before running a
+generation.
 
----
+The Chat dialog sends messages to the LLM with KB context attached, for
+interactive exploration of the project's requirement corpus.
 
-## Installation & Deployment
+### 3.9 Manual mode
 
-### Option 1: Portable Zero-Install (Recommended for restricted machines)
-
-For machines that cannot install Python, cannot reach PyPI, or are behind
-Zscaler/air-gap. Two machines involved:
-
-- **Machine A - connected** (your work box; reaches PyPI through Zscaler).
-  Used once to prepare the portable bundle.
-- **Machine B - restricted** (the target laptop). Runs with NO Python,
-  NO pip, NO network access required for installation.
-
-#### What is bundled
-
-| Item | How it travels | Where |
-|------|----------------|-------|
-| Python interpreter | Portable distribution (no installer) | `python-embed/` (~27 MB) |
-| pip + setuptools | Offline wheels + get-pip.py | `python-embed/` + `src/wheelhouse/` |
-| All Python dependencies | `.whl` files you build once | `src/wheelhouse/` |
-| Dense + reranker models | Pre-downloaded, committed | `models/` (~152 MB) |
-| OCR models (RapidOCR) | Inside the `rapidocr-onnxruntime` wheel | `src/wheelhouse/` |
-
-#### Step 1: Prepare portable Python (Machine A)
-
-```bash
-cd src
-python make_portable.py                         # auto-detect this platform
-python make_portable.py --platform win_amd64    # cross-build for Windows x64
-python make_portable.py --platform win_arm64    # cross-build for Windows ARM
-python make_portable.py --platform macosx_11_0_arm64   # macOS Apple Silicon
-python make_portable.py --platform linux_x86_64        # Linux x64
-```
-
-This downloads:
-- Python embeddable zip (Windows) or python-build-standalone (macOS/Linux)
-- `get-pip.py` for offline pip bootstrap
-- pip/setuptools/wheel into the wheelhouse
-
-#### Step 2: Build the wheelhouse (Machine A)
-
-```bash
-cd src
-python make_wheelhouse.py
-python make_wheelhouse.py --plat win_amd64 --pyver 3.12  # cross-build
-```
-
-Downloads every dependency in `requirements.txt` as platform-specific wheels.
-
-#### Step 3: Transfer and run (Machine B)
-
-```bash
-# Zip entire project folder, transfer via USB/share/network
-# On target machine, unzip and run:
-./install.sh    # macOS / Linux
-# or in Git Bash on Windows:
-./install.sh
-```
-
-Every run: cleans, installs packages, builds .exe, launches (~2-3 min).
-No sentinel or skip logic - always a guaranteed clean build.
-
-#### Supported platforms
-
-| Platform | Python Source | Architecture |
-|----------|--------------|--------------|
-| `win_amd64` | python.org embeddable zip | Intel/AMD x64 |
-| `win_arm64` | python.org embeddable zip | Snapdragon ARM64 |
-| `macosx_11_0_arm64` | python-build-standalone | Apple Silicon (M1-M4) |
-| `macosx_10_9_x86_64` | python-build-standalone | Intel Mac |
-| `linux_x86_64` | python-build-standalone | Linux x64 |
-
-### Option 2: From Source (connected machine with Python 3.10+)
-
-```bash
-cd src
-python build.py          # fully automated one-folder build
-```
-
-### Build Options
-
-```bash
-cd src
-python build.py              # default: cleans + builds one-folder
-python build.py --onefile    # single exe (slower startup)
-python build.py --console    # keep console for debugging
-```
-
-### Option 3: Wheelhouse-Only (Python pre-installed, no network)
-
-If Machine B already has Python but cannot reach PyPI:
-
-```bash
-# Machine A:
-cd src && python make_wheelhouse.py
-
-# Machine B (Python 3.10+ already installed):
-cd src
-python -m venv .venv
-.venv\Scripts\activate       # Windows
-python -m pip install --no-index --find-links wheelhouse -r requirements.txt
-python main.py
-```
-
-### Dense Model Cache (Optional)
-
-```bash
-cd src
-python fetch_models.py   # downloads embedding + reranker models
-```
-
-Models are bundled into the build automatically if present in `models/`.
+When no API key is configured:
+- Copy the system prompt + work-item dump from the Generate dialog
+- Paste into any LLM session
+- Paste the JSON response back into the app
+- Continue the normal review > upload flow
 
 ---
 
-## Hardware Utilization
+## 4. First-run setup
 
-The app auto-detects and uses all available hardware:
+On first launch after agent install, a setup wizard collects:
 
-| Resource | Detection | Usage |
-| -------- | --------- | ----- |
-| CPU cores (physical) | `os.sched_getaffinity` / `psutil` / ARM heuristic | CPU-bound workers (embeddings, OCR) |
-| CPU cores (logical) | `os.cpu_count()` | I/O-bound workers (HTTP, file ops) |
-| Architecture | `platform.machine()` | ARM vs x86 detection |
-| Apple Silicon | `sysctl machdep.cpu.brand_string` | M1/M2/M3/M4 chip identification |
-| GPU (CUDA) | `torch.cuda` / onnxruntime providers | float16 inference, whisper STT |
-| GPU (DirectML) | onnxruntime DML provider | Windows GPU fallback |
-| GPU (Metal/CoreML) | Apple MPS / CoreML detection | macOS GPU acceleration |
-| System RAM | `psutil` / `sysctl hw.memsize` / `/proc/meminfo` | Embedding batch sizing (32/64/128) |
+1. **LLM API** — base URL (GenAI proxy), API key, primary model, fast model
+2. **Azure DevOps** — Personal Access Token (PAT), organization URL
+3. **Display prefix** — optional short label shown in the status bar
 
-All detection is fail-safe with conservative fallbacks. Missing GPU = CPU mode
-with identical features (just slower). Set at startup via `core/hardware.py`.
-
-**ONNX Provider Priority:** CUDA > CoreML (macOS) > DirectML (Windows) > CPU
-
-Environment variables auto-set: `OMP_NUM_THREADS`, `MKL_NUM_THREADS`,
-`OPENBLAS_NUM_THREADS`, `VECLIB_MAXIMUM_THREADS`, `NUMEXPR_NUM_THREADS`,
-`ORT_NUM_THREADS`, `ACCELERATE_NUM_THREADS` (Apple Silicon).
+All settings are editable at any time from the Settings dialog (gear icon).
 
 ---
 
-## First-Run Setup
-
-On first launch a wizard collects:
-
-- **LLM API**: API key, base URL, primary model, fast model
-- **Azure DevOps**: PAT, organization
-- **TLS mode** and **display prefix**
-
-Everything is editable later from Settings (gear icon in activity bar or
-nav panel).
-
----
-
-## Workspace Layout
+## 5. Workspace layout
 
 ```
 ~/TestingToolkit/
-    settings.json              # base URL, model, org, prefix, TLS
-    ui_prefs.json              # theme, window geometry, splitter state
-    projects/
-        <project>/
-            system_prompt.txt  # custom RLM prompt
-            kb/                # requirement documents
-            kb_index.json      # cached chunk index
-            templates/         # client Excel templates + specs
-            generated/         # output payloads + review xlsx
-    outputs/
-        <project>/
-            packets/           # PDF packaging output
-                WI_123.pdf
-                All_WIs_Combined.pdf
-                Upload to KB/
-                manifest.json
-            testcases/         # test case review xlsx
-    logs/                      # rotating debug logs
+  settings.json              base_url, model, org, prefix, provider_format
+  projects/<name>/
+    system_prompt.txt         per-project RLM generation prompt
+    kb/                        requirement documents (source files)
+    kb_index.json             cached chunk index (BM25 + vector)
+    templates/                 Excel templates + LLM-analyzed specs per phase
+    generated/                 output payloads + review .xlsx per run
+  runs/                       packager work dir
+  outputs/
+    <name>/
+      packets/                 per-WI PDFs + combined PDF + KB bundle
+      testcases/               test case review .xlsx
+  logs/                       rotating debug log
 ```
 
 ---
 
-## Runtime Dependencies
+## 6. Settings reference
 
-### Required (auto-installed by build.py)
+| Field | Description |
+|---|---|
+| `base_url` | LiteLLM proxy URL (e.g. `https://genai.example.com`) |
+| `api_key` | Bearer token for the LiteLLM proxy (stored in OS keyring) |
+| `model_large` | Primary model ID (generation quality) — default `azure.gpt-4o` |
+| `model_medium` | Fast model ID (decompose, navigate) — default `azure.gpt-4-turbo` |
+| `model_small` | Fallback model ID — default `azure.gpt-4` |
+| `embed_model` | Embedding model ID — default `azure.text-embedding-3-small` |
+| `rerank_model` | Rerank model ID — default `azure.cohere-rerank-v3-english` |
+| `ado_org` | Azure DevOps organization URL |
+| `ado_pat` | ADO Personal Access Token (stored in OS keyring) |
+| `provider_format` | `anthropic` (default) or `openai` — wire format to the proxy |
+
+---
+
+## 7. AI stack
+
+All AI operations route through the **GenAI LiteLLM proxy**. No local ONNX
+models are required in the default configuration.
+
+| Layer | Endpoint | Default model |
+|---|---|---|
+| LLM generation | `/chat/completions` or `/v1/messages` | `azure.gpt-4o` |
+| LLM fast | `/chat/completions` or `/v1/messages` | `azure.gpt-4-turbo` |
+| LLM fallback | `/chat/completions` or `/v1/messages` | `azure.gpt-4` |
+| Embeddings | `/embeddings` | `azure.text-embedding-3-small` |
+| Reranking | `/rerank` (Cohere API format) | `azure.cohere-rerank-v3-english` |
+| OCR | `/chat/completions` (vision) | `azure.gpt-4o` |
+| Audio | `/audio/transcriptions` | `azure.whisper` |
+
+The **provider format** determines the wire protocol:
+- `anthropic`: uses `/v1/messages` with content-block + tool-use format
+- `openai`: uses `/chat/completions` with function-calling format
+
+Both paths are supported by the LiteLLM proxy. The `core/openai_transport.py`
+module handles all message/tool translation between the two formats.
+
+---
+
+## 8. E2E automation engine
+
+### Script generator
+
+Translates test case steps into a valid Playwright async Python script:
+
+- 20 action types: `click`, `fill`, `type`, `hover`, `double_click`,
+  `press_key`, `scroll`, `wait_for_text`, `wait_for_url`, `assert_present`,
+  `assert_not_present`, `assert_text`, `assert_url`, `assert_enabled`,
+  `assert_disabled`, `assert_value`, `assert_checked`, `navigate`,
+  `select`, `upload`
+- Password fields inject `os.environ["E2E_PASSWORD"]` — no plaintext
+- `assert_url` uses `await expect(page).to_have_url(re.compile(...))`
+- Generated scripts are valid Python verified by `ast.parse`
+
+### Self-healing runner
+
+When a locator fails, the runner automatically tries 5 fallback strategies before
+giving up:
+
+```
+1. role    -> get_by_role(role, name=label)
+2. label   -> get_by_label(selector)
+3. placeholder -> get_by_placeholder(selector)
+4. text    -> get_by_text(selector)
+5. test_id -> get_by_test_id(selector)
+6. css     -> locator(selector)  [last resort]
+```
+
+Additional reliability features:
+- Auto-retry: 3 attempts with exponential backoff (600ms base)
+- iframe traversal: 1 level deep, tries each child frame
+- Shadow DOM: CSS `>>` combinator as last resort
+- Element stability: bounding-box convergence guard before interact
+- Post-click wait: navigation clicks use `waitUntil: "commit"`, in-page
+  clicks skip to avoid false network-idle waits
+- `[HEAL]` log entries record which strategy succeeded for audit
+
+---
+
+## 9. Knowledge base management
+
+Per-project KB supports the following document types:
+
+| Category | Formats |
+|---|---|
+| Text | `.md`, `.txt`, `.html`, `.csv`, `.json` |
+| Office | `.pdf`, `.docx`, `.xlsx`, `.pptx` |
+| Scanned PDFs | OCR via vision API + PyMuPDF rasterizer |
+| Images | OCR text extraction via vision API |
+| Audio/Video | Transcription via Whisper API |
+| Legacy | `.doc`, `.ppt`, `.odt`, `.eml`, `.epub` via olefile |
+
+Indexing runs in the background after upload. The KB icon badge dot in the
+Activity Bar reflects the current state (red = none, amber = indexing, green =
+ready).
+
+**Hybrid retrieval** (used when KB exceeds ~150k tokens):
+- BM25 lexical search (always active)
+- Dense vector search (embedding API)
+- Reciprocal Rank Fusion combining both (top 96 candidates)
+- Cross-encoder reranking (rerank API) down to top 32
+- Contextual retrieval (LLM-generated chunk prefixes at index time)
+- Query decomposition (multi-sub-query for multi-criteria stories)
+
+---
+
+## 10. Hardware utilization
+
+The agent auto-detects available hardware at startup via `core/hardware.py`:
+
+| Resource | Detection | Usage |
+|---|---|---|
+| CPU cores | `os.sched_getaffinity` / `os.cpu_count()` | Thread pool sizing |
+| GPU (CUDA) | onnxruntime providers | (reserved — future use) |
+| GPU (DirectML) | onnxruntime DML | (reserved — future use) |
+| GPU (Metal) | Apple MPS detection | (reserved — future use) |
+| System RAM | `psutil` / `sysctl` / `/proc/meminfo` | Embedding batch sizing |
+
+Since agent 2.8.0, ONNX models are no longer loaded by default (all inference
+routes through the API). Hardware detection remains for system diagnostics and
+is reported in the Settings dialog via the agent's `/health` response.
+
+---
+
+## 11. Runtime dependencies
+
+### Web app
+
+| Package | Version | Purpose |
+|---|---|---|
+| next | 16.2.9 | React framework + App Router |
+| react | 19.2.4 | UI |
+| tailwindcss | ^4 | Styling |
+| lucide-react | ^1.21.0 | Icons |
+| framer-motion | ^12.42.0 | Animations |
+| @base-ui/react | ^1.6.0 | Accessible primitives |
+
+### Local agent
 
 | Package | Purpose |
-|---------|---------|
-| PySide6 | GUI framework |
-| httpx | ADO + LLM API HTTP |
-| certifi | TLS root certificates |
-| truststore | OS trust store (Zscaler) |
-| keyring | Secure credential storage |
+|---|---|
+| fastapi | HTTP server framework |
+| uvicorn | ASGI server |
+| httpx | HTTP client (ADO + LLM proxy calls) |
+| lancedb | Embedded vector store |
+| numpy | BM25 scoring |
 | openpyxl | Excel read/write |
-| selectolax | HTML parsing |
 | pypdf | PDF text extraction |
 | reportlab | PDF generation |
 | Pillow | Image handling |
-| python-docx | Word documents |
-| python-pptx | PowerPoint documents |
-| xlrd | Legacy .xls files |
-| striprtf | RTF documents |
-| numpy | BM25 + vector math |
-
-### Feature Set (auto-installed by build.py)
-
-| Package | Purpose |
-|---------|---------|
-| fastembed | Dense ONNX embeddings + reranker |
-| onnxruntime | CPU inference backend |
-| rapidocr-onnxruntime | OCR for scanned PDFs |
-| PyMuPDF | PDF rasterizer for OCR pipeline |
-| olefile | Legacy .doc/.ppt/.msg extraction |
-
-### Optional (not bundled by default)
-
-| Package | Purpose |
-|---------|---------|
-| faster-whisper | Audio/video transcription |
-| pytesseract | Alternative image OCR |
-
----
-
-## Security
-
-- API key and PAT in OS keyring (Windows Credential Manager / macOS
-  Keychain / Secret Service)
-- Combined CA trust bundle for TLS-intercepting proxies
-- No plaintext secrets on disk
-- All API calls at temperature=0 for repeatability
-
----
-
-## Preflight Verification
-
-Run `cd src && python doctor.py` to verify:
-
-1. Python version (>= 3.10)
-2. Hardware resources (CPU cores, RAM, GPU)
-3. All required packages present
-4. Feature packages active/inactive
-5. OCR pipeline end-to-end (builds scanned PDF, runs OCR, verifies)
-6. Multimedia backends (image OCR, audio STT, video processing)
-7. Offline model cache
-
----
-
-## Testing
-
-```bash
-cd src
-python tests/generate_test_data.py   # generate 50+ fixture files (run once)
-python tests/test_full_e2e.py        # run 57-check comprehensive E2E suite
-```
-
-The test suite covers:
-
-- Hardware detection and thread environment (including ARM/Apple Silicon)
-- Core modules (runtime config, LLM aliases, settings store)
-- KB indexing (all file types: txt, md, csv, json, html, docx, xlsx, rtf)
-- Testgen (payload parsing, validation, normalization, Excel round-trip)
-- Defects (review Excel round-trip, uploader imports)
-- ADO (auth headers, dataclasses, extract functions)
-- Tools (office conversion, PDF packaging)
-- UI (theme, main window, settings dialog, board grid, artifacts browser)
-- Branding (no provider-specific labels in UI)
-- Settings scenarios (env var overrides)
-
----
-
-## Requirements
-
-- **Portable mode**: Nothing pre-installed (Python bundled via `install.sh`)
-- **Source mode**: Python 3.10+ (3.12 recommended)
-- Windows 10/11 (x64/ARM64), macOS (Intel/Apple Silicon), or Linux (x64)
-- Azure DevOps PAT + LLM API key (entered on first launch)
-- Optional: NVIDIA GPU with CUDA / Apple Metal for accelerated inference
-
----
-
-## Offline Troubleshooting
-
-- **install.sh says "No Python 3.10+ found"** - the `python-embed/` folder
-  is missing. Run `cd src && python make_portable.py` on a connected machine.
-
-- **"get-pip.py not found"** - `make_portable.py` was not run or failed
-  partway. Re-run it on Machine A (`cd src && python make_portable.py`).
-
-- **doctor.py says "OCR engine MISSING"** - the wheelhouse did not include the
-  OCR wheels, or the venv was not activated. Run:
-  `pip install --no-index --find-links wheelhouse rapidocr-onnxruntime PyMuPDF`
-
-- **"no matching distribution" / wheel won't install** - the wheelhouse was
-  built for a different OS or Python. Rebuild on Machine A with `--plat` /
-  `--pyver` matching Machine B exactly.
-
-- **doctor.py warns "models/ cache not found"** - dense retrieval falls back
-  to lexical BM25 (the app still works). To enable dense offline, run
-  `cd src && python fetch_models.py` on Machine A and include `models/` in zip.
-
-- **App starts but ADO / model fetch fails at runtime** - network reachability
-  issue for the corporate ADO / LLM API gateway. Confirm those endpoints are
-  allowlisted on Machine B.
-
----
-
-## Portable Deployment Constraints (Hard-Won)
-
-These constraints were discovered during production deployment and MUST be
-respected in any future changes to the install/build pipeline:
-
-### Python Embeddable Distribution
-
-| Constraint | Reason |
-|------------|--------|
-| `python312._pth` must be PATCHED, never deleted | Deleting it breaks pip (site-packages becomes unreachable) |
-| `._pth` must contain `..\src` entry | Relative to `python-embed/` dir; puts `src/` on sys.path for `from core.xxx` |
-| `._pth` must contain `import site` | Required for pip/site-packages to work |
-| `._pth` must contain `Lib\site-packages` | Without this, installed packages are invisible |
-| Correct `._pth` content (exact): | `python312.zip`, `.`, `..\src`, `Lib\site-packages`, `import site` |
-
-### PySide6 / Qt on Windows
-
-| Constraint | Reason |
-|------------|--------|
-| NEVER run Qt apps in Git Bash (mintty) | PySide6 SEGFAULTS (0xC0000005) in mintty terminal |
-| `install.cmd` must be native cmd.exe only | Git Bash dependency breaks Qt; cmd.exe works |
-| `pythonw.exe` hides ALL errors | Window closes silently on crash; use `python.exe` for debugging |
-| Exit code `-1073740791` (0xC0000409) | Qt STATUS_STACK_BUFFER_OVERRUN - usually plugin path issue |
-| Exit code `-1073741819` (0xC0000005) | Access violation - Qt in mintty or missing DLL |
-| Set `QT_PLUGIN_PATH` for embedded Python | Qt may not find plugins in non-standard install locations |
-
-### Wheelhouse and Offline Install
-
-| Constraint | Reason |
-|------------|--------|
-| Wheels are Python-version-specific | cp312 wheels do NOT work on Python 3.13 - must match exactly |
-| `--no-index --find-links wheelhouse` required | Prevents pip from reaching the network |
-| `--no-warn-script-location` suppresses noise | Scripts/ not on PATH in embedded Python - expected |
-| `--force-reinstall` ensures clean state | Without it, pip skips "already installed" packages |
-| PyInstaller must also be in wheelhouse | It is a build-time dep, not just runtime |
-| `get-pip.py` must be in `python-embed/` | First-run bootstrap needs it before pip exists |
-
-### Build Pipeline (install.cmd / install.sh)
-
-| Constraint | Reason |
-|------------|--------|
-| No sentinel / skip logic | User expects guaranteed clean install every run |
-| Always clean `build/` + `dist/` + `__pycache__` first | Stale bytecode causes import errors |
-| `build.py --quiet` for clean output | Only show progress bar + errors; suppress verbose cleanup |
-| Build bundles `models/` and `assets/` | PyInstaller `--add-data` for offline dense retrieval |
-| Console stays open on error (`pause`) | So user can read the error before window closes |
-| `start "" "%EXE%"` for final launch | Detaches from console; does NOT use pythonw.exe |
-
----
-
-## File Reference
-
-### Root (project root)
-
-| File | Role |
-| ---- | ---- |
-| `install.sh` | macOS/Linux portable launcher (clean + install + build + launch) |
-| `install.cmd` | Windows native launcher (clean + install + build + launch, no Git Bash) |
-
-### docs/
-
-| File | Role |
-| ---- | ---- |
-| `DOCS.md` | This file (full technical documentation) |
-| `Working_Reference.md` | Local models, indexing, and search technical overview |
-| `rule_list.md` | Canonical bug/enhancement/constraint reference |
-
-### src/ Scripts
-
-| File | Role |
-| ---- | ---- |
-| `main.py` | Entry point (hardware init + bootstrap) |
-| `build.py` | One-command OS-agnostic build (cleans + installs + checks + builds) |
-| `doctor.py` | Environment preflight checks |
-| `make_portable.py` | Downloads portable Python for offline deployment |
-| `make_wheelhouse.py` | Wheel bundle builder for air-gapped installs |
-| `requirements.txt` | Pinned dependency list |
-| `clean_old_installs.py` | Remove old build artifacts safely |
-| `fetch_models.py` | Offline model downloader |
-
-### src/assets/ - SVG Icons
-
-| File | Role |
-| ---- | ---- |
-| `icon_folder.svg` | Projects (white folder outline) |
-| `icon_board.svg` | Boards (white 4-tile grid) |
-| `icon_gear.svg` | Settings (white gear/cog) |
-| `icon_brain.svg` | Project KB (white brain) |
-| `icon_chevron_left.svg` | Collapse nav (white left chevron) |
-| `icon_chevron_right.svg` | Expand nav (white right chevron) |
-
-### src/core/ - Configuration, Logging, Storage, TLS, API Client, Hardware
-
-| File | Role |
-| ---- | ---- |
-| `core/__init__.py` | Package init and public exports |
-| `core/app_config.py` | Constants, paths, defaults |
-| `core/app_logging.py` | Rotating log configuration |
-| `core/anthropic_client.py` | LLM API client wrapper |
-| `core/orchestrator.py` | Extract + package + KB bundle pipeline |
-| `core/pat_store.py` | PAT credential storage (keyring) |
-| `core/prefs_store.py` | UI preferences persistence |
-| `core/project_store.py` | Per-project storage + KB management |
-| `core/runtime_config.py` | Runtime state and environment detection |
-| `core/settings_store.py` | Settings persistence |
-| `core/hardware.py` | Hardware detection (CPU/GPU/RAM/ARM/Metal) + thread env setup |
-| `core/tls_helper.py` | Combined TLS bundle for proxy compatibility |
-
-### src/ui/ - PySide6 GUI: Main Window, Dialogs, Theming, Animations
-
-| File | Role |
-| ---- | ---- |
-| `ui/__init__.py` | Package init and public exports |
-| `ui/main_window.py` | Three-pane GUI shell with VS Code-style activity bar |
-| `ui/theme.py` | Material Design 3 dark theme (Apple HIG) |
-| `ui/animations.py` | Qt property animations (fade, slide, pulse) |
-| `ui/gui_common.py` | Shared widgets and utility functions |
-| `ui/board_grid.py` | Kanban board grid display |
-| `ui/generate_dialog.py` | Test case generation dialog |
-| `ui/upload_dialog.py` | Upload to ADO dialog |
-| `ui/global_settings_dialog.py` | Application settings dialog (auto-fits to content) |
-| `ui/project_kb_dialog.py` | Project knowledge base management dialog |
-| `ui/retrieval_preview_dialog.py` | Hybrid retrieval preview dialog |
-| `ui/setup_wizard.py` | First-run setup wizard |
-| `ui/artifacts_browser.py` | Artifacts browsing dialog |
-
-### src/ado/ - Azure DevOps API: Boards, Work-Item Extraction, Test Case Creation
-
-| File | Role |
-| ---- | ---- |
-| `ado/__init__.py` | Package init and public exports |
-| `ado/api.py` | Azure DevOps HTTP API client |
-| `ado/boards.py` | Board and iteration queries |
-| `ado/extract.py` | Work-item field and attachment extraction |
-| `ado/testcase_creator.py` | Test case validation + ADO upload |
-
-### src/kb/ - Knowledge Base: Storage, Indexing, Hybrid Retrieval, OCR, Embeddings
-
-| File | Role |
-| ---- | ---- |
-| `kb/__init__.py` | Package init and public exports |
-| `kb/store.py` | Document extraction + chunking |
-| `kb/indexer.py` | Resumable background indexing |
-| `kb/retrieval.py` | Hybrid retrieval orchestration (BM25 + dense + rerank) |
-| `kb/bm25.py` | BM25 lexical search implementation |
-| `kb/embeddings.py` | Dense vector embedding (fastembed ONNX) |
-| `kb/vector_store.py` | Vector storage and similarity search |
-| `kb/reranker.py` | Cross-encoder reranking (ms-marco-MiniLM) |
-| `kb/contextual.py` | Contextual chunking and relevance scoring |
-| `kb/ocr.py` | Scanned PDF OCR pipeline (RapidOCR + PyMuPDF) |
-| `kb/bundle.py` | Combined PDF + KB chunk bundle output |
-| `kb/legacy_docs.py` | Legacy format extraction (.doc .ppt .msg .odt) |
-| `kb/multimedia.py` | Audio/video transcription (faster-whisper) |
-| `kb/model_bundle.py` | Offline model cache management |
-
-### src/testgen/ - Test Case Generation: RLM, Types, Excel I/O, Templates, Cache
-
-| File | Role |
-| ---- | ---- |
-| `testgen/__init__.py` | Package init and public exports |
-| `testgen/rlm.py` | Recursive Language Model (navigate/map/reduce) |
-| `testgen/tc_types.py` | Test case data structures and validation |
-| `testgen/testcase_excel.py` | Test case Excel output generation |
-| `testgen/testcase_template.py` | Client template analysis + rendering |
-| `testgen/template_analyzer.py` | LLM-assisted template structure analysis |
-| `testgen/gen_cache.py` | Generation result caching |
-
-### src/tools/ - PDF Packaging, Office Conversion, Visio Conversion
-
-| File | Role |
-| ---- | ---- |
-| `tools/__init__.py` | Package init and public exports |
-| `tools/pdf_packager.py` | Per-WI PDF packaging (cover + attachments) |
-| `tools/combine_pdf.py` | Combined PDF merging |
-| `tools/office_convert.py` | Office -> PDF conversion (pure Python) |
-| `tools/visio_convert.py` | Visio -> PDF conversion |
-
-### src/defects/ - Bulk Defect Upload: Parsing, Review, ADO Upload
-
-| File | Role |
-| ---- | ---- |
-| `defects/__init__.py` | Package init |
-| `defects/parser.py` | Defect document parsing (programmatic + LLM fallback) |
-| `defects/review_excel.py` | Review Excel generation and read-back |
-| `defects/ado_uploader.py` | Bug work item creation in ADO |
-| `ui/defect_dialog.py` | Bulk defect upload dialog (Select > Parse > Upload) |
-
-### src/tests/
-
-| File | Role |
-| ---- | ---- |
-| `tests/generate_test_data.py` | Generates 50+ synthetic test fixtures |
-| `tests/test_full_e2e.py` | Comprehensive 57-check E2E test suite |
+| python-docx / python-pptx | Office document handling |
+| PyMuPDF | PDF rasterization (for OCR) |
+| imageio-ffmpeg | Video audio-track extraction (local format conversion) |
+| playwright | E2E browser automation (optional, auto-installed post-setup) |
+| keyring | OS secret store |
+| certifi / truststore | TLS certificates + OS trust store |
