@@ -36,6 +36,26 @@ def test_version_reports_current(client):
     assert AGENT_VERSION in str(r.json())
 
 
+def test_metrics_reports_process_stats_without_psutil(client):
+    """Regression guard: /metrics must report this process's CPU% and resident
+    memory using the dependency-free core.process_metrics module, NOT psutil
+    (which is not bundled). Before this was wired up the status bar showed
+    'CPU -- RAM --' forever on every real install. cpu_percent may legitimately
+    be 0.0 on the first poll, but proc_mem_mb must be a positive int."""
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body, dict)
+    assert "cpu_percent" in body and "proc_mem_mb" in body
+    # The running agent process always has resident memory > 0.
+    assert isinstance(body["proc_mem_mb"], int)
+    assert body["proc_mem_mb"] > 0
+    # cpu_percent is either None (unsupported platform) or a real 0-100 number,
+    # but on Linux/Windows/macOS the native reader always returns a number.
+    if body["cpu_percent"] is not None:
+        assert 0.0 <= float(body["cpu_percent"]) <= 100.0
+
+
 def test_capabilities(client):
     r = client.get("/capabilities")
     assert r.status_code == 200
