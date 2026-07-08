@@ -94,9 +94,29 @@ class ProjectPaths:
         return None
 
 
+def _load_prompt_md() -> str | None:
+    """Load the bundled prompt.md if present alongside the package. Returns the
+    content string, or None if missing/empty."""
+    try:
+        prompt_path = Path(__file__).resolve().parent.parent / "prompt.md"
+        if prompt_path.is_file():
+            text = prompt_path.read_text(
+                encoding="utf-8", errors="replace"
+            ).strip()
+            if text:
+                return text
+    except Exception:
+        pass
+    return None
+
+
 def _default_prompt(tc_type: str | None) -> str:
     if tc_type and _is_valid_tc_type(tc_type):
         return _default_prompt_for_type(tc_type)
+    # Prefer the bundled prompt.md as the generic default when available.
+    prompt_md = _load_prompt_md()
+    if prompt_md:
+        return prompt_md
     return DEFAULT_SYSTEM_PROMPT
 
 
