@@ -17,6 +17,29 @@ export function userStoryIds(rows: WorkItemRow[]): WiId[] {
   );
 }
 
+/** Work-item source backend for a project. Mirrors core/source_types.py. */
+export type ProjectSource = "ado" | "jira";
+
+/**
+ * Resolve a (possibly source-suffixed) project name to its backend.
+ *
+ * When BOTH sources are configured the agent appends " - ADO" / " - JIRA"
+ * to project names (core/source_types.SOURCE_SUFFIXES). When only one source
+ * is configured names are unsuffixed, so we fall back to whichever source is
+ * actually configured (JIRA-only setups resolve to "jira", else "ado").
+ */
+export function projectSourceType(
+  full: string,
+  opts: { jiraConfigured?: boolean; adoConfigured?: boolean } = {}
+): ProjectSource {
+  const name = full.trimEnd();
+  if (/\s-\sJIRA$/i.test(name)) return "jira";
+  if (/\s-\sADO$/i.test(name)) return "ado";
+  // Single-source setup: no suffix — infer from what's configured.
+  if (opts.jiraConfigured && !opts.adoConfigured) return "jira";
+  return "ado";
+}
+
 export const NO_COLUMN = "(no board column)";
 export const UNASSIGNED = "(unassigned)";
 export const NO_ITER = "(no iteration)";

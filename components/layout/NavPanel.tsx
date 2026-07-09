@@ -11,6 +11,8 @@ import {
   Sun,
   Moon,
   RefreshCw,
+  RefreshCcw,
+  Layers,
   LayoutDashboard,
   KanbanSquare,
 } from "lucide-react";
@@ -21,13 +23,9 @@ import { Dropdown } from "@/components/ui/dropdown";
 import { agent } from "@/lib/agent-client";
 import { getPreferences, setSizePref } from "@/lib/preferences";
 import { ResizeHandle } from "@/components/ui/resizer";
-
-/** Generate a deterministic hue 0-359 from a project name string. */
-function nameHue(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0xffff;
-  return h % 360;
-}
+import { SourceLogo } from "@/components/ui/source-logo";
+import { projectSourceType } from "@/lib/board-utils";
+import { useAppUpdate } from "@/lib/use-app-update";
 
 export function NavPanel() {
   const {
@@ -45,10 +43,22 @@ export function NavPanel() {
     setLogVisible,
     pushLog,
     boardView,
+    settings,
   } = useAppState();
 
   const { theme, toggleTheme } = useTheme();
+  const { apply: applyUpdate, busy: updateBusy } = useAppUpdate(pushLog);
   const [width, setWidth] = useState(() => getPreferences().sizes.navWidth);
+
+  const sourceOpts = {
+    jiraConfigured: settings?.jira_configured,
+    adoConfigured: settings?.configured,
+  };
+
+  async function onUpdateClick() {
+    setLogVisible(true);
+    await applyUpdate();
+  }
 
   async function openLogFolder() {
     setLogVisible(true);
@@ -87,7 +97,7 @@ export function NavPanel() {
             ) : (
               projects.map((full) => {
                 const name = displayName(full);
-                const hue = nameHue(name);
+                const source = projectSourceType(full, sourceOpts);
                 const isSelected = full === currentProject;
                 return (
                   <div
@@ -106,14 +116,8 @@ export function NavPanel() {
                     className="tt-list-item flex items-center gap-2 text-sm"
                     title={full}
                   >
-                    {/* Project avatar chip */}
-                    <span
-                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[10px] font-bold text-white"
-                      style={{ background: `hsl(${hue} 65% 42%)` }}
-                      aria-hidden
-                    >
-                      {name.charAt(0).toUpperCase()}
-                    </span>
+                    {/* Source brand logo (ADO or Jira) */}
+                    <SourceLogo source={source} size={20} />
                     <span className="truncate">{name}</span>
                     {isSelected && (
                       <LayoutDashboard className="ml-auto h-3 w-3 shrink-0 opacity-60" />
@@ -213,6 +217,12 @@ export function NavPanel() {
             )}
           />
           <NavLabelBtn
+            title="AI Stack — how the pipeline works"
+            onClick={() => openDialog("aistack")}
+            icon={<Layers className="h-3.5 w-3.5" strokeWidth={2} />}
+            label="AI Stack"
+          />
+          <NavLabelBtn
             title="Settings"
             onClick={() => openDialog("settings")}
             icon={<Settings className="h-3.5 w-3.5" strokeWidth={2} />}
@@ -251,6 +261,18 @@ export function NavPanel() {
               )
             }
             label={theme === "dark" ? "Light" : "Dark"}
+          />
+          <NavLabelBtn
+            title="Check for updates"
+            disabled={updateBusy}
+            onClick={() => void onUpdateClick()}
+            icon={
+              <RefreshCcw
+                className={`h-3.5 w-3.5 ${updateBusy ? "animate-spin" : ""}`}
+                strokeWidth={2}
+              />
+            }
+            label="Update"
           />
           <NavLabelBtn
             title="Collapse navigator"
