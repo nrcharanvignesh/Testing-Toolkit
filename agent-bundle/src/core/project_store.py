@@ -258,6 +258,17 @@ def index_project_resumable(
                     on_log(f"[WARN] Context extraction skipped: {exc!r}")
                 except Exception:
                     pass
+    elif not getattr(index, "chunks", None):
+        # KB is now empty (every document was deleted). Remove any stale
+        # context summary so we don't keep describing deleted content -- the
+        # project context must stay in sync with CRUD of KB files.
+        try:
+            if p.context_summary_path.exists():
+                p.context_summary_path.unlink()
+                if on_log:
+                    on_log("[INFO] KB is empty; cleared project context summary")
+        except OSError:
+            pass
     return index
 
 
