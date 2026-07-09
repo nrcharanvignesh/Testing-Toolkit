@@ -153,3 +153,32 @@ def test_every_hard_requirement_has_a_bundled_wheel():
         f"(offline install would fail): {missing}. Make them optional install "
         "steps instead."
     )
+
+
+def test_optional_cryptography_deps_are_deliverable():
+    """install.py installs cryptography as an OPTIONAL offline step, so its full
+    dep closure (cryptography + cffi + pycparser) must be deliverable via the
+    extra-wheels overlay for both shipped platforms (win_amd64 + manylinux).
+
+    This guards the bundled-service-key path: without these the app silently
+    drops to Manual Mode. cryptography (abi3) covers 3.11+; cffi is per-minor
+    (cp312) matching the version-aware interpreter selection.
+    """
+    import re
+
+    root = _INSTALL_PY.parent
+    extra = root / "extra-wheels"
+    assert extra.is_dir(), "extra-wheels dir missing"
+    names = [p.name.lower() for p in extra.glob("*.whl")]
+
+    def has(dist: str, *, plat: str | None = None) -> bool:
+        return any(
+            re.match(rf"{dist}-\d", n) and (plat is None or plat in n)
+            for n in names
+        )
+
+    # pycparser is pure-python (one wheel serves every platform).
+    assert has("pycparser"), "pycparser wheel missing from extra-wheels"
+    for plat in ("win_amd64", "manylinux"):
+        assert has("cryptography", plat=plat), f"cryptography {plat} wheel missing"
+        assert has("cffi", plat=plat), f"cffi {plat} wheel missing"

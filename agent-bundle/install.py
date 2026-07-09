@@ -1373,16 +1373,26 @@ def _install_cryptography_optional(launch_python: str, use_pythonpath: bool) -> 
     and the app falls back to Manual Mode without it. A hard requirement would
     fail the ENTIRE offline install whenever a shipped bundle's wheelhouse
     predates the wheel (the 2.10.1 regression). Non-fatal either way.
-    Skipped when cryptography>=42.0 is already present.
+    Skipped when cryptography>=42.0 is already present. Installs into the SAME
+    place the agent imports from: the venv for the venv strategy, or LIB_DIR
+    (via --target) for the portable strategy (use_pythonpath=True).
     """
-    if os.name == "nt":
-        pip_exe = VENV_DIR / "Scripts" / "python.exe"
-    else:
-        pip_exe = VENV_DIR / "bin" / "python"
-    if not pip_exe.exists():
+    # Pick the interpreter + install target that match the chosen strategy.
+    if use_pythonpath:
+        # Portable/--target install: the agent runs with LIB_DIR on PYTHONPATH,
+        # so cryptography must land there too (not in launch_python's site).
         pip_exe = Path(launch_python)
+        target_args = ["--target", str(LIB_DIR)]
+    else:
+        if os.name == "nt":
+            pip_exe = VENV_DIR / "Scripts" / "python.exe"
+        else:
+            pip_exe = VENV_DIR / "bin" / "python"
+        if not pip_exe.exists():
+            pip_exe = Path(launch_python)
+        target_args = []
 
-    if _pkg_satisfies(str(pip_exe), "cryptography>=42.0"):
+    if not target_args and _pkg_satisfies(str(pip_exe), "cryptography>=42.0"):
         ok("cryptography>=42.0 already installed -- skipping.")
         return
 
@@ -1396,6 +1406,7 @@ def _install_cryptography_optional(launch_python: str, use_pythonpath: bool) -> 
              "--upgrade",
              *_PIP_QUIET,
              "--no-index", f"--find-links={wheelhouse}",
+             *target_args,
              "cryptography>=42.0"],
             capture_output=True, text=True, timeout=120,
         )
