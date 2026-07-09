@@ -2,17 +2,66 @@
   "charter": "v0_master_prompt: CXO demo-ready, full desktop parity, all discipline gates green.",
   "architecture": "Next.js 16 / React 19 / Tailwind v4 browser -> local FastAPI agent (127.0.0.1:7842). Browser never holds secrets. ADO/Jira writes mocked in testing.",
   "knobs": { "MAX_ITERATIONS": 12, "CONVERGENCE": "2 consecutive passes, zero new P0/P1" },
-  "iterations_used": 3,
-  "convergence_status": "CONVERGED. Pass 2 found+fixed one real P1 (TT-002). Pass 3 (deep dialog-interaction sweep + post-fix re-verify) found zero new P0/P1 and confirmed the fix live (crash=0, vault rendered). All discipline gates green.",
+  "iterations_used": 6,
+  "convergence_status": "CONVERGED across all discipline lenses (security, a11y, performance, parity, exploratory). Multi-lens session fixed 1 P1 (TT-002 crash), 1 security P1 (TT-004 headers), and 3 a11y issues (TT-005/006/007). Final sweep: 10/10 dialogs crash-free, board-row keyboard verified, offline degradation verified. Two candidates disproven (TT-001 theme, TT-003 hydration = preview artifacts).",
+  "lenses": {
+    "security": "headers added + postcss patched + no hardcoded secrets + constant-time proxy token",
+    "accessibility": "modal focus-trap/restore, reduced-motion universal reset, board+nav keyboard activation",
+    "performance": "CWV all good (TTFB 67ms, FCP 132ms, LCP 320ms, CLS 0.02) — no defects",
+    "parity": "all desktop dialogs present; swipe review-feed logged as backlog (net-new, not a bug)",
+    "exploratory": "10/10 dialogs crash-free; chat IME guard correct; edge/offline states correct"
+  },
   "gates": {
     "tsc": "PASS (0 errors)",
     "vitest": "PASS (21/21, +4 regression)",
     "pytest": "PASS (181)",
-    "next_build": "PASS (clean, 6 routes)",
+    "next_build": "PASS (clean)",
+    "dep_audit": "PASS (0 vulnerabilities after postcss override)",
+    "security_headers": "PASS (5 headers live on responses)",
     "theming": "PASS (light+dark computed-style verified)",
-    "runtime_logs": "PASS (no client/server exceptions)"
+    "runtime_logs": "PASS (only preview-only hydration artifact, no app exceptions)"
   },
   "issues": [
+    {
+      "id": "TT-007",
+      "discipline": "accessibility",
+      "severity": "P2",
+      "title": "Board row (primary interaction) had no keyboard support; nav rows Enter-only",
+      "status": "FIXED",
+      "notes": "BoardGrid <tr> now tabIndex/aria-label/aria-selected + Enter/Space activation guarded to the row (not the inner checkbox) + focus-visible ring. NavPanel project/board rows activate on Space too. Verified live: Enter on focused row opens detail pane."
+    },
+    {
+      "id": "TT-006",
+      "discipline": "accessibility",
+      "severity": "P2",
+      "title": "prefers-reduced-motion only neutralized dialog-enter (11 animations ran)",
+      "status": "FIXED",
+      "notes": "Expanded to universal reset (*, ::before, ::after) neutralizing all animations/transitions per WCAG 2.3.3."
+    },
+    {
+      "id": "TT-005",
+      "discipline": "accessibility",
+      "severity": "P1",
+      "title": "Modal had no focus management (focus not trapped/moved/restored)",
+      "status": "FIXED",
+      "notes": "Modal now moves focus in on open, traps Tab/Shift+Tab, restores focus to trigger on close (WCAG 2.4.3). Affects every dialog. Verified live: focus enters dialog, Shift+Tab wraps, Escape restores to trigger."
+    },
+    {
+      "id": "TT-004",
+      "discipline": "security",
+      "severity": "P1",
+      "title": "No baseline security headers; transitive postcss XSS advisory",
+      "status": "FIXED",
+      "notes": "Added X-Content-Type-Options, Referrer-Policy, Permissions-Policy, HSTS, DNS-prefetch to all routes (frame-blocking intentionally omitted for preview/embed). Patched postcss <8.5.10 via pnpm override; audit clean. Verified 5 headers live on responses."
+    },
+    {
+      "id": "TT-003",
+      "discipline": "runtime",
+      "severity": "candidate",
+      "title": "Hydration mismatch warning on inline <head> script",
+      "status": "DISPROVEN (preview-only artifact)",
+      "notes": "layout.tsx uses <html suppressHydrationWarning> + static-string theme-init script (correct anti-FOUC pattern). The mismatch is between the app's theme script and the v0 PREVIEW sandbox's injected __V0_SANDBOX_ID__ script, which does not exist in production. Not an app defect."
+    },
     {
       "id": "TT-002",
       "discipline": "robustness / rendered-output",
