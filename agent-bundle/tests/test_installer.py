@@ -111,3 +111,45 @@ def test_detect_platform_returns_known_vocab():
     osn, arch = inst.detect_platform()
     assert osn in {"windows", "macos", "linux"}
     assert arch in {"amd64", "arm64"} or arch  # any non-empty machine tag
+
+
+# --- source/binary drift guard --------------------------------------------
+def test_every_hard_requirement_has_a_bundled_wheel():
+    """Every HARD dep in requirements.txt must have a wheel in the wheelhouse.
+
+    This is the exact regression that broke the 2.10.1/2.10.2 offline install:
+    `cryptography>=42.0` was added to requirements.txt but its wheel was not in
+    the shipped bundle wheelhouse, so `pip install --no-index -r requirements`
+    failed the ENTIRE dependency install on covered platforms. Deps that cannot
+    guarantee a bundled wheel (cryptography, playwright, mcp) must be installed
+    as OPTIONAL non-fatal steps, never as hard requirements.
+    """
+    import re
+
+    root = _INSTALL_PY.parent
+    wheelhouse = root / "wheelhouse"
+    assert wheelhouse.is_dir(), "wheelhouse missing"
+
+    def norm(n: str) -> str:
+        return re.sub(r"[-_.]+", "-", n).lower()
+
+    present = set()
+    for whl in wheelhouse.glob("*.whl"):
+        m = re.match(r"([a-z0-9][a-z0-9._-]*?)-\d", whl.name.lower())
+        if m:
+            present.add(norm(m.group(1)))
+
+    missing = []
+    for line in (root / "requirements.txt").read_text().splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        name = re.split(r"[<>=!~;\[ ]", s, maxsplit=1)[0].strip()
+        if name and norm(name) not in present:
+            missing.append(name)
+
+    assert not missing, (
+        "requirements.txt lists hard deps with no bundled wheel "
+        f"(offline install would fail): {missing}. Make them optional install "
+        "steps instead."
+    )

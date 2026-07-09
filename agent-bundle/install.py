@@ -1363,6 +1363,53 @@ def _install_playwright_optional(launch_python: str, use_pythonpath: bool) -> No
         warn(f"Playwright browser install raised an exception (non-fatal): {exc}")
 
 
+def _install_cryptography_optional(launch_python: str, use_pythonpath: bool) -> None:
+    """Install cryptography from the bundled wheelhouse (offline, non-fatal).
+
+    cryptography (+ cffi/pycparser deps) is pre-downloaded as wheels committed
+    in agent-bundle/wheelhouse/, so this works with zero network access. It is
+    kept OUT of requirements.txt on purpose: it is only needed to Fernet-decrypt
+    the bundled service key (core/app_config.py), the import is already guarded,
+    and the app falls back to Manual Mode without it. A hard requirement would
+    fail the ENTIRE offline install whenever a shipped bundle's wheelhouse
+    predates the wheel (the 2.10.1 regression). Non-fatal either way.
+    Skipped when cryptography>=42.0 is already present.
+    """
+    if os.name == "nt":
+        pip_exe = VENV_DIR / "Scripts" / "python.exe"
+    else:
+        pip_exe = VENV_DIR / "bin" / "python"
+    if not pip_exe.exists():
+        pip_exe = Path(launch_python)
+
+    if _pkg_satisfies(str(pip_exe), "cryptography>=42.0"):
+        ok("cryptography>=42.0 already installed -- skipping.")
+        return
+
+    info("Installing cryptography (optional, from bundled wheelhouse)...")
+    progress("installing_crypto", "Installing cryptography (optional)", 91)
+
+    wheelhouse = BUNDLE_DIR / "wheelhouse"
+    try:
+        r = _run(
+            [str(pip_exe), "-m", "pip", "install",
+             "--upgrade",
+             *_PIP_QUIET,
+             "--no-index", f"--find-links={wheelhouse}",
+             "cryptography>=42.0"],
+            capture_output=True, text=True, timeout=120,
+        )
+        if r.returncode == 0:
+            ok("cryptography installed from wheelhouse.")
+        else:
+            warn("cryptography install from wheelhouse failed (non-fatal).")
+            warn("The bundled service key can't be decrypted; the app will run "
+                 "in Manual Mode until you enter credentials in Settings.")
+            trace(f"pip stderr: {r.stderr[:1000]}")
+    except Exception as exc:  # noqa: BLE001
+        warn(f"cryptography install raised an exception (non-fatal): {exc}")
+
+
 def _install_mcp_python_optional(launch_python: str, use_pythonpath: bool) -> None:
     """Install the mcp Python SDK from the bundled wheelhouse (offline, non-fatal).
 
@@ -1946,6 +1993,11 @@ def main() -> int:
                 "then re-run."
             )
         return 1
+
+    # --- Optional: cryptography (bundled-key decryption) -----------------
+    # Offline from the bundled wheelhouse. Kept out of requirements.txt so a
+    # stale bundle wheelhouse never blocks the core install (2.10.1 regression).
+    _install_cryptography_optional(launch_python, use_pythonpath)
 
     # --- Optional: playwright (E2E browser automation) -------------------
     # playwright is NOT in requirements.txt because it ships no Windows wheel
