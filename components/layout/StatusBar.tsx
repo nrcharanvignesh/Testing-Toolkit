@@ -7,8 +7,10 @@ import { useMetrics } from "@/lib/use-metrics";
 import { REQUIRED_AGENT_VERSION } from "@/lib/agent-version";
 
 /** Format a megabyte value as GB when large enough, else MB. */
-function fmtMem(mb: number | null): string {
-  if (mb === null || Number.isNaN(mb)) return "--";
+function fmtMem(mb: number | null | undefined): string {
+  // Guard every non-finite value (null, undefined, NaN, Infinity) so a missing
+  // metric renders "--" instead of a stray "undefined MB" in the status bar.
+  if (mb == null || !Number.isFinite(mb)) return "--";
   return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
 }
 
@@ -232,7 +234,9 @@ export function StatusBar() {
             <Metric
               label="CPU"
               value={
-                metrics.cpu_percent !== null ? `${metrics.cpu_percent}%` : "--"
+                Number.isFinite(metrics.cpu_percent as number)
+                  ? `${metrics.cpu_percent}%`
+                  : "--"
               }
               title="CPU used by Testing Toolkit"
             />
