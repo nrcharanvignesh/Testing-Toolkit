@@ -63,3 +63,6 @@ agent-bundle/.venv/
 
 # Local-only in-sandbox test rig (mock agent launcher). Never committed.
 .localtest/
+
+# npm lockfile — this project uses pnpm exclusively.
+package-lock.json
