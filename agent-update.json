@@ -1,7 +1,7 @@
 {
-  "version": "2.10.5",
+  "version": "2.10.6",
   "ref": "main",
-  "generatedAt": "2026-07-09T08:54:46.266Z",
+  "generatedAt": "2026-07-09T09:25:25.830Z",
   "files": [
     {
       "path": ".env.enc",
@@ -46,7 +46,7 @@
     {
       "path": "agent/jobs.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/jobs.py?ref=main",
-      "hash": "97aa7090c75f1e1bdff8cd9633b8691bb1836bd9e1e6e19fdc470bd80d31be38"
+      "hash": "b163c2dbf9f9409217f00c120529842e2c659b8828a944826746a02316cf3673"
     },
     {
       "path": "agent/model_loader.py",
@@ -96,7 +96,7 @@
     {
       "path": "agent/routes/generate.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/generate.py?ref=main",
-      "hash": "8c976ca6a2c9aef0a3ff43ea8189c024b8dd0ec4dc714905c721a00a56591fa3"
+      "hash": "7e5011bd721aeba5c8b16a52fbdbf4bdbb1a08355e1e6e649b3861eb58d9894f"
     },
     {
       "path": "agent/routes/health.py",
@@ -116,7 +116,7 @@
     {
       "path": "agent/routes/kb.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/kb.py?ref=main",
-      "hash": "e331618c13e7f18b424beb6b4f52c670e6c7c76c3e7b813d4e7e4d34323a497e"
+      "hash": "bd23ec04cbc99099d6ac03bb8bc4e26e35479c608c20b2e42ec1b69c0571e70e"
     },
     {
       "path": "agent/routes/llm.py",
@@ -136,7 +136,7 @@
     {
       "path": "agent/routes/tools.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/tools.py?ref=main",
-      "hash": "002f53443da937c7a8786f8591b1e5246d217aa163e4664a69d6352174574d08"
+      "hash": "e867dedad23e4710f20eb5f006ae042d25dd9ee8e78c38815f2ce074677079ee"
     },
     {
       "path": "agent/routes/update.py",
@@ -156,7 +156,7 @@
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "518993e495306350d4199affb1a3afc14e97fff6c7cc8216c0472d27e9007be9"
+      "hash": "4ac54d7e1283d12e1c5cc3e60a574e90c61367b5c568e63b1813071599660e52"
     },
     {
       "path": "automation/__init__.py",
@@ -211,7 +211,7 @@
     {
       "path": "core/anthropic_client.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/anthropic_client.py?ref=main",
-      "hash": "d010ddf02466d8056d763ccac052cc18e9944f3652e516ad02b49e4b5f370634"
+      "hash": "b63c7f4a2e5fec28b5ad4add284fe2794a2603de939aa0fa41bab20de1df442d"
     },
     {
       "path": "core/app_config.py",
@@ -221,7 +221,7 @@
     {
       "path": "core/app_logging.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/app_logging.py?ref=main",
-      "hash": "f885099255c82fbdea4a9142f805488e0e7feedcc8187cf357ae43def7d9d9f3"
+      "hash": "3bef12a3d4a3254cec0a0191e2cf8d36bffa56fd159d13ab46700b2294f294bc"
     },
     {
       "path": "core/chat_tools.py",
