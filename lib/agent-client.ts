@@ -1056,7 +1056,7 @@ export const agent = {
       method: "POST",
       body: JSON.stringify({ project, query, top_k: topK }),
     });
-    return res.chunks;
+    return res.chunks ?? [];
   },
 
   async kbIndex(
@@ -1456,7 +1456,7 @@ export const agent = {
     const res = await agentFetch<{ environments: E2EEnvironment[] }>(
       `/e2e/environments/${encodeURIComponent(project)}`
     );
-    return res.environments;
+    return res.environments ?? [];
   },
 
   /** Fetch a summary of the most recent execution run (or null). */

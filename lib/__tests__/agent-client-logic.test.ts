@@ -1,9 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   sortWiIds,
   splitWiIds,
   agentLogLevel,
   mergeCommentsHtml,
+  agent,
 } from "../agent-client";
 import type { WorkItemRow } from "../agent-client";
 import { userStoryIds } from "../board-utils";
@@ -107,6 +108,44 @@ describe("mergeCommentsHtml (detail-pane comment fallthrough)", () => {
   it("returns empty when both are empty/missing", () => {
     expect(mergeCommentsHtml([], [])).toEqual([]);
     expect(mergeCommentsHtml(undefined, undefined)).toEqual([]);
+  });
+});
+
+describe("list endpoints never crash consumers on malformed payloads", () => {
+  // Regression: CredentialsDialog crashed with `creds.length` when the agent
+  // returned a body missing the expected array field (older agent / partial
+  // response). The client must always resolve to an array.
+  afterEach(() => vi.unstubAllGlobals());
+
+  const stubFetch = (body: unknown) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+        headers: new Headers({ "content-type": "application/json" }),
+      } as unknown as Response)
+    );
+  };
+
+  it("listCredentials returns [] when 'credentials' is missing", async () => {
+    stubFetch({});
+    await expect(agent.listCredentials("Proj")).resolves.toEqual([]);
+  });
+  it("e2eTestCases returns [] when 'test_cases' is missing", async () => {
+    stubFetch({ ok: true });
+    await expect(agent.e2eTestCases("Proj")).resolves.toEqual([]);
+  });
+  it("e2eEnvironments returns [] when 'environments' is missing", async () => {
+    stubFetch({});
+    await expect(agent.e2eEnvironments("Proj")).resolves.toEqual([]);
+  });
+  it("still returns the array when present", async () => {
+    stubFetch({ credentials: [{ environment: "SIT" }] });
+    const out = await agent.listCredentials("Proj");
+    expect(out).toHaveLength(1);
   });
 });
 

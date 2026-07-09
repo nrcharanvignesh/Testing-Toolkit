@@ -2,17 +2,29 @@
   "charter": "v0_master_prompt: CXO demo-ready, full desktop parity, all discipline gates green.",
   "architecture": "Next.js 16 / React 19 / Tailwind v4 browser -> local FastAPI agent (127.0.0.1:7842). Browser never holds secrets. ADO/Jira writes mocked in testing.",
   "knobs": { "MAX_ITERATIONS": 12, "CONVERGENCE": "2 consecutive passes, zero new P0/P1" },
-  "iterations_used": 1,
-  "convergence_status": "pass 1 found zero new P0/P1; one candidate P1 disproven (see TT-001)",
+  "iterations_used": 2,
+  "convergence_status": "pass 2 found + fixed one real P1 (TT-002, credentials-dialog crash). Convergence NOT yet reached: needs a follow-up pass with zero new P0/P1.",
   "gates": {
     "tsc": "PASS (0 errors)",
-    "vitest": "PASS (17/17)",
+    "vitest": "PASS (21/21, +4 regression)",
     "pytest": "PASS (181)",
     "next_build": "PASS (clean, 6 routes)",
     "theming": "PASS (light+dark computed-style verified)",
     "runtime_logs": "PASS (no client/server exceptions)"
   },
   "issues": [
+    {
+      "id": "TT-002",
+      "discipline": "robustness / rendered-output",
+      "severity": "P1",
+      "title": "List endpoints crash consumers on malformed/partial agent payloads",
+      "location": "lib/agent-client.ts (listCredentials + 5 siblings); surfaced in components/dialogs/CredentialsDialog.tsx:227",
+      "repro": "Open Credentials dialog when GET /credentials/{project} returns a body without the 'credentials' array (older/partial agent response).",
+      "expected": "Dialog renders empty vault table.",
+      "actual": "Uncaught TypeError (creds.length on undefined) crashed the ENTIRE app.",
+      "status": "FIXED",
+      "notes": "Added '?? []' guards to listCredentials, upsertCredential, deleteCredential, e2eTestCases, e2eEnvironments, retrieval chunks (matching the codebase's existing convention). Added 4 vitest regression cases (mock fetch -> assert []). Re-verified live: Credentials dialog now renders the vault table (QA / url / qa_user) with no crash. Full dialog sweep (KB, Retrieval, E2E, Defect, Upload, Package, Settings, Custom Generate, Help menu) all open crash-free."
+    },
     {
       "id": "TT-001",
       "discipline": "theming / rendered-output",
