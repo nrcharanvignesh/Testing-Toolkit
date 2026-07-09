@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import ssl as _ssl
+import time
 from collections.abc import Generator
 from dataclasses import dataclass, field
 from typing import Any, Callable, Final
@@ -396,7 +397,19 @@ class AnthropicClient:
                     )
 
                 self._report_nw_success()
-                return self._parse(resp)
+                result = self._parse(resp)
+                _elapsed = time.perf_counter() - _t0
+                usage = getattr(result, "usage", None)
+                _in = getattr(usage, "input_tokens", 0) if usage else 0
+                _out = getattr(usage, "output_tokens", 0) if usage else 0
+                self._log(
+                    f"[DEBUG] LLM response <- {model}: "
+                    f"{len(result.text)} chars in {_elapsed:.1f}s, "
+                    f"stop={getattr(result, 'stop_reason', '?') or '?'}, "
+                    f"tokens in/out={_in}/{_out}"
+                    + (f" (attempt {attempt + 1})" if attempt else "")
+                )
+                return result
 
         if isinstance(last_exc, AnthropicAPIError) and "429" in str(last_exc):
             raise AnthropicRateLimitError(str(last_exc)) from last_exc
