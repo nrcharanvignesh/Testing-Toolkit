@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+
+const FOCUSABLE =
+  'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 interface ModalProps {
   open: boolean;
@@ -30,18 +33,59 @@ export function Modal({
   footer,
   width = 720,
 }: ModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!open) return;
+    // Remember what had focus so we can restore it when the dialog closes
+    // (WCAG 2.4.3). Move initial focus into the dialog on open.
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    const focusFirst = () => {
+      const focusables = dialog?.querySelectorAll<HTMLElement>(FOCUSABLE);
+      (focusables && focusables.length > 0 ? focusables[0] : dialog)?.focus();
+    };
+    // Defer to after paint so the portal content exists.
+    const raf = requestAnimationFrame(focusFirst);
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      // Trap Tab within the dialog so keyboard focus cannot reach the inert
+      // background behind the modal.
+      if (e.key === "Tab" && dialog) {
+        const nodes = Array.from(
+          dialog.querySelectorAll<HTMLElement>(FOCUSABLE)
+        ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+        if (nodes.length === 0) {
+          e.preventDefault();
+          dialog.focus();
+          return;
+        }
+        const first = nodes[0];
+        const last = nodes[nodes.length - 1];
+        const active = document.activeElement as HTMLElement | null;
+        if (e.shiftKey && (active === first || !dialog.contains(active))) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     // Lock background scroll while the dialog is open.
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
+      cancelAnimationFrame(raf);
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
+      // Restore focus to the trigger element.
+      previouslyFocused?.focus?.();
     };
   }, [open, onClose]);
 
@@ -55,10 +99,12 @@ export function Modal({
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="tt-dialog tt-dialog-enter flex max-h-[90vh] w-full flex-col overflow-hidden shadow-2xl"
+        tabIndex={-1}
+        className="tt-dialog tt-dialog-enter flex max-h-[90vh] w-full flex-col overflow-hidden shadow-2xl outline-none"
         style={{ maxWidth: width }}
       >
         {/* Dialog header (title + close) */}

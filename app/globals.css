@@ -699,6 +699,17 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
+    /* Honor the OS "reduce motion" setting across the whole app: neutralize
+       every animation and transition (not just the dialog enter), per WCAG
+       2.3.3. !important + universal selector so it wins regardless of layer. */
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
     .tt-dialog-enter {
       animation: none;
     }

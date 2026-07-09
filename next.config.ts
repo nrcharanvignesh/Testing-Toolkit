@@ -16,11 +16,31 @@ const nextConfig: NextConfig = {
   },
   generateBuildId: async () => BUILD_ID,
   async headers() {
-    // Never let the HTML shell be served stale from a CDN/browser cache, so a
-    // refresh always lands on the latest deployment's entrypoint. Hashed JS/CSS
-    // assets remain immutable/cacheable (Next handles those separately).
+    // Baseline security hardening applied to every response. These are the
+    // headers that are safe regardless of hosting context. Frame-blocking
+    // headers (X-Frame-Options / CSP frame-ancestors) are intentionally
+    // OMITTED: the app is embedded in the v0 preview iframe and may be embedded
+    // in demo shells, so blocking framing would break those surfaces. Clickjack
+    // risk is low for a localhost-agent tool with no destructive same-origin
+    // GET side effects; revisit with a per-tenant allowlist at deploy time.
+    const securityHeaders = [
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      { key: "X-DNS-Prefetch-Control", value: "on" },
+      {
+        key: "Permissions-Policy",
+        value: "camera=(), microphone=(), geolocation=(), browsing-topics=()",
+      },
+      {
+        key: "Strict-Transport-Security",
+        value: "max-age=63072000; includeSubDomains",
+      },
+    ];
     return [
       {
+        // Never let the HTML shell be served stale from a CDN/browser cache, so
+        // a refresh always lands on the latest deployment's entrypoint. Hashed
+        // JS/CSS assets remain immutable/cacheable (Next handles those).
         source: "/",
         headers: [
           {
@@ -28,6 +48,10 @@ const nextConfig: NextConfig = {
             value: "no-cache, no-store, must-revalidate",
           },
         ],
+      },
+      {
+        source: "/:path*",
+        headers: securityHeaders,
       },
     ];
   },
