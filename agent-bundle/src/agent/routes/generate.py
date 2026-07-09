@@ -473,7 +473,7 @@ async def _run_generate(job: Job, req: StartRequest) -> None:
                     "id": str(
                         story.get("work_item_id")
                         or story.get("parent_work_item_id", "")
-                    ).strip(),
+                    ),
                     "title": tc.get("title", "Untitled"),
                     "steps": tc.get("steps", []),
                     "category": tc.get("category", ""),

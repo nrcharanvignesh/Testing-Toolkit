@@ -126,8 +126,9 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
         <div className="tt-help p-3 text-xs leading-relaxed">
           <div className="tt-help-header mb-1">What you get</div>
           <div className="tt-help-body">
-            One PDF per work item (cover page, inline images, acceptance criteria,
-            comments, attachments converted to PDF).
+            Per-WI PDFs (cover page, inline images, acceptance criteria, comments,
+            attachments converted to PDF), a combined All_WIs_Combined.pdf, and a
+            KB-ready chunk folder (Upload to KB/).
           </div>
         </div>
 

@@ -187,24 +187,38 @@ _ADO_TOOLS: Final[list[dict[str, Any]]] = [
 
 def get_tool_definitions(ctx: ToolContext) -> list[dict[str, Any]]:
     """Return tool definitions for available integrations.
-    MCP server tools take priority; custom tools serve as fallback only
-    when the corresponding MCP server is not running."""
-    tools: list[dict[str, Any]] = []
 
-    # MCP tools first (official ADO/JIRA/Playwright servers)
+    Official MCP servers are the PREFERRED source: when the MCP bridge is ready
+    and exposes tools, those are used (the assistant drives ADO/JIRA through the
+    official @azure-devops/mcp and mcp-atlassian servers). The in-process
+    custom tools are only used as a fallback when no MCP server is available
+    (Node.js or the bundled MCP packages missing), guaranteeing chat still works.
+    """
+    # Official MCP tools first (dynamic, may be empty if servers not ready).
     if ctx.mcp_bridge is not None:
-        from core.mcp_bridge import MCPBridge
-        bridge: MCPBridge = ctx.mcp_bridge
-        if bridge.is_ready:
-            tools.extend(bridge.get_tool_definitions())
+        try:
+            from core.mcp_bridge import MCPBridge
 
-    # Custom tools only as fallback (skip if MCP already covers ADO)
+            bridge: MCPBridge = ctx.mcp_bridge
+            if bridge.is_ready:
+                mcp_tools = bridge.get_tool_definitions()
+                if mcp_tools:
+                    # Prefer official MCP tools; add custom tools only for
+                    # capabilities MCP does not expose (dedup by name).
+                    names = {t["name"] for t in mcp_tools}
+                    merged = list(mcp_tools)
+                    if ctx.has_ado:
+                        for t in _ADO_TOOLS:
+                            if t["name"] not in names:
+                                merged.append(t)
+                    return merged
+        except Exception:
+            pass  # fall through to custom tools
+
+    # Fallback: in-process custom tools.
+    tools: list[dict[str, Any]] = []
     if ctx.has_ado:
-        mcp_names = {t["name"] for t in tools}
-        for t in _ADO_TOOLS:
-            if t["name"] not in mcp_names:
-                tools.append(t)
-
+        tools.extend(_ADO_TOOLS)
     return tools
 
 
@@ -438,22 +452,24 @@ def execute_tool(
     name: str, tool_input: dict[str, Any], ctx: ToolContext,
 ) -> str:
     """Execute a tool call and return the string result.
-    Routes to MCP bridge first (official servers), falls back to custom
-    handlers when MCP is unavailable. On error, returns a JSON error object
-    (never raises)."""
-    # MCP bridge first (official ADO/JIRA/Playwright servers)
+
+    Official MCP servers are tried FIRST (the assistant's tools come from them
+    when available); the in-process custom handlers are the fallback. On error,
+    returns a JSON error object (never raises)."""
+    # Official MCP bridge (dynamic tools from running servers) — preferred.
     if ctx.mcp_bridge is not None:
-        from core.mcp_bridge import MCPBridge
-        bridge: MCPBridge = ctx.mcp_bridge
-        if bridge.has_tool(name):
-            try:
+        try:
+            from core.mcp_bridge import MCPBridge
+
+            bridge: MCPBridge = ctx.mcp_bridge
+            if bridge.has_tool(name):
                 result = bridge.call_tool(name, tool_input)
                 if result is not None:
                     return result
-            except Exception:
-                pass  # ponytail: swallow MCP errors; fall through to custom handler
+        except Exception as e:
+            return _json_result({"error": str(e)})
 
-    # Custom handler (fallback when MCP unavailable or doesn't have the tool)
+    # Fallback: in-process custom handler.
     handler = _HANDLERS.get(name)
     if handler is not None:
         try:

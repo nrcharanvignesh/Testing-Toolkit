@@ -10,9 +10,8 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { Modal } from "@/components/ui/modal";
+import { Markdown } from "@/components/ui/markdown";
 import { agent } from "@/lib/agent-client";
 import { useAppState } from "@/lib/app-state";
 
@@ -54,19 +53,6 @@ const IMAGE_TYPES = new Set([
   "image/gif",
   "image/webp",
 ]);
-
-async function generateChatTitle(userMsg: string, assistantMsg: string): Promise<string | null> {
-  try {
-    const resp = await agent.complete({
-      user: `Summarize this conversation start in 3-6 words as a short title. No quotes, no punctuation at end.\nUser: ${userMsg.slice(0, 200)}\nAssistant: ${assistantMsg.slice(0, 300)}`,
-      max_tokens: 30,
-    });
-    const title = (resp.text || "").trim().replace(/^["']|["']$/g, "").slice(0, 50);
-    return title.length > 2 ? title : null;
-  } catch {
-    return null;
-  }
-}
 
 function newConversation(): Conversation {
   return {
@@ -113,7 +99,6 @@ export function ChatDialog({ onClose }: { onClose: () => void }) {
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const namedChats = useRef<Set<string>>(new Set());
 
   const projectLabel = currentProject ? displayName(currentProject) : "";
 
@@ -294,11 +279,17 @@ export function ChatDialog({ onClose }: { onClose: () => void }) {
       content: m.content,
     }));
 
-    const isFirstExchange = (active?.messages.length ?? 0) === 0;
-    patchActive((c) => ({
-      ...c,
-      messages: [...c.messages, userMsg, assistantMsg],
-    }));
+    patchActive((c) => {
+      const isFirst = c.messages.length === 0;
+      return {
+        ...c,
+        title:
+          isFirst && text
+            ? text.slice(0, MAX_TITLE) + (text.length > MAX_TITLE ? "..." : "")
+            : c.title,
+        messages: [...c.messages, userMsg, assistantMsg],
+      };
+    });
     setInput("");
     setAttachments([]);
     setImages([]);
@@ -360,25 +351,7 @@ export function ChatDialog({ onClose }: { onClose: () => void }) {
               return { ...c, messages: msgs };
             });
           },
-          onDone: () => {
-            if (isFirstExchange && !namedChats.current.has(activeId)) {
-              namedChats.current.add(activeId);
-              setConversations((prev) => {
-                const conv = prev.find((c) => c.id === activeId);
-                if (!conv) return prev;
-                const lastMsg = conv.messages[conv.messages.length - 1];
-                const assistantContent = lastMsg?.role === "assistant" ? lastMsg.content : "";
-                void generateChatTitle(text, assistantContent).then((title) => {
-                  if (title) {
-                    setConversations((p) =>
-                      p.map((c) => (c.id === activeId ? { ...c, title } : c))
-                    );
-                  }
-                });
-                return prev;
-              });
-            }
-          },
+          onDone: () => {},
         },
         controller.signal
       );
@@ -510,48 +483,19 @@ export function ChatDialog({ onClose }: { onClose: () => void }) {
                       ))}
                     </div>
                   )}
-                  <div className="text-sm leading-relaxed text-[var(--tt-text-secondary)]">
-                    {m.role === "assistant" ? (
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          table: (props) => (
-                            <table className="my-2 w-full border-collapse text-xs" {...props} />
-                          ),
-                          th: (props) => (
-                            <th className="border border-[var(--tt-outline)] bg-[var(--tt-surface-high)] px-2 py-1 text-left font-semibold" {...props} />
-                          ),
-                          td: (props) => (
-                            <td className="border border-[var(--tt-outline)] px-2 py-1" {...props} />
-                          ),
-                          code: ({ children, className, ...props }) => {
-                            const isBlock = className?.includes("language-");
-                            return isBlock ? (
-                              <pre className="my-2 overflow-auto rounded bg-[var(--tt-surface-deepest)] p-2 text-xs">
-                                <code className={className} {...props}>{children}</code>
-                              </pre>
-                            ) : (
-                              <code className="rounded bg-[var(--tt-surface-high)] px-1 py-0.5 text-xs" {...props}>{children}</code>
-                            );
-                          },
-                          a: (props) => (
-                            <a className="text-[var(--tt-primary)] underline" target="_blank" rel="noopener noreferrer" {...props} />
-                          ),
-                          p: (props) => <p className="mb-2 last:mb-0" {...props} />,
-                          ul: (props) => <ul className="mb-2 ml-4 list-disc" {...props} />,
-                          ol: (props) => <ol className="mb-2 ml-4 list-decimal" {...props} />,
-                        }}
-                      >
-                        {m.content ||
-                          (busy && i === active.messages.length - 1 ? "..." : "")}
-                      </ReactMarkdown>
+                  {m.role === "assistant" ? (
+                    m.content ? (
+                      <Markdown>{m.content}</Markdown>
                     ) : (
-                      <span className="whitespace-pre-wrap">
-                        {m.content ||
-                          (busy && i === active.messages.length - 1 ? "..." : "")}
-                      </span>
-                    )}
-                  </div>
+                      <div className="text-sm leading-relaxed text-[var(--tt-text-muted)]">
+                        {busy && i === active.messages.length - 1 ? "..." : ""}
+                      </div>
+                    )
+                  ) : (
+                    <div className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--tt-text-secondary)]">
+                      {m.content}
+                    </div>
+                  )}
                 </div>
               ))
             )}

@@ -74,12 +74,12 @@ def _latest_sidecar_test_cases(project: str) -> list[dict[str, Any]]:
             continue
         # Work items introduced by THIS (newer) sidecar win; skip any work
         # item already contributed by a more recent sidecar.
-        wi_in_file = {str(tc.get("id", "")).strip() for tc in tcs}
+        wi_in_file = {str(tc.get("id", "")) for tc in tcs}
         new_wi = wi_in_file - seen_wi
         if not new_wi:
             continue
         for tc in tcs:
-            if str(tc.get("id", "")).strip() in new_wi:
+            if str(tc.get("id", "")) in new_wi:
                 aggregated.append(tc)
         seen_wi |= new_wi
     return aggregated
@@ -97,7 +97,7 @@ def list_test_cases(project: str) -> dict[str, Any]:
     out = [
         {
             "index": i,
-            "wi_id": str(tc.get("id", "")).strip(),
+            "wi_id": str(tc.get("id", "")),
             "title": str(tc.get("title", "Untitled")),
             "step_count": len(tc.get("steps") or []),
             "category": str(tc.get("category", "")),

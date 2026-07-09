@@ -531,3 +531,68 @@ def build_mcp_configs(
         )
 
     return configs
+
+
+# ---------------------------------------------------------------------
+# Shared bridge singleton
+# ---------------------------------------------------------------------
+# One MCP bridge is shared process-wide so the official ADO/JIRA MCP servers
+# are started once (subprocess spawn + stdio init is expensive) and reused
+# across every chat request. The chat route attaches this to its ToolContext
+# so tool calls route through the official servers, with the in-process
+# chat_tools.py handlers as the guaranteed fallback when Node.js / the bundled
+# MCP packages are unavailable.
+_shared_bridge: "MCPBridge | None" = None
+_shared_lock = threading.Lock()
+
+
+def get_shared_bridge(
+    ado_org: str = "",
+    ado_pat: str = "",
+    ado_project: str = "",
+    ado_url: str = "",
+    jira_url: str = "",
+    jira_email: str = "",
+    jira_token: str = "",
+    wait_ready: float = 8.0,
+) -> "MCPBridge | None":
+    """Return the process-wide MCP bridge, starting the official servers on
+    first use. Returns None when no server could be configured (e.g. Node.js or
+    the bundled MCP packages are missing) so callers cleanly fall back to the
+    custom in-process tools.
+
+    ``wait_ready`` bounds how long we block for the background startup to finish
+    on the FIRST call so the first chat request can already use MCP tools;
+    subsequent calls return immediately.
+    """
+    global _shared_bridge
+    with _shared_lock:
+        if _shared_bridge is None:
+            configs = build_mcp_configs(
+                ado_org=ado_org,
+                ado_pat=ado_pat,
+                ado_project=ado_project,
+                ado_url=ado_url,
+                jira_url=jira_url,
+                jira_email=jira_email,
+                jira_token=jira_token,
+            )
+            # Only the ADO/JIRA data servers matter for chat; Playwright is a
+            # browser-automation server used elsewhere. Keep only issue servers.
+            configs = [c for c in configs if c.server_id in ("ado", "jira")]
+            if not configs:
+                return None
+            bridge = MCPBridge()
+            bridge.start_servers(configs)
+            _shared_bridge = bridge
+        b = _shared_bridge
+
+    # Bound wait for readiness (background thread sets the ready event once all
+    # servers have finished their startup attempt).
+    if wait_ready > 0 and not b.is_ready:
+        b._ready.wait(timeout=wait_ready)
+    # If no server actually came up healthy, treat as unavailable so the caller
+    # falls back to custom tools.
+    if not b.server_ids():
+        return None
+    return b

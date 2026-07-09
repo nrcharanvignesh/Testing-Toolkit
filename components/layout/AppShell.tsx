@@ -119,7 +119,7 @@ export function AppShell() {
     // Either not configured for auto-update, or the silent apply failed.
     pushLog?.(
       "WARN",
-      "An update is required. Pausing the app until you update."
+      "Agent changes require an update to take effect. Pausing the app."
     );
     setUpdateBlocked(s);
   }, [check, apply, ensureConfigured, pushLog]);

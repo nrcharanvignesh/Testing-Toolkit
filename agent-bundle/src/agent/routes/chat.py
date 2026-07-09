@@ -103,12 +103,20 @@ def _kb_context(project: str, query: str) -> str:
 
 def _build_tool_context(project: str):
     """Construct a ToolContext with ADO credentials, or None when ADO is
-    not configured (chat still works, just without tools)."""
+    not configured (chat still works, just without tools).
+
+    Attaches the shared official-MCP bridge (Azure DevOps / Atlassian Jira MCP
+    servers) so the assistant drives ADO/JIRA through the official servers when
+    available; the in-process custom tools remain the guaranteed fallback.
+    """
     try:
         from core.settings_store import (
             get_setting,
             load_pat_value,
+            load_jira_pat,
             KEY_ORG,
+            KEY_JIRA_URL,
+            KEY_JIRA_USER,
             build_runtime_config,
         )
         from core.chat_tools import ToolContext
@@ -121,7 +129,27 @@ def _build_tool_context(project: str):
         cfg.pat = pat
         cfg.organization = org
         cfg.project = project
-        return ToolContext(ado_org=org, ado_project=project, ado_cfg=cfg)
+
+        # Start / reuse the official MCP servers (best-effort; None on any
+        # machine without Node.js or the bundled MCP packages).
+        bridge = None
+        try:
+            from core.mcp_bridge import get_shared_bridge
+
+            bridge = get_shared_bridge(
+                ado_org=org,
+                ado_pat=pat,
+                ado_project=project,
+                jira_url=get_setting(KEY_JIRA_URL) or "",
+                jira_email=get_setting(KEY_JIRA_USER) or "",
+                jira_token=load_jira_pat() or "",
+            )
+        except Exception:
+            bridge = None
+
+        return ToolContext(
+            ado_org=org, ado_project=project, ado_cfg=cfg, mcp_bridge=bridge
+        )
     except Exception:
         return None
 

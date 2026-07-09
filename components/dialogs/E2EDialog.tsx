@@ -50,11 +50,14 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
     selected: boardSelection,
   } = useAppState();
 
-  // STRICT scoping: the E2E dialog shows ONLY test cases whose parent work
-  // item is ticked on the board. Normalize to trimmed strings for comparison
-  // (WiId is string|number; E2ETestCase.wi_id is string from the backend).
+  // STRICT scoping (user directive): the E2E dialog shows ONLY test cases whose
+  // parent work item is ticked on the board. There is NO fallback to "all test
+  // cases" -- if the user ticks nothing, or ticks work items that have no
+  // generated test cases, the list is empty by design. This is what makes a
+  // work item appear here "only if it actually has test cases". wi_id is
+  // compared as a string (WiId is string|number; E2ETestCase.wi_id is string).
   const wiScope = useMemo(
-    () => new Set([...boardSelection].map((id) => String(id).trim())),
+    () => new Set([...boardSelection].map((id) => String(id))),
     [boardSelection]
   );
 
@@ -96,7 +99,7 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
         if (firstRunnable) setSelectedEnv(firstRunnable.env);
         // Pre-select ONLY the test cases whose parent WI is in the board
         // selection. No board selection -> nothing pre-selected (no fallback).
-        const scoped = tc.filter((t) => wiScope.has(String(t.wi_id).trim()));
+        const scoped = tc.filter((t) => wiScope.has(String(t.wi_id)));
         setSelected(new Set(scoped.map((t) => t.index)));
       } catch (err) {
         if (!cancelled)
@@ -119,8 +122,10 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
     [envs, selectedEnv]
   );
 
+  // Test cases in scope for this run: STRICTLY the ones whose parent WI is
+  // ticked on the board. Empty when nothing is ticked (no fallback to all).
   const visibleTestCases = useMemo(
-    () => testCases.filter((t) => wiScope.has(String(t.wi_id).trim())),
+    () => testCases.filter((t) => wiScope.has(String(t.wi_id))),
     [testCases, wiScope]
   );
 

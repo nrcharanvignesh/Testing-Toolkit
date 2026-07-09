@@ -22,6 +22,7 @@ from ado.extract import (
     log_info,
     log_success,
 )
+from kb.bundle import build_kb_bundle, KbBundleResult
 from tools.pdf_packager import package_for_wi
 from core.runtime_config import RuntimeConfig
 
@@ -35,6 +36,7 @@ class PipelineResult:
     manifest_path: Path | None = None
     n_extract_ok: int = 0
     n_package_ok: int = 0
+    kb_bundle: KbBundleResult | None = None
 
 
 def _package_all(
@@ -83,6 +85,36 @@ def _package_all(
     return rows
 
 
+def _build_kb(
+    package_rows: list[dict],
+    cfg: RuntimeConfig,
+    on_progress: Callable[[str, int, int], None] | None,
+) -> KbBundleResult | None:
+    """Merge successful WI PDFs into combined PDF + KB chunk bundle."""
+    successful = [r for r in package_rows if r["ok"] and r["packet_pdf"]]
+    if not successful:
+        return None
+    wi_pdfs = [Path(r["packet_pdf"]) for r in successful]
+    wi_ids = [r["wi_id"] for r in successful]
+
+    def _log(msg: str) -> None:
+        print(msg, flush=True)
+
+    result = build_kb_bundle(
+        wi_pdfs=wi_pdfs,
+        wi_ids=wi_ids,
+        output_dir=cfg.output_dir,
+        on_progress=on_progress,
+        on_log=_log,
+    )
+    if result.ok:
+        log_success(
+            f"KB bundle: {result.n_chunks} chunk(s), "
+            f"combined PDF: {result.combined_pdf}"
+        )
+    else:
+        log_error(f"KB bundle failed: {result.error}")
+    return result
 
 
 def _write_manifest(
@@ -176,6 +208,11 @@ async def run_pipeline(
                 "packet_pdf": "", "n_pages": 0, "n_items": 0, "n_failed": 0,
             })
 
+    # ---- KB bundle stage (combined PDF + chunked KB folder) ----
+    kb_result = await loop.run_in_executor(
+        None, _build_kb, package_rows, cfg, on_progress,
+    )
+
     manifest = _write_manifest(cfg, extract_results, package_rows)
     n_pkg_ok = sum(1 for r in package_rows if r["ok"])
     n_ext_ok = len(successful_ids)
@@ -190,4 +227,5 @@ async def run_pipeline(
         manifest_path=manifest,
         n_extract_ok=n_ext_ok,
         n_package_ok=n_pkg_ok,
+        kb_bundle=kb_result,
     )

@@ -51,7 +51,7 @@ export function AgentUpdateRequired({
               id="agent-update-title"
               className="text-balance text-lg font-bold tracking-tight text-foreground"
             >
-              An update is available
+              Agent changes have been made
             </h1>
             <p className="mt-1 text-pretty text-sm leading-relaxed text-muted-foreground">
               A new version of the Testing Toolkit agent
@@ -61,8 +61,7 @@ export function AgentUpdateRequired({
                   (<span className="font-mono">v{status.latest}</span>)
                 </>
               ) : null}{" "}
-              is available, and this install can&apos;t update itself
-              automatically. Please update the app to use the latest version.
+              is available. Please update the app to use the latest version.
               The app is paused until you do.
             </p>
           </div>
@@ -108,9 +107,10 @@ export function AgentUpdateRequired({
         </div>
 
         <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
-          Updating takes you through onboarding again. Your settings, preferences
-          and generated artifacts are kept; knowledge bases are re-indexed
-          automatically once the updated agent reconnects.
+          Updating installs the latest agent and takes you through onboarding
+          again. Your settings, fetched models, preferences and generated
+          artifacts are kept; knowledge bases are re-indexed automatically once
+          the updated agent reconnects.
         </p>
       </div>
     </div>

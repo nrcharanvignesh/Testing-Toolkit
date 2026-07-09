@@ -24,6 +24,9 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+# Hugging Face cache folder names for the two bundled models (see model_bundle).
+_EMBEDDER_CACHE = "models--qdrant--bge-small-en-v1.5-onnx-q"
+_RERANKER_CACHE = "models--Xenova--ms-marco-MiniLM-L-6-v2"
 
 _PASS = "pass"
 _WARN = "warn"
@@ -67,6 +70,42 @@ def capabilities() -> dict[str, Any]:
     caps["dense_retrieval"] = _safe(_dense)
     caps["reranker"] = _safe(_rerank)
 
+    # Bundled offline model cache.
+    def _bundle() -> bool:
+        from kb.model_bundle import bundled_models_dir
+        return bundled_models_dir() is not None
+
+    def _emb_files() -> bool:
+        from kb.model_bundle import has_model
+        return has_model(_EMBEDDER_CACHE)
+
+    def _rer_files() -> bool:
+        from kb.model_bundle import has_model
+        return has_model(_RERANKER_CACHE)
+
+    caps["model_bundle"] = _safe(_bundle)
+    caps["embedder_model_files"] = _safe(_emb_files)
+    caps["reranker_model_files"] = _safe(_rer_files)
+
+    # Hardware capability vs. ACTUAL runtime binding.
+    caps["gpu_capable"] = _safe(
+        lambda: bool(__import__("core.hardware", fromlist=["gpu_available"])
+                     .gpu_available())
+    )
+
+    def _runtime() -> dict[str, Any]:
+        from kb.embeddings import (
+            active_execution_provider,
+            model_runtime_info,
+            runtime_accelerated,
+        )
+        return {
+            "models": model_runtime_info(),
+            "accelerated": bool(runtime_accelerated()),
+            "active_provider": active_execution_provider(),
+        }
+
+    caps["model_runtime"] = _safe(_runtime, {})
 
     # Optional extraction backends.
     caps["ocr"] = _safe(
@@ -122,9 +161,9 @@ def run_doctor() -> dict[str, Any]:
             _PASS if ok else _FAIL,
             reason,
             "" if ok else (
-                "Reinstall the agent so the bundled embedding model + "
-                "onnxruntime are restored, or set TT_ENFORCE_DENSE=0 to run "
-                "lexical-only."
+                "Add an LLM API key + base URL in Settings so embeddings can "
+                "be generated via the gateway, or set TT_ENFORCE_DENSE=0 to "
+                "run lexical-only."
             ),
         )
     except Exception as e:  # noqa: BLE001
@@ -147,6 +186,31 @@ def run_doctor() -> dict[str, Any]:
         _check(checks, "reranker", "Cross-encoder reranker (API /rerank)", _WARN,
                f"probe failed: {e!r}")
 
+    # NOTE: This build performs ALL inference (embeddings, reranking, OCR,
+    # transcription) through the LLM gateway API - there are no bundled ONNX
+    # models, no local execution provider, and GPU acceleration is irrelevant.
+    # The former "Offline model cache", "Model execution provider" and
+    # "Accelerator" checks were removed because they no longer reflect reality.
+
+    # --- LLM gateway reachability ------------------------------------------
+    try:
+        from core.settings_store import build_llm_client, has_api_key
+
+        if not has_api_key():
+            _check(checks, "llm_gateway", "LLM gateway (AI API)", _WARN,
+                   "no API key configured",
+                   "Add an LLM API key + base URL in Settings.")
+        else:
+            base = ""
+            try:
+                base = getattr(build_llm_client(), "base_url", "") or ""
+            except Exception:  # noqa: BLE001
+                base = ""
+            _check(checks, "llm_gateway", "LLM gateway (AI API)", _PASS,
+                   f"configured{f' ({base})' if base else ''}")
+    except Exception as e:  # noqa: BLE001
+        _check(checks, "llm_gateway", "LLM gateway (AI API)", _WARN,
+               f"probe failed: {e!r}")
 
     # --- OCR (optional) -----------------------------------------------------
     try:
@@ -155,33 +219,34 @@ def run_doctor() -> dict[str, Any]:
         ok = bool(ocr_available())
         _check(checks, "ocr", "OCR (scanned PDFs / images)",
                _PASS if ok else _WARN,
-               "available" if ok else "no OCR engine installed",
-               "" if ok else "Optional: install Tesseract to index scanned "
-               "PDFs and text in images.")
+               "API OCR (gateway vision)" if ok
+               else "no API key configured",
+               "" if ok else "Add an LLM API key in Settings to enable OCR of "
+               "scanned PDFs and images.")
     except Exception as e:  # noqa: BLE001
         _check(checks, "ocr", "OCR (scanned PDFs / images)", _WARN,
                f"probe failed: {e!r}")
 
-    # --- Multimedia (optional) ---------------------------------------------
+    # --- Multimedia transcription (API audio + local ffmpeg for video) ------
     try:
         from kb.multimedia import multimedia_capabilities
 
         mm = multimedia_capabilities() or {}
-        audio = bool(mm.get("audio_whisper"))
-        video = bool(mm.get("video_ffmpeg"))
-        if audio and video:
+        audio = bool(mm.get("audio_whisper"))  # = API transcription available
+        video = bool(mm.get("video_ffmpeg"))   # = ffmpeg present for video
+        if audio:
+            detail = "API transcription available" + (
+                " (+ ffmpeg for video)" if video
+                else " (audio only; ffmpeg not found for video)"
+            )
             _check(checks, "multimedia", "Audio/video transcription", _PASS,
-                   "whisper + ffmpeg available")
+                   detail,
+                   "" if video else "Optional: install ffmpeg to also index "
+                   "video files (audio track extraction).")
         else:
-            have = []
-            if audio:
-                have.append("audio")
-            if video:
-                have.append("video")
             _check(checks, "multimedia", "Audio/video transcription", _WARN,
-                   f"partial/none ({', '.join(have) or 'neither'} available)",
-                   "Optional: install whisper (audio) and ffmpeg (video) to "
-                   "index media files.")
+                   "no API key configured",
+                   "Add an LLM API key in Settings to transcribe audio/video.")
     except Exception as e:  # noqa: BLE001
         _check(checks, "multimedia", "Audio/video transcription", _WARN,
                f"probe failed: {e!r}")
