@@ -8,12 +8,14 @@ import { ResizeHandle } from "@/components/ui/resizer";
 
 // Level -> left-border color and label text color
 const LEVEL_BORDER: Record<LogLine["level"], string> = {
+  DEBUG:   "var(--tt-outline-soft)",
   INFO:    "var(--tt-text-faint)",
   SUCCESS: "var(--tt-success)",
   WARN:    "var(--tt-warn)",
   ERROR:   "var(--tt-danger)",
 };
 const LEVEL_TEXT: Record<LogLine["level"], string> = {
+  DEBUG:   "var(--tt-text-faint)",
   INFO:    "var(--tt-text-muted)",
   SUCCESS: "var(--tt-success)",
   WARN:    "var(--tt-warn)",
@@ -39,7 +41,7 @@ export function LogPanel() {
   const copyAll = useCallback(() => {
     const text = log
       .map((l) => {
-        const clean = l.text.replace(/^\[(INFO|SUCCESS|WARN|WARNING|ERROR)\]\s*/i, "");
+        const clean = l.text.replace(/^\[(DEBUG|INFO|SUCCESS|WARN|WARNING|ERROR)\]\s*/i, "");
         return `[${fmtTs(l.ts)}] [${l.level}] ${clean}`;
       })
       .join("\n");
@@ -103,7 +105,7 @@ export function LogPanel() {
           ) : (
             log.map((line) => {
               const text = line.text.replace(
-                /^\[(INFO|SUCCESS|WARN|WARNING|ERROR)\]\s*/i,
+                /^\[(DEBUG|INFO|SUCCESS|WARN|WARNING|ERROR)\]\s*/i,
                 ""
               );
               const border = LEVEL_BORDER[line.level];

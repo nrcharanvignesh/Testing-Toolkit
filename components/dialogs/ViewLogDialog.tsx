@@ -20,7 +20,9 @@ export function ViewLogDialog({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     let alive = true;
     agent
-      .recentLog(60000)
+      // Request a large tail (~8 MB) so the full recent history is shown, not
+      // a small 60 KB window.
+      .recentLog(8_000_000)
       .then((r) => {
         if (!alive) return;
         setText(r.text || "(log is empty)");

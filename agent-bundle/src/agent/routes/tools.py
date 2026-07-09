@@ -45,10 +45,13 @@ async def _run_package(
     job: Job, req: PackageRequest, pat: str, org: str
 ) -> None:
     from core.app_config import OUTPUTS_DIR
+    from core.app_logging import stream_agent_logs
     from core.orchestrator import run_pipeline
     from core.project_store import _safe_name
     from core.settings_store import build_runtime_config
 
+    _log_bridge = stream_agent_logs(job.log)
+    _log_bridge.__enter__()
     try:
         out_dir = OUTPUTS_DIR / _safe_name(req.project) / "packets"
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -94,14 +97,17 @@ async def _run_package(
     except Exception as e:  # noqa: BLE001
         job.fail(f"{type(e).__name__}: {e}")
         job.log(f"[ERROR] {job.error}")
+    finally:
+        _log_bridge.__exit__()
 
 
 @router.get("/log")
-async def recent_log(max_bytes: int = 60000) -> dict[str, Any]:
+async def recent_log(max_bytes: int = 8_000_000) -> dict[str, Any]:
     """Return the tail of the rotating log file plus its on-disk path.
 
-    Mirrors the desktop Help -> 'View recent log...' dialog, which shows the
-    last ~60 KB of the log so it can be copied into a bug report.
+    Mirrors the desktop Help -> 'View recent log...' dialog. Defaults to a
+    large (~8 MB) tail so the full recent history is available for a bug
+    report, not just a small window.
     """
     from core.app_logging import init_logging, log_path, log_dir, tail_log
 

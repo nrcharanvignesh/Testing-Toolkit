@@ -152,6 +152,12 @@ def _run_kb_index(job: "Job", project: str, force: bool = False) -> None:
         ctx_client = None
         ctx_model = ""
 
+    # Stream the agent's full internal DEBUG logging (extraction, embedding,
+    # chunking, HTTP retries) into the job log so KB indexing is verbose.
+    from core.app_logging import stream_agent_logs
+
+    _log_bridge = stream_agent_logs(_on_log)
+    _log_bridge.__enter__()
     try:
         if force:
             job.log("[INFO] Full rebuild requested; ignoring cached index.")
@@ -192,6 +198,8 @@ def _run_kb_index(job: "Job", project: str, force: bool = False) -> None:
     except Exception as e:  # noqa: BLE001
         job.fail(f"{type(e).__name__}: {e}")
         job.log(f"[ERROR] KB indexing did not finish: {job.error}")
+    finally:
+        _log_bridge.__exit__()
 
 
 @router.post("/index")

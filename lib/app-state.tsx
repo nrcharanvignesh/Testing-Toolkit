@@ -70,7 +70,7 @@ export type DialogId =
 
 export interface LogLine {
   id: number;
-  level: "INFO" | "SUCCESS" | "WARN" | "ERROR";
+  level: "DEBUG" | "INFO" | "SUCCESS" | "WARN" | "ERROR";
   text: string;
   ts: number;
 }
@@ -245,8 +245,11 @@ export function AppStateProvider({
         ...prev,
         { id: ++_logId, level, text, ts: Date.now() },
       ];
-      // keep last 500 lines
-      return next.length > 500 ? next.slice(next.length - 500) : next;
+      // Verbose logging: keep a very large history so nothing is cut off in a
+      // normal session. This is only a memory safety ceiling for a pathological
+      // run, not a routine truncation.
+      const CAP = 100_000;
+      return next.length > CAP ? next.slice(next.length - CAP) : next;
     });
   }, []);
 

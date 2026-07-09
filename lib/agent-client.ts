@@ -527,11 +527,11 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Map a raw agent log line ("[ERROR] ...") to a UI log level. */
 export function agentLogLevel(
   line: string
-): "INFO" | "SUCCESS" | "WARN" | "ERROR" {
-  const m = /^\s*\[(INFO|SUCCESS|WARN|WARNING|ERROR)\]/i.exec(line);
+): "DEBUG" | "INFO" | "SUCCESS" | "WARN" | "ERROR" {
+  const m = /^\s*\[(DEBUG|INFO|SUCCESS|WARN|WARNING|ERROR)\]/i.exec(line);
   const tag = (m?.[1] ?? "INFO").toUpperCase();
   if (tag === "WARNING") return "WARN";
-  return tag as "INFO" | "SUCCESS" | "WARN" | "ERROR";
+  return tag as "DEBUG" | "INFO" | "SUCCESS" | "WARN" | "ERROR";
 }
 
 /** Poll a background job until it reaches a terminal state. */

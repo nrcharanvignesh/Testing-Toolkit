@@ -322,6 +322,15 @@ class AnthropicClient:
                 self.timeout_sec, 300.0 + int(thinking_budget) / 30.0
             )
 
+        self._log(
+            f"[DEBUG] LLM request -> {model}: "
+            f"system={len(system)} chars, user={len(user)} chars, "
+            f"max_tokens={effective_max}, "
+            f"temp={body['temperature']}"
+            + (f", thinking={thinking_budget}" if use_thinking else "")
+        )
+        _t0 = time.perf_counter()
+
         last_exc: Exception | None = None
         async with httpx.AsyncClient(
             headers=self._headers(),

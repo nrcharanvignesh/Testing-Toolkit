@@ -45,8 +45,8 @@ from typing import Any
 _APP_DIR_NAME = "TestingToolkit"
 _LOG_FILE_NAME = "testing_toolkit.log"
 _FAULT_FILE_NAME = "testing_toolkit_fault.log"
-_MAX_BYTES = 2 * 1024 * 1024   # 2 MB per file
-_BACKUP_COUNT = 5              # keep 5 rotated files
+_MAX_BYTES = 20 * 1024 * 1024  # 20 MB per file (verbose logging, long history)
+_BACKUP_COUNT = 10             # keep 10 rotated files (~200 MB of history)
 
 _log_path: Path | None = None
 _initialized: bool = False
@@ -157,6 +157,65 @@ def get_logger(name: str = "") -> logging.Logger:
     if name:
         return logging.getLogger(f"{_ROOT_NAME}.{name}")
     return logging.getLogger(_ROOT_NAME)
+
+
+class _CallbackLogHandler(logging.Handler):
+    """A logging handler that forwards every formatted record to an arbitrary
+    callback (e.g. a job's ``log`` method). Used to surface the agent's rich
+    internal DEBUG logging in the live in-app / web Activity Log, not just the
+    handful of explicit ``[INFO]`` lines each operation emits."""
+
+    def __init__(self, callback: Any, level: int = logging.DEBUG) -> None:
+        super().__init__(level=level)
+        self._callback = callback
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = record.getMessage()
+            # Preserve any existing [TAG] prefix so the UI colors it correctly;
+            # otherwise annotate WARNING/ERROR so they stand out, and leave
+            # INFO/DEBUG unprefixed (the UI treats unprefixed as INFO).
+            if not msg.lstrip().startswith("["):
+                if record.levelno >= logging.ERROR:
+                    msg = f"[ERROR] {msg}"
+                elif record.levelno >= logging.WARNING:
+                    msg = f"[WARN] {msg}"
+                elif record.levelno <= logging.DEBUG:
+                    msg = f"[DEBUG] {msg}"
+            self._callback(msg)
+        except Exception:
+            # Logging must never break the operation it is observing.
+            pass
+
+
+class stream_agent_logs:
+    """Context manager that mirrors the agent's internal logger output into a
+    callback for the duration of a block. Attach a job's ``log`` method to get
+    verbose, real-time logs (LLM calls, KB retrieval, HTTP retries, MCP, etc.)
+    in the Activity Log:
+
+        with stream_agent_logs(job.log):
+            await do_work(...)
+
+    The handler is removed on exit, so it never leaks across jobs. ``level``
+    controls verbosity (DEBUG = everything)."""
+
+    def __init__(self, callback: Any, level: int = logging.DEBUG) -> None:
+        self._handler = _CallbackLogHandler(callback, level=level)
+        self._logger = logging.getLogger(_ROOT_NAME)
+
+    def __enter__(self) -> "stream_agent_logs":
+        try:
+            self._logger.addHandler(self._handler)
+        except Exception:
+            pass
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        try:
+            self._logger.removeHandler(self._handler)
+        except Exception:
+            pass
 
 
 # Map in-app [TAG] prefixes to log levels.

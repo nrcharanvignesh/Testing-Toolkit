@@ -285,6 +285,7 @@ def _board_token(board: str) -> str:
 async def _run_generate(job: Job, req: StartRequest) -> None:
     import core.project_store as ps
     from ado.testcase_creator import normalize_payload, validate_payload
+    from core.app_logging import stream_agent_logs
     from core.settings_store import build_llm_client, model_pair
     from testgen.gen_cache import GenCache
     from testgen.quality_scorer import score_payload
@@ -296,6 +297,13 @@ async def _run_generate(job: Job, req: StartRequest) -> None:
     from testgen.testcase_excel import payload_to_xlsx
     from testgen.traceability import build_traceability
 
+    # Mirror the agent's full internal DEBUG logging into the job's live log
+    # for the whole run so the Activity Log is verbose (LLM calls, retrieval,
+    # HTTP retries, etc.), not just the high-level [INFO] milestones. Attached
+    # manually (not via `with`) to avoid re-indenting the whole run body; it is
+    # detached in the finally below.
+    _log_bridge = stream_agent_logs(job.log)
+    _log_bridge.__enter__()
     try:
         paths = ps.ProjectPaths.for_name(req.project)
         ps.ensure_project(req.project)
@@ -524,6 +532,8 @@ async def _run_generate(job: Job, req: StartRequest) -> None:
     except Exception as e:  # noqa: BLE001
         job.fail(f"{type(e).__name__}: {e}")
         job.log(f"[ERROR] {job.error}")
+    finally:
+        _log_bridge.__exit__()
 
 
 @router.post("/start")
@@ -591,9 +601,12 @@ async def _run_push(job: Job, req: PushRequest) -> None:
         normalize_payload,
         validate_payload,
     )
+    from core.app_logging import stream_agent_logs
     from core.source_resolver import resolve
     from core.source_types import SourceType
 
+    _log_bridge = stream_agent_logs(job.log)
+    _log_bridge.__enter__()
     try:
         rs = resolve(req.project)
         if rs.source is SourceType.JIRA:
@@ -641,6 +654,8 @@ async def _run_push(job: Job, req: PushRequest) -> None:
     except Exception as e:  # noqa: BLE001
         job.fail(f"{type(e).__name__}: {e}")
         job.log(f"[ERROR] {job.error}")
+    finally:
+        _log_bridge.__exit__()
 
 
 @router.post("/push")

@@ -26,7 +26,10 @@ from typing import Any, Final
 # evict to bound memory. The agent is long-lived (auto-start at login).
 _MAX_JOBS: Final[int] = 60
 _TTL_SECONDS: Final[float] = 3600.0
-_MAX_LOG_LINES: Final[int] = 6000
+# Verbose logging: keep a very large per-job buffer so long, chatty runs
+# (full DEBUG stream) are not truncated in the UI. This is a safety ceiling to
+# bound memory on a pathological run, not a routine cutoff.
+_MAX_LOG_LINES: Final[int] = 200_000
 
 
 @dataclass(slots=True)
