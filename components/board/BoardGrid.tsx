@@ -72,9 +72,8 @@ export function BoardGrid() {
   const rows = boardView?.rows ?? [];
   const columns = boardView?.columns ?? [];
 
-  // ── Coverage + Last Run data (desktop parity: cols 6 & 7) ──────────────
-  // Coverage: a work item is "Covered" if a generated test case traces back
-  // to it (E2ETestCase.wi_id === parent WI). Mirrors the desktop's sidecar.
+  // Generated Tests + Last Run data (desktop parity: cols 6 & 7).
+  // This is generation traceability, not implementation or execution coverage.
   const { data: testCases } = useSWR<E2ETestCase[]>(
     currentProject ? ["board-coverage", currentProject] : null,
     ([, proj]: [string, string]) => agent.e2eTestCases(proj),
@@ -272,7 +271,7 @@ export function BoardGrid() {
                   <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">State</th>
                   <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">Assignee</th>
                   <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">Sprint</th>
-                  <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">Coverage</th>
+                  <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold" title="Whether runnable generated test cases currently trace to this work item">Generated Tests</th>
                   <th className="border-b border-[var(--tt-outline)] px-2 py-2 font-semibold">Last Run</th>
                 </tr>
               </thead>
@@ -376,22 +375,22 @@ function titleTypeColor(t: string): string {
   return "var(--tt-text-primary)";
 }
 
-/** Coverage cell — "Covered" (green) / "Uncovered" (muted) / "—" (no data). */
-function CoverageCell({
+  /** Generation traceability only; execution status remains in Last Run. */
+  function CoverageCell({
   covered,
   hasData,
-}: {
+  }: {
   covered: boolean;
   hasData: boolean;
-}) {
+  }) {
   if (!hasData)
-    return <span style={{ color: "var(--tt-text-faint)" }}>—</span>;
+  return <span style={{ color: "var(--tt-text-faint)" }}>—</span>;
   return covered ? (
-    <span style={{ color: "var(--tt-success)" }}>Covered</span>
+  <span style={{ color: "var(--tt-success)" }}>Generated</span>
   ) : (
-    <span style={{ color: "var(--tt-text-muted)" }}>Uncovered</span>
+  <span style={{ color: "var(--tt-text-muted)" }}>None</span>
   );
-}
+  }
 
 /** Last-Run cell — "Pass" (green) / "Fail" (red) / "-" (no result). */
 function LastRunCell({
@@ -539,8 +538,11 @@ function LaneGroup({
             <td className="max-w-[120px] truncate whitespace-nowrap px-2 py-1.5 text-xs text-[var(--tt-text-muted)]">
               {r.board_lane || "—"}
             </td>
-            {/* Coverage */}
-            <td className="whitespace-nowrap px-2 py-1.5 text-xs">
+            {/* Generated-test traceability, not implementation coverage. */}
+            <td
+              className="whitespace-nowrap px-2 py-1.5 text-xs"
+              title="Runnable generated test cases traced to this work item"
+            >
               <CoverageCell
                 covered={coveredSet.has(String(r.wi_id))}
                 hasData={hasCoverageData}

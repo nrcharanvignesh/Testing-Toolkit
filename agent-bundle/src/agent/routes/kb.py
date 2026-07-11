@@ -1,4 +1,4 @@
-"""KB endpoints — indexing, retrieval, embedding, reranking."""
+"""KB endpoints - indexing, retrieval, embedding, reranking."""
 
 from __future__ import annotations
 
@@ -374,7 +374,7 @@ async def upload_document(
     The body is streamed straight to disk on a worker thread via
     shutil.copyfileobj instead of buffering the whole file in memory with
     ``await file.read()``. That keeps memory flat and the write fast even for
-    large docs, and never blocks the event loop. No indexing happens here —
+    large docs, and never blocks the event loop. No indexing happens here -
     that is deferred to the explicit rebuild/auto-index on dialog close."""
     import shutil
 
@@ -509,7 +509,7 @@ async def upload_template(
                 llm_header_row, llm_mapping = analyze_template_with_llm(
                     client, primary, str(tmp_path)
                 )
-        except Exception:  # noqa: BLE001 — LLM analysis is best-effort.
+        except Exception:  # noqa: BLE001 - LLM analysis is best-effort.
             llm_mapping = None
             llm_header_row = None
 
@@ -659,7 +659,7 @@ async def regenerate_context(project: str) -> dict:
     import core.project_store as ps
     from kb.context_summary import build_context_incremental_async
 
-    # An LLM client is required — degrade with a clear 409 when unavailable
+    # An LLM client is required - degrade with a clear 409 when unavailable
     # (matches the desktop "No LLM" warning) rather than silently no-op.
     try:
         from core.settings_store import build_llm_client, model_pair

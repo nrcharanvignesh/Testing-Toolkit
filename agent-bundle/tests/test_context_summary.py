@@ -178,5 +178,9 @@ def test_merge_preserves_provenance_and_legacy_summary_loads(tmp_path):
     assert loaded.status == "complete"
 
     target = tmp_path / "summary.json"
+    merged.enabled = False
     assert save_context_summary(target, merged)
-    assert load_context_summary(target) is not None
+    reloaded = load_context_summary(target)
+    assert reloaded is not None
+    assert reloaded.enabled is False
+    assert reloaded.to_prompt_section() == ""
