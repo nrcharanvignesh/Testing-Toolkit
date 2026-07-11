@@ -106,7 +106,7 @@ export async function mockAgent(
 
   const health = {
     status: "ok",
-    version: "2.7.1",
+    version: "2.13.0",
     user: "e2e",
     machine: "sandbox",
     models_loaded: true,
