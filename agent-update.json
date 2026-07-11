@@ -1,7 +1,7 @@
 {
-  "version": "2.11.0",
+  "version": "2.12.0",
   "ref": "main",
-  "generatedAt": "2026-07-11T12:40:44.960Z",
+  "generatedAt": "2026-07-11T13:21:15.256Z",
   "files": [
     {
       "path": ".env.enc",
@@ -141,22 +141,22 @@
     {
       "path": "agent/routes/update.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/update.py?ref=main",
-      "hash": "2a6fa2a9f25e0b112299b004509e78ccb1d77cc2c7990c6b6a513b886cb229ef"
+      "hash": "3a6da86cd4512c2901679f80f5c05154dd021546d059d7ef55d0db7568828404"
     },
     {
       "path": "agent/server.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/server.py?ref=main",
-      "hash": "f1835a62faa7274e12ff7367abd535de3982c4e4f77d7150db0c902a3a8cfd3d"
+      "hash": "a3a341afa33be2b44c6d5bfac2aaaf8bb9c0b8fbf6e1d20469bcddecf5aad2a1"
     },
     {
       "path": "agent/updater.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/updater.py?ref=main",
-      "hash": "7f3cae585a31c3183928bafe492a90e1f949fcaac509ddcf3aa3886878eb5ea7"
+      "hash": "46b1aed3352c1f912e4ee50f4d8cb94d55b9c49f460354f40229c7ea0d719b8e"
     },
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "19ef17e5e9a16678a96b68f37d829ba7f99799a103fb66448a2043ee35122cf9"
+      "hash": "b28f3360bdf82760506ef61b4946ecc9429e0981e66ee3950a0b0f1e85164874"
     },
     {
       "path": "automation/__init__.py",
