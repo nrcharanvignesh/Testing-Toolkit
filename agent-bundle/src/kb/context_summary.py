@@ -72,6 +72,11 @@ class ProjectContext:
             "dependencies": "DEPENDENCIES / DATA FLOWS", "glossary": "GLOSSARY / TERMINOLOGY",
         }
         parts = ["PROJECT CONTEXT SUMMARY", "=" * 40]
+        if self.status == "partial":
+            parts.append(
+                f"PARTIAL: {self.mapped_documents}/{self.total_documents} "
+                "documents mapped. Treat this context as incomplete."
+            )
         for category in CATEGORIES:
             items = getattr(self, category)
             if not items:

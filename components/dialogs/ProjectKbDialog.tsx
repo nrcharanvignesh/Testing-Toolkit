@@ -626,7 +626,17 @@ function ProjectContextSection({
       .catch(() => {
         // Older agents (< 2.9.4) don't expose this route — degrade to the
         // empty state rather than spinning forever.
-        if (alive) setCtx({ has: false, n_items: 0, counts: {}, summary: "" });
+        if (alive)
+          setCtx({
+            has: false,
+            n_items: 0,
+            counts: {},
+            summary: "",
+            status: "unavailable",
+            mapped_documents: 0,
+            total_documents: 0,
+            failed_documents: [],
+          });
       });
     return () => {
       alive = false;
@@ -659,12 +669,14 @@ function ProjectContextSection({
   const statusText = !ctx
     ? "Loading project context..."
     : ctx.has
-      ? `Context extracted: ${ctx.n_items} items (${ctx.counts.actors ?? 0} actors, ${
-          ctx.counts.entities ?? 0
-        } entities, ${ctx.counts.workflows ?? 0} workflows, ${
-          ctx.counts.screens ?? 0
-        } screens)`
-      : "No project context extracted yet. Build the KB index with an LLM client available, or click Regenerate.";
+      ? `${ctx.status === "partial" ? "Partial context" : "Context complete"}: ${
+          ctx.mapped_documents
+        }/${ctx.total_documents} documents, ${ctx.n_items} items (${
+          ctx.counts.actors ?? 0
+        } actors, ${ctx.counts.entities ?? 0} entities, ${
+          ctx.counts.workflows ?? 0
+        } workflows, ${ctx.counts.screens ?? 0} screens)`
+      : "No project context extracted yet. Index the knowledge base with the AI API available, or click Regenerate.";
 
   return (
     <div className="flex flex-col gap-2">
@@ -703,6 +715,11 @@ function ProjectContextSection({
       >
         {statusText}
       </p>
+      {ctx?.status === "partial" && ctx.failed_documents.length > 0 && (
+        <p className="text-xs text-[var(--tt-warn)]">
+          Retry needed for: {ctx.failed_documents.join(", ")}
+        </p>
+      )}
       {error && (
         <p className="text-xs text-[var(--tt-danger)]">{error}</p>
       )}

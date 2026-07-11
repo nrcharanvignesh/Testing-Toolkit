@@ -136,12 +136,14 @@ def _build_locator(page_or_frame: Any, target: str, strategy: str) -> Any:
     if strategy == "role":
         if ":" in target:
             role, name = target.split(":", 1)
-            return page_or_frame.get_by_role(role.strip(), name=name.strip())
+            return page_or_frame.get_by_role(
+                role.strip(), name=name.strip(), exact=True,
+            )
         return page_or_frame.get_by_role(target)
     elif strategy == "label":
-        return page_or_frame.get_by_label(target)
+        return page_or_frame.get_by_label(target, exact=True)
     elif strategy == "placeholder":
-        return page_or_frame.get_by_placeholder(target)
+        return page_or_frame.get_by_placeholder(target, exact=True)
     elif strategy == "text":
         return page_or_frame.get_by_text(target, exact=False)
     elif strategy == "test_id":
@@ -460,24 +462,18 @@ async def _execute_step(
                     winning_strategy = "not-found"
 
             elif action == "assert_not_present":
-                # Passes when element is absent or hidden
-                all_gone = True
-                for strategy in _STRATEGY_ORDER:
-                    try:
-                        loc = _build_locator(page, target, strategy)
-                        count = await loc.count()
-                        if count > 0:
-                            visible = await loc.first.is_visible()
-                            if visible:
-                                all_gone = False
-                                break
-                    except Exception:
-                        continue
+                # Check only the declared representation. Reinterpreting a label
+                # as CSS/role can create false failures against unrelated nodes.
+                loc = _build_locator(page, target, preferred_strategy)
+                visible = [
+                    index for index in range(await loc.count())
+                    if await loc.nth(index).is_visible()
+                ]
                 actual = (
-                    f"Element absent: [{target}]" if all_gone
+                    f"Element absent: [{target}]" if not visible
                     else f"Element STILL PRESENT: [{target}]"
                 )
-                if not all_gone:
+                if visible:
                     status = "fail"
 
             elif action == "screenshot":
@@ -554,201 +550,6 @@ async def _execute_step(
 # ---------------------------------------------------------------------------
 # Main orchestrator
 # ---------------------------------------------------------------------------
-
-async def _run_e2e_tests_legacy(
-    test_cases: list[dict[str, Any]],
-    login_url: str,
-    username: str,
-    password: str,
-    output_dir: Path,
-    *,
-    profile: BrowserProfile | None = None,
-    headless: bool = False,
-    ai_instructions: str = "",
-    stop_fn: Callable[[], bool] | None = None,
-    on_progress: Callable[[int, int], None] | None = None,
-    on_log: Callable[[str], None] | None = None,
-    on_screenshot: Callable[[Path, int, str], None] | None = None,
-    on_tc_done: Callable[[str, str], None] | None = None,
-) -> list[TestCaseResult]:
-    """Execute E2E tests using the user's real browser via CDP.
-
-    Args:
-        test_cases:      List of dicts with keys: id, title, steps.
-        login_url:       Starting URL for the test session.
-        username:        Login username.
-        password:        Login password (from vault, NEVER logged).
-        output_dir:      Base directory for all artifacts.
-        profile:         BrowserProfile to use (auto-detect if None).
-        headless:        Ignored (CDP attach uses visible browser for SSO).
-        ai_instructions: Free-text instructions for AI-driven login steps.
-        stop_fn:         Zero-arg predicate; if truthy, stops between TCs.
-        on_progress:     Callback(current, total) for progress reporting.
-        on_log:          Callback(message) for log output.
-        on_screenshot:   Callback(path, step_num, status) after each screenshot.
-        on_tc_done:      Callback(tc_id, overall_status) after each TC.
-
-    Returns:
-        List of TestCaseResult, one per test case.
-    """
-    results: list[TestCaseResult] = []
-    total = len(test_cases)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    def _log(msg: str) -> None:
-        if on_log:
-            on_log(msg)
-
-    for idx, tc in enumerate(test_cases):
-        # Check stop signal between test cases
-        if stop_fn and stop_fn():
-            _log("[WARN] Stop signal received. Aborting remaining test cases.")
-            break
-
-        tc_id = str(tc.get("id", f"TC_{idx + 1:03d}"))
-        title = str(tc.get("title", "Untitled"))
-        steps_data: list[dict[str, Any]] = tc.get("steps", [])
-
-        _log(f"[INFO] ({idx + 1}/{total}) Starting: {tc_id} — {title}")
-        if on_progress:
-            on_progress(idx, total)
-
-        collector = ArtifactCollector(output_dir, tc_id)
-        tc_start = time.perf_counter_ns()
-        step_results: list[StepResult] = []
-
-        try:
-            async with browser_session(
-                profile=profile,
-                output_dir=collector.video_dir,
-            ) as (_browser, page):
-
-                for step_idx, step_data in enumerate(steps_data, start=1):
-                    # Per-step stop check
-                    if stop_fn and stop_fn():
-                        remaining = steps_data[step_idx - 1:]
-                        for skip_idx, skip_step in enumerate(remaining, start=step_idx):
-                            step_results.append(StepResult(
-                                step_num=skip_idx,
-                                action=skip_step.get("action", ""),
-                                expected=skip_step.get("expected", ""),
-                                actual="Stopped by user",
-                                status="skip",
-                            ))
-                        break
-
-                    step_r = await _execute_step(
-                        page=page,
-                        step=step_data,
-                        username=username,
-                        password=password,
-                        screenshot_dir=collector.screenshot_dir,
-                        step_num=step_idx,
-                        stop_fn=stop_fn,
-                    )
-                    step_results.append(step_r)
-
-                    # Notify UI immediately on screenshot save
-                    if step_r.screenshot_path and on_screenshot:
-                        try:
-                            on_screenshot(step_r.screenshot_path, step_idx, step_r.status)
-                        except Exception:
-                            pass
-
-                    # Report self-heal if a fallback strategy was used
-                    if (step_r.locator_strategy
-                            and step_r.locator_strategy != step_data.get("locator", "role")
-                            and step_r.locator_strategy not in ("navigate", "not-found", "")):
-                        _log(
-                            f"  [HEAL] Step {step_idx}: fell back to [{step_r.locator_strategy}] "
-                            f"for [{step_data.get('target', '')}]"
-                        )
-
-                    action_name = step_data.get("action", "")
-                    tag = f"[{step_r.status.upper()}]"
-                    _log(f"  {tag} Step {step_idx}: {action_name} -> {step_r.actual}")
-
-                    # Abort remaining steps only on hard-action failures
-                    if (step_r.status in ("error", "fail")
-                            and action_name.lower() not in _SOFT_ACTIONS):
-                        remaining_start = step_idx + 1
-                        for skip_idx, skip_step in enumerate(
-                            steps_data[step_idx:], start=remaining_start
-                        ):
-                            step_results.append(StepResult(
-                                step_num=skip_idx,
-                                action=skip_step.get("action", ""),
-                                expected=skip_step.get("expected", ""),
-                                actual="Skipped (prior hard step failed)",
-                                status="skip",
-                            ))
-                        break
-
-                    # In-progress video copy (best-effort)
-                    try:
-                        video_src = page.video
-                        if video_src:
-                            src_path = await video_src.path()
-                            if src_path and Path(src_path).exists():
-                                dest = collector.video_dir / "recording_live.webm"
-                                shutil.copy2(src_path, dest)
-                    except Exception:
-                        pass
-
-        except Exception as exc:
-            err_msg = _scrub(str(exc)[:300], password)
-            _log(f"[ERROR] {tc_id} crashed during setup: {err_msg}")
-            if not step_results:
-                step_results.append(StepResult(
-                    step_num=0,
-                    action="setup",
-                    expected="Browser session started",
-                    actual=f"Crash: {err_msg}",
-                    status="error",
-                ))
-
-        # Determine overall status
-        statuses = {s.status for s in step_results}
-        if "error" in statuses:
-            overall = "error"
-        elif "fail" in statuses:
-            overall = "fail"
-        else:
-            overall = "pass"
-
-        tc_elapsed_ms = int((time.perf_counter_ns() - tc_start) / 1_000_000)
-        video_path = collector.collect_video()
-
-        script_content = generate_playwright_script(
-            tc_id=tc_id,
-            title=title,
-            steps=steps_data,
-            login_url=login_url,
-            username=username,
-        )
-        script_path = collector.save_script(script_content, tc_id)
-
-        tc_result = TestCaseResult(
-            tc_id=tc_id,
-            title=title,
-            steps=step_results,
-            video_path=video_path,
-            script_path=script_path,
-            overall_status=overall,
-            duration_ms=tc_elapsed_ms,
-        )
-        results.append(tc_result)
-
-        if on_tc_done:
-            on_tc_done(tc_id, overall)
-
-        _log(f"[{overall.upper()}] {tc_id} finished in {tc_elapsed_ms}ms")
-
-    if on_progress:
-        on_progress(total, total)
-    _log(f"[INFO] Run complete. {len(results)}/{total} test cases executed.")
-    return results
-
 
 async def run_e2e_tests(
     test_cases: list[dict[str, Any]], login_url: str, username: str,

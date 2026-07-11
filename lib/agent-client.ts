@@ -323,6 +323,10 @@ export interface ProjectContextSummary {
     glossary: number;
   }>;
   summary: string;
+  status: "complete" | "partial" | "unavailable";
+  mapped_documents: number;
+  total_documents: number;
+  failed_documents: string[];
 }
 
 export interface ArtifactFile {

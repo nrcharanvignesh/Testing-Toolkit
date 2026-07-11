@@ -199,6 +199,79 @@ def test_script_indentation_is_valid():
 
 
 # --------------------------------------------------------------------------
+# E2E plan compiler validation and cache
+# --------------------------------------------------------------------------
+def test_validate_steps_rejects_unsafe_or_incomplete_actions():
+    from automation.e2e_plan import PlanValidationError, validate_steps
+
+    with pytest.raises(PlanValidationError, match="unsupported action"):
+        validate_steps([{"action": "run_javascript", "value": "alert(1)"}])
+    with pytest.raises(PlanValidationError, match="requires target"):
+        validate_steps([{"action": "click", "target": ""}])
+    with pytest.raises(PlanValidationError, match="requires value"):
+        validate_steps([{"action": "assert_text", "value": ""}])
+
+
+def test_validate_steps_normalizes_known_actions():
+    from automation.e2e_plan import validate_steps
+
+    steps = validate_steps([
+        {"action": "navigate", "value": "https://example.test"},
+        {"action": "fill", "target": "Email", "value": "{{username}}", "locator": "label"},
+        {"action": "click", "target": "Sign in", "locator": "role"},
+        {"action": "assert_text", "value": "Dashboard"},
+    ])
+    assert [step["action"] for step in steps] == [
+        "navigate", "fill", "click", "assert_text"
+    ]
+    assert steps[1]["value"] == "{{username}}"
+
+
+@pytest.mark.asyncio
+async def test_compile_test_case_caches_validated_plan(tmp_path):
+    from types import SimpleNamespace
+    from automation.e2e_plan import compile_test_case
+
+    class Client:
+        calls = 0
+
+        async def complete_async(self, **_kwargs):
+            self.calls += 1
+            return SimpleNamespace(text='{"steps":[{"action":"navigate","value":"https://example.test"},{"action":"assert_text","value":"Ready"}]}')
+
+    client = Client()
+    case = {"id": "TC-1", "title": "Open app", "steps": [{"action": "Open the app"}]}
+    first = await compile_test_case(
+        case, login_url="https://example.test", username="tester",
+        ai_instructions="", cache_dir=tmp_path, client=client, model="test-model",
+    )
+    second = await compile_test_case(
+        case, login_url="https://example.test", username="tester",
+        ai_instructions="", cache_dir=tmp_path, client=client, model="test-model",
+    )
+    assert first.cache_hit is False
+    assert second.cache_hit is True
+    assert client.calls == 1
+    assert second.test_case["steps"][1]["action"] == "assert_text"
+
+
+@pytest.mark.asyncio
+async def test_compile_test_case_transport_error_is_plan_error(tmp_path):
+    from automation.e2e_plan import PlanValidationError, compile_test_case
+
+    class Client:
+        async def complete_async(self, **_kwargs):
+            raise TimeoutError("secret upstream details")
+
+    with pytest.raises(PlanValidationError, match="TimeoutError"):
+        await compile_test_case(
+            {"id": "TC-2", "title": "Timeout", "steps": [{"action": "Open"}]},
+            login_url="https://example.test", username="tester",
+            ai_instructions="", cache_dir=tmp_path, client=Client(), model="test-model",
+        )
+
+
+# --------------------------------------------------------------------------
 # Execution store round-trip
 # --------------------------------------------------------------------------
 def test_execution_store_roundtrip(tmp_install):

@@ -97,14 +97,22 @@ def _validate_step(raw: Any, index: int) -> dict[str, Any]:
     return {"action": action, "target": target, "value": value, "expected": expected, "locator": locator}
 
 
-def validate_plan(tc: dict[str, Any]) -> dict[str, Any]:
-    steps = tc.get("steps")
+def validate_steps(steps: Any) -> list[dict[str, Any]]:
+    """Validate and normalize executable steps, failing closed on empty plans."""
     if not isinstance(steps, list) or not steps:
         raise PlanValidationError("Executable plan has no steps")
     validated = [_validate_step(step, i) for i, step in enumerate(steps, 1)]
     if not any(step["action"] != "screenshot" for step in validated):
         raise PlanValidationError("Executable plan contains no action or assertion")
-    return {**tc, "steps": validated, "plan_schema_version": SCHEMA_VERSION}
+    return validated
+
+
+def validate_plan(tc: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **tc,
+        "steps": validate_steps(tc.get("steps")),
+        "plan_schema_version": SCHEMA_VERSION,
+    }
 
 
 def _already_structured(tc: dict[str, Any]) -> bool:
