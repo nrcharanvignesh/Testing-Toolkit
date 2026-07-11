@@ -251,18 +251,25 @@ and model routing are centrally managed and are never exposed as user settings.
 
 ## 6. Settings reference
 
+User-editable Settings contain source connections and display preferences only.
+GenAI endpoint, credential, provider format, and model routing are centrally
+release-managed and are not returned by the local-agent API.
+
 | Field | Description |
 |---|---|
-| `base_url` | LiteLLM proxy URL (e.g. `https://genai.example.com`) |
-| `api_key` | Bearer token for the LiteLLM proxy (stored in OS keyring) |
-| `model_large` | Primary model ID (generation quality) — default `azure.gpt-4o` |
-| `model_medium` | Fast model ID (decompose, navigate) — default `azure.gpt-4-turbo` |
-| `model_small` | Fallback model ID — default `azure.gpt-4` |
-| `embed_model` | Embedding model ID — default `azure.text-embedding-3-small` |
-| `rerank_model` | Rerank model ID — default `azure.cohere-rerank-v3-english` |
-| `ado_org` | Azure DevOps organization URL |
-| `ado_pat` | ADO Personal Access Token (stored in OS keyring) |
-| `provider_format` | `anthropic` (default) or `openai` — wire format to the proxy |
+| `ado_org` | Azure DevOps organization URL; optional when using only JIRA |
+| `ado_pat` | ADO Personal Access Token, stored through the OS secret-store path |
+| `project_prefix` | Optional prefix stripped from displayed ADO project names |
+| `jira_url` | JIRA site URL; optional when using only ADO |
+| `jira_username` | JIRA username/email |
+| `jira_pat` | JIRA API token, stored through the OS secret-store path |
+| `jira_project_prefix` | Optional prefix stripped from displayed JIRA project names |
+| `tls_mode` | System trust, trust-store, or explicitly disabled certificate verification |
+
+Release owners source `LLM_UPSTREAM_BASE_URL`, `LLM_UPSTREAM_API_KEY`, and optional
+`LLM_PROVIDER_FORMAT` from Vercel project variables. `seal_env.py` writes only an
+authenticated AES-256-GCM `.env.enc` envelope. Installed agents rewrap valid
+credentials into DPAPI, macOS Keychain, or Linux Secret Service when available.
 
 ---
 
@@ -273,12 +280,12 @@ models are required in the default configuration.
 
 | Layer | Endpoint | Default model |
 |---|---|---|
-| LLM generation | `/chat/completions` or `/v1/messages` | `azure.gpt-4o` |
-| LLM fast | `/chat/completions` or `/v1/messages` | `azure.gpt-4-turbo` |
-| LLM fallback | `/chat/completions` or `/v1/messages` | `azure.gpt-4` |
-| Embeddings | `/embeddings` | `azure.text-embedding-3-small` |
+| LLM generation/verification | `/chat/completions` or `/v1/messages` | `bedrock.anthropic.claude-opus-4-8` |
+| LLM navigation/extraction | `/chat/completions` or `/v1/messages` | `bedrock.anthropic.claude-sonnet-4-6` |
+| LLM fallback | `/chat/completions` or `/v1/messages` | `bedrock.anthropic.claude-haiku-4-5` |
+| Embeddings | `/embeddings` | `azure.text-embedding-3-large` (3072 dimensions) |
 | Reranking | `/rerank` (Cohere API format) | `azure.cohere-rerank-v3-english` |
-| OCR | `/chat/completions` (vision) | `azure.gpt-4o` |
+| OCR | `/chat/completions` (vision) | centrally routed vision-capable model |
 | Audio | `/audio/transcriptions` | `azure.whisper` |
 
 The **provider format** determines the wire protocol:
@@ -287,6 +294,23 @@ The **provider format** determines the wire protocol:
 
 Both paths are supported by the LiteLLM proxy. The `core/openai_transport.py`
 module handles all message/tool translation between the two formats.
+
+### Credential protection and boundary
+
+The browser never receives the GenAI endpoint/key. The release pipeline seals
+Vercel-sourced values into a randomized, authenticated AES-256-GCM envelope using
+Scrypt; plaintext `.env` fallback is prohibited. The installer restricts the
+ciphertext to the current user, and first use rewraps it into Windows DPAPI,
+macOS Keychain, or Linux Secret Service where available. Tampered envelopes fail
+closed, safe rotation preserves the last valid OS-bound value, and both file and
+streamed logs pass through centralized redaction.
+
+This POC hardening prevents accidental disclosure, plaintext-at-rest exposure,
+naive extraction, and undetected modification. Because the local process must
+ultimately send a usable credential to the GenAI gateway, a determined device
+administrator/debugger can still inspect runtime memory or traffic endpoints.
+True non-extractability requires a server-side broker or hardware-backed remote
+attestation.
 
 ### MCP servers (Model Context Protocol)
 

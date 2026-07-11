@@ -1,6 +1,6 @@
 # Testing Toolkit — Architecture
 
-> Web v3.0.0 / Agent v2.8.2 — July 2026
+> Web v3.0.0 / Agent v2.16.x — July 2026
 
 This document describes the end-to-end architecture: what problem the platform
 solves, how the pieces fit together, and how data and secrets flow through the
@@ -21,8 +21,9 @@ time-consuming tasks:
 5. Write and maintain E2E automation scripts.
 
 The platform automates all five with an LLM-backed generation pipeline, a local
-knowledge base, and a self-healing E2E runner — while keeping all secrets and
-requirement content on the user's machine.
+knowledge base, and a self-healing E2E runner. Secrets stay out of the browser;
+requirement context is transmitted only from the local agent to the approved
+GenAI gateway when an AI operation requires it.
 
 ---
 
@@ -91,8 +92,9 @@ LLM directly.** The web app only ever calls `http://127.0.0.1:7842`.
   - `CoverageBar` — board-level metric strip (total WIs, selected count, board
     name) mounted between ActionBar and BoardGrid
 - **Dialogs (`components/dialogs/`):**
-  - `SettingsDialog` — LLM config (base URL, API key, model selectors with live
-    Fetch Models), ADO config, agent diagnostics
+  - `SettingsDialog` — optional ADO/JIRA source connections, display preferences,
+    installation/update controls, and agent diagnostics; GenAI endpoint,
+    credential, and model routing remain centrally managed
   - `GenerateDialog` — phase selector, TC count badge with badge-pop animation,
     quality/coverage pill badges, animated stage label with pulse dot, level-colored
     log lines

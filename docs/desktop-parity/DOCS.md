@@ -1,3 +1,7 @@
+> **Historical desktop parity snapshot:** retained for comparison only. Current
+> credential, model-routing, and installation guidance lives in `../DOCS.md` and
+> `../../agent-bundle/INSTALL.md`.
+
 # Testing Toolkit v3.0 - Technical Documentation
 
 A unified Azure DevOps + Jira desktop application (PySide6, dark glass UI)

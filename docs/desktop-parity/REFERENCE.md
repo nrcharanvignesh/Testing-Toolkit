@@ -1,3 +1,6 @@
+> **Historical desktop parity snapshot:** retained for comparison only; do not use
+> it as current security, secret-management, or installation guidance.
+
 # Testing Toolkit - Plain English Reference
 
 A no-nonsense explanation of what this app is, how it works, and what

@@ -1,3 +1,9 @@
+> **Historical desktop reference:** This document describes the legacy native
+> desktop build and local-model architecture. It is retained for parity research,
+> not as installation, security, model-routing, or credential guidance for the
+> current Vercel web + local-agent product. Use `README.md`, `docs/ARCHITECTURE.md`,
+> `docs/DOCS.md`, and `agent-bundle/INSTALL.md` for current behavior.
+
 ## Deployment & Installation
 
 ### Portable Zero-Install (Recommended)

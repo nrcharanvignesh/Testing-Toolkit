@@ -1,3 +1,6 @@
+> **Historical desktop parity snapshot:** not current web-agent security or
+> installation guidance. See `../ARCHITECTURE.md` and `../../agent-bundle/INSTALL.md`.
+
 # Testing Toolkit - Architecture Reference
 
 ## Models

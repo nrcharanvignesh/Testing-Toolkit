@@ -21,9 +21,10 @@ ADO-write requests were made. The "Push to ADO" button is never clicked.
 
 ## Prerequisites
 
-1. The local agent is running and configured (Settings → API Key + Base URL + PAT
-   + Organization). Reads/generation auto-skip if the agent reports
-   `configured: false`.
+1. The local agent is running. GenAI endpoint, credential, and model routing are
+   centrally release-managed; they are not user settings. Configure at least one
+   work-item source (ADO and/or JIRA) only for source-dependent scenarios. Tests
+   auto-skip when their required source or AI capability is unavailable.
 2. Install browsers once:
 
    ```bash
