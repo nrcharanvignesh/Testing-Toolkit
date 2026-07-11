@@ -695,7 +695,6 @@ def _convert_docx(src: Path, out_pdf: Path, paper: str) -> None:
 
     # Extract footnotes and endnotes if present
     try:
-        from docx.opc.constants import RELATIONSHIP_TYPE as RT
         footnote_part = None
         endnote_part = None
         for rel in document.part.rels.values():

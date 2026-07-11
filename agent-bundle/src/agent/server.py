@@ -29,7 +29,7 @@ _SRC_DIR = Path(__file__).resolve().parent.parent
 if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 
-from core.app_config import APP_VERSION, WORKSPACE, ensure_workspace
+from core.app_config import WORKSPACE, ensure_workspace
 from agent.version import AGENT_VERSION, AGENT_PORT
 
 

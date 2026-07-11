@@ -53,8 +53,8 @@ export async function enterApp(page: Page): Promise<void> {
 // ---------------------------------------------------------------------------
 /**
  * Options that shape the mocked agent's reported state.
- * - configured=false  -> first-run SetupWizard renders (Skip / Save & Connect)
- * - configured=true   -> app boots straight into the shell with data
+ * - configured=false  -> shell opens with no connected work-item source
+ * - configured=true   -> shell opens with mocked ADO projects and data
  */
 export interface MockAgentOptions {
   configured?: boolean;

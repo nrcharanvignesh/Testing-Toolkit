@@ -196,7 +196,6 @@ function useLayerStatuses(settings: ReturnType<typeof useAppState>["settings"]) 
   // AI endpoints and model routes are centrally managed by the installed
   // agent and are intentionally not exposed through browser settings.
   const agentConnected = settings !== undefined;
-  const hasEmbedModel = true;
 
   const map: Record<string, LayerStatus> = {
     llm:       agentConnected ? "connected" : "not-configured",

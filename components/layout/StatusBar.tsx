@@ -32,15 +32,6 @@ function Metric({
   );
 }
 
-function Dot({ color, pulse }: { color: string; pulse?: boolean }) {
-  return (
-    <span
-      className={`h-2 w-2 rounded-full ${pulse ? "animate-pulse" : ""}`}
-      style={{ background: color }}
-    />
-  );
-}
-
 /** Right-side status chip: colored pill background + dot + label. */
 function Chip({
   label,

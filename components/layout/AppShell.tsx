@@ -19,7 +19,7 @@ import { DialogHost } from "@/components/dialogs/DialogHost";
 
 export function AppShell() {
   const { status, health } = useAgent();
-  const { navVisible, logVisible, settings, reloadProjects } = useAppState();
+  const { navVisible, logVisible, reloadProjects } = useAppState();
   const bootstrapped = useRef(false);
   // Agent updates are detection-only. When one is found, block the app with
   // AgentUpdateRequired until the user refreshes the agent via the installer.

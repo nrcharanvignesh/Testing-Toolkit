@@ -1681,25 +1681,6 @@ export const agent = {
     await agentFetch(`/jobs/${jobId}/stop`, { method: "POST" });
   },
 
-  // -- LLM --
-  async complete(params: {
-    system?: string;
-    user: string;
-    max_tokens?: number;
-    temperature?: number;
-    thinking_budget?: number;
-  }): Promise<{
-    text: string;
-    stop_reason: string;
-    input_tokens: number;
-    output_tokens: number;
-  }> {
-    return agentFetch("/llm/complete", {
-      method: "POST",
-      body: JSON.stringify(params),
-    });
-  },
-
   async recentLog(maxBytes = 60000): Promise<RecentLog> {
     return agentFetch<RecentLog>(`/tools/log?max_bytes=${maxBytes}`);
   },

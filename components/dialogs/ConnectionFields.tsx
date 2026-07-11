@@ -116,11 +116,9 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 export function ConnectionFields({
   values,
   setValues,
-  readOnlyModels = false,
 }: {
   values: ConnectionValues;
   setValues: React.Dispatch<React.SetStateAction<ConnectionValues>>;
-  readOnlyModels?: boolean;
 }) {
   const set = (k: keyof ConnectionValues, v: string) =>
     setValues((prev) => ({ ...prev, [k]: v }));
@@ -149,68 +147,60 @@ export function ConnectionFields({
         work items. Provide both PAT and Organization, or leave blank to use
         JIRA only.
       </p>
-      {!readOnlyModels && (
-        <>
-          <Field label="Strip project prefix">
-            <input
-              type="text"
-              className="tt-input"
-              placeholder="InteractionsHub_"
-              value={values.project_prefix}
-              onChange={(e) => set("project_prefix", e.target.value)}
-            />
-          </Field>
-          <p className="pl-[152px] text-xs text-muted-foreground">
-            Project names are shown with this prefix stripped, e.g.
-            InteractionsHub_Abbott → Abbott.
-          </p>
-        </>
-      )}
+      <Field label="Strip project prefix">
+        <input
+          type="text"
+          className="tt-input"
+          placeholder="InteractionsHub_"
+          value={values.project_prefix}
+          onChange={(e) => set("project_prefix", e.target.value)}
+        />
+      </Field>
+      <p className="pl-[152px] text-xs text-muted-foreground">
+        Project names are shown with this prefix stripped, e.g.
+        InteractionsHub_Abbott → Abbott.
+      </p>
 
-      {!readOnlyModels && (
-        <>
-          <SectionHeader>JIRA (optional)</SectionHeader>
-          <Field label="Base URL">
-            <input
-              type="text"
-              className="tt-input"
-              placeholder="https://jira.your-company.com"
-              value={values.jira_url}
-              onChange={(e) => set("jira_url", e.target.value)}
-            />
-          </Field>
-          <Field label="Username / Email">
-            <input
-              type="text"
-              className="tt-input"
-              placeholder="you@company.com"
-              value={values.jira_user}
-              onChange={(e) => set("jira_user", e.target.value)}
-            />
-          </Field>
-          <Field label="API Token / PAT">
-            <MaskedField
-              value={values.jira_pat}
-              placeholder="JIRA API token or PAT"
-              onChange={(v) => set("jira_pat", v)}
-            />
-          </Field>
-          <Field label="Strip project prefix">
-            <input
-              type="text"
-              className="tt-input"
-              placeholder="(optional)"
-              value={values.jira_project_prefix}
-              onChange={(e) => set("jira_project_prefix", e.target.value)}
-            />
-          </Field>
-          <p className="pl-[152px] text-xs text-muted-foreground">
-            Connect a JIRA Server/Data Center instance to browse boards and
-            generate test cases from JIRA issues alongside Azure DevOps. Leave
-            blank to use Azure DevOps only.
-          </p>
-        </>
-      )}
+      <SectionHeader>JIRA (optional)</SectionHeader>
+      <Field label="Base URL">
+        <input
+          type="text"
+          className="tt-input"
+          placeholder="https://jira.your-company.com"
+          value={values.jira_url}
+          onChange={(e) => set("jira_url", e.target.value)}
+        />
+      </Field>
+      <Field label="Username / Email">
+        <input
+          type="text"
+          className="tt-input"
+          placeholder="you@company.com"
+          value={values.jira_user}
+          onChange={(e) => set("jira_user", e.target.value)}
+        />
+      </Field>
+      <Field label="API Token / PAT">
+        <MaskedField
+          value={values.jira_pat}
+          placeholder="JIRA API token or PAT"
+          onChange={(v) => set("jira_pat", v)}
+        />
+      </Field>
+      <Field label="Strip project prefix">
+        <input
+          type="text"
+          className="tt-input"
+          placeholder="(optional)"
+          value={values.jira_project_prefix}
+          onChange={(e) => set("jira_project_prefix", e.target.value)}
+        />
+      </Field>
+      <p className="pl-[152px] text-xs text-muted-foreground">
+        Connect a JIRA Server/Data Center instance to browse boards and
+        generate test cases from JIRA issues alongside Azure DevOps. Leave
+        blank to use Azure DevOps only.
+      </p>
     </div>
   );
 }

@@ -22,8 +22,6 @@ import {
   UNASSIGNED,
   groupRowsByColumn,
   coveredWorkItemIds,
-  stateColor,
-  typeColor,
   uniqueSorted,
 } from "@/lib/board-utils";
 import { DetailPane } from "./DetailPane";

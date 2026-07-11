@@ -29,7 +29,6 @@ import {
 import {
   getPreferences,
   setPanelPref,
-  setPendingReindexPref,
   setLastProjectPref,
   setLastBoardPref,
 } from "./preferences";

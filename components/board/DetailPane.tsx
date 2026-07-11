@@ -12,7 +12,6 @@ import {
   User,
   Folder,
   GitBranch,
-  Layers,
   Cpu,
   FileSpreadsheet,
   FileCheck2,
@@ -879,7 +878,6 @@ function OutputsContent({
             const f = p.file;
             const isActive = f.path === activePath;
             const isChecked = selectedPaths.has(f.path);
-            const isSel = isActive || isChecked;
             const isPdf = /\.pdf$/i.test(f.name);
             const ArtIcon = isPdf ? FileText : p.tcType === "implementation"
               ? FileCog

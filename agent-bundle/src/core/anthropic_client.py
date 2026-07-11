@@ -74,8 +74,7 @@ class AnthropicError(RuntimeError):
 
 
 class AnthropicAuthError(AnthropicError):
-    """401/403 - missing, invalid, or unauthorized API key. This is the
-    signal the UI uses to offer manual mode."""
+    """401/403 from the centrally managed AI service."""
 
 
 class AnthropicRateLimitError(AnthropicError):
@@ -286,8 +285,8 @@ class AnthropicClient:
         final text output is returned."""
         if not self.api_key.strip():
             raise AnthropicAuthError(
-                "No LLM API key configured. Open Settings to add one, "
-                "or switch to Manual Mode."
+                "The centrally managed AI service credential is unavailable. "
+                "Contact the Testing Toolkit administrator."
             )
 
         if self._is_openai:

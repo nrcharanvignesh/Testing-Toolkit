@@ -50,16 +50,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 try:
-    from playwright.async_api import (
-        FrameLocator,
-        Locator,
-        Page,
-        TimeoutError as PwTimeout,
-    )
+    from playwright.async_api import Page, TimeoutError as PwTimeout
 except ImportError:
     Page = object          # type: ignore[assignment,misc]
-    Locator = object       # type: ignore[assignment,misc]
-    FrameLocator = object  # type: ignore[assignment,misc]
     PwTimeout = Exception  # type: ignore[assignment,misc]
 
 from .artifact_collector import ArtifactCollector
