@@ -62,6 +62,23 @@ that MUST be checked in every Claude Code session working on this project.
 13. **Error handling at trust boundaries**: Input validation for user input,
     external API responses, and file I/O. Internal code trusts internal code.
 
+14. **Project-scoped background preparation**: Selecting a project or changing
+    its KB queues extraction, context enrichment, embeddings, vector storage,
+    and context summary work in the installed agent. Closing the browser must
+    not cancel this work.
+
+15. **Durable jobs and atomic KB publication**: Safe jobs persist checkpoints
+    and recover after agent restart. Readers use the last complete immutable KB
+    generation until a new generation is atomically published.
+
+16. **Truthful progress**: The status bar, Activity Bar, KB dialog, and E2E
+    dialog must derive from the same job state. Never show completion for a
+    partial or interrupted operation.
+
+17. **Safe E2E interruption**: Stop at browser-action/test-case boundaries,
+    retain completed cases, discard incomplete-case results, and never replay
+    side-effecting partial cases automatically.
+
 ---
 
 ## KNOWN CONSTRAINTS & EDGE CASES
@@ -193,6 +210,11 @@ that MUST be checked in every Claude Code session working on this project.
 | E-015 | install.cmd builds .exe via PyInstaller (full pipeline) | Done | 2026-06-24 |
 | E-016 | build.py --quiet mode (progress bar + errors only) | Done | 2026-06-24 |
 | E-017 | Always-clean-install (no sentinel skip logic) | Done | 2026-06-24 |
+| E-018 | Persistent resumable agent jobs | Done | 2026-07-12 |
+| E-019 | Atomic immutable KB generations | Done | 2026-07-12 |
+| E-020 | Project-scoped automatic KB preparation | Done | 2026-07-12 |
+| E-021 | Safe Playwright run interruption | Done | 2026-07-12 |
+
 
 ---
 

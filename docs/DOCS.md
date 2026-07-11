@@ -385,11 +385,19 @@ Per-project KB supports the following document types:
 | Audio/Video | Transcription via Whisper API |
 | Legacy | `.doc`, `.ppt`, `.odt`, `.eml`, `.epub` via olefile |
 
-Indexing runs in the background after upload. The KB icon badge dot in the
-Activity Bar reflects the current state (red = none, amber = indexing, green =
-ready).
+Preparation is project-scoped and starts when a project is selected or its KB
+files change. Extraction, contextual enrichment, embedding, vector persistence,
+and context summary work continue in the installed agent when the browser is
+closed. Resumable jobs are checkpointed to disk and restarted automatically
+after an unexpected agent restart.
 
-**Hybrid retrieval** (used when KB exceeds ~150k tokens):
+A complete hybrid index is published as an immutable generation with one atomic
+pointer swap. Generation and automation therefore keep using the last complete
+index while a new generation is prepared; incomplete generations are never
+served. The KB icon badge and status bar use the same lifecycle state (red = no
+usable index, amber = preparing or recovering, green = ready).
+
+**Hybrid retrieval:**
 - BM25 lexical search (always active)
 - Dense vector search (embedding API)
 - Reciprocal Rank Fusion combining both (top 96 candidates)

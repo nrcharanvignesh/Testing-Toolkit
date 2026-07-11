@@ -1,7 +1,7 @@
 """
 server.py
 Local compute agent for Testing Toolkit web app.
-FastAPI on localhost:7842 — serves as the bridge between the Vercel
+FastAPI on localhost:7842 - serves as the bridge between the Vercel
 frontend and the existing Python backend modules.
 
 Starts with: python -m agent.server
