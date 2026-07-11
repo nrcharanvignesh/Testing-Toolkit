@@ -171,6 +171,44 @@ def test_agent_contract_rejects_legacy_404(monkeypatch):
     assert not inst._agent_contract_is_current("http://127.0.0.1:7842")
 
 
+def test_port_owner_pids_reads_windows_listener(monkeypatch):
+    class Result:
+        stdout = "  TCP  127.0.0.1:7842  0.0.0.0:0  LISTENING  10912\n"
+
+    monkeypatch.setattr(inst.os, "name", "nt")
+    monkeypatch.setattr(inst, "_run", lambda *_args, **_kwargs: Result())
+    assert inst._port_owner_pids(7842) == {10912}
+
+
+def test_release_agent_port_kills_recognized_orphan(monkeypatch):
+    states = iter([False, True])
+    killed = []
+    monkeypatch.setattr(inst.os, "name", "nt")
+    monkeypatch.setattr(inst, "_port_free", lambda _port: next(states))
+    monkeypatch.setattr(inst, "_port_owner_pids", lambda _port: {10912})
+    monkeypatch.setattr(inst, "_windows_process_is_agent", lambda _pid: True)
+    monkeypatch.setattr(inst, "_kill_pid", killed.append)
+    assert inst._release_agent_port(7842)
+    assert killed == [10912]
+
+
+def test_release_agent_port_refuses_unknown_owner(monkeypatch):
+    monkeypatch.setattr(inst.os, "name", "nt")
+    monkeypatch.setattr(inst, "_port_free", lambda _port: False)
+    monkeypatch.setattr(inst, "_port_owner_pids", lambda _port: {777})
+    monkeypatch.setattr(inst, "_windows_process_is_agent", lambda _pid: False)
+    monkeypatch.setattr(inst, "error", lambda _message: None)
+    monkeypatch.setattr(inst, "_kill_pid", lambda _pid: (_ for _ in ()).throw(AssertionError()))
+    assert not inst._release_agent_port(7842)
+
+
+def test_python_progress_is_log_only(monkeypatch):
+    logged = []
+    monkeypatch.setattr(inst, "_log_line", lambda level, message: logged.append((level, message)))
+    inst.progress("installing_deps", "Installing packages", 78)
+    assert logged == [("PROGRESS", "78% installing_deps: Installing packages")]
+
+
 # --- source/binary drift guard --------------------------------------------
 def test_every_hard_requirement_has_a_bundled_wheel():
     """Every HARD dep in requirements.txt must have a wheel in the wheelhouse.

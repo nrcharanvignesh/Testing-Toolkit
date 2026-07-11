@@ -245,6 +245,15 @@ function Show-Bar($done, $total) {
   $bar = ('#' * $fill) + ('-' * ($w - $fill))
   Write-Host -NoNewline ("\`r    [{0}] {1,3:N0}%  ({2}/{3})   " -f $bar, ($frac * 100), $done, $total)
 }
+function Show-StepBar($percent, $label) {
+  $pct = [Math]::Max(0, [Math]::Min(100, [int]$percent))
+  $w = 28
+  $fill = [int][Math]::Round(($pct / 100.0) * $w)
+  $bar = ('#' * $fill) + ('-' * ($w - $fill))
+  Write-Host -NoNewline ("\`r    [{0}] {1,3}%  {2,-28}" -f $bar, $pct, $label)
+  Trace 'PROGRESS' ($pct.ToString() + '% ' + $label)
+  if ($pct -ge 100) { Write-Host "" }
+}
 
 try {
   Write-Host ""
@@ -289,11 +298,13 @@ try {
   Write-Dbg ("parts cache: " + $partsDir)
 
   Write-Step "Reading bundle manifest"
+  Show-StepBar 0 "Reading release metadata"
   $manifestUrl = $ApiBase + 'manifest.json?ref=' + $Ref
   Write-Dbg ("GET " + $manifestUrl)
   $manifest = Invoke-RestMethod -Uri $manifestUrl -Headers $headers -UseBasicParsing
   $parts = @($manifest.parts)
   Trace 'INFO' (("{0} bundle parts" -f $manifest.partCount))
+  Show-StepBar 100 "Release metadata ready"
   if ($Verbose) {
     foreach ($p in $parts) {
       Write-Dbg ("part " + $p.name + "  sha256=" + $p.sha256.Substring(0, 12) + "...")
@@ -509,6 +520,7 @@ try {
   }
 
   Write-Step "Reassembling bundle"
+  Show-StepBar 0 "Joining downloaded parts"
   $zip = Join-Path $work $manifest.archive
   $out = [IO.File]::Create($zip)
   foreach ($p in ($parts | Sort-Object name)) {
@@ -521,11 +533,14 @@ try {
   $full = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLower()
   if ($full -ne $manifest.sha256.ToLower()) { throw 'Final archive checksum mismatch - download may be corrupt. Delete the cache folder and re-run.' }
   Trace 'INFO' 'archive verified'
+  Show-StepBar 100 "Bundle verified"
   Write-Step "Extracting"
+  Show-StepBar 0 "Extracting bundle files"
   $dest = Join-Path $scriptDir $manifest.extractTo
   if (Test-Path $dest) { Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue }
   Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force
   Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+  Show-StepBar 100 "Bundle extracted"
 
   # --- Overlay the latest Python code on top of the bundle ----------------
   # The 470 MB bundle (wheels/runtime/models) changes rarely, but the agent
@@ -533,6 +548,7 @@ try {
   # every code fix, pull the current source from the repo and lay it over the
   # extracted files. Best-effort: if it fails we fall back to bundled code.
   Write-Step "Applying latest agent code"
+  Show-StepBar 0 "Staging latest agent release"
   try {
     function Get-OverlayFile($uri, $outFile) {
       $last = $null
@@ -589,11 +605,13 @@ try {
     Trace 'WARN' ("atomic overlay skipped; coherent bundled version retained: " + $_.Exception.Message)
     Trace 'INFO' 'using coherent bundled agent version'
   }
+  Show-StepBar 100 "Agent release staged"
 
   $installCmd = Join-Path $dest 'install.cmd'
   if (-not (Test-Path $installCmd)) { throw ('install.cmd not found in extracted bundle at ' + $dest) }
 
   Write-Step "Installing and verifying the agent"
+  Show-StepBar 0 "Running offline installer"
   Trace 'INFO' 'offline installation started'
   # Hand the auto-update settings to install.py so the agent can fetch future
   # patches on its own. These are read by write_update_config() in install.py.
@@ -607,6 +625,7 @@ try {
 
   Write-Host ""
   if ($code -eq 0) {
+    Show-StepBar 100 "Agent verified"
     Write-Host "  Done. Testing Toolkit is installed." -ForegroundColor Green
     Trace 'INFO' 'offline installer finished successfully (exit 0)'
   } else {

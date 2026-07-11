@@ -150,14 +150,17 @@ def info(msg: str) -> None:
 
 
 _ACTIVE_MILESTONE = ""
+_LAST_CONSOLE_MILESTONE = ""
 
 
 def milestone(msg: str, estimate: str = "") -> None:
-    """Show one user-facing phase with a compact estimate."""
-    global _ACTIVE_MILESTONE
+    """Show one user-facing phase; the bootstrap owns visible progress bars."""
+    global _ACTIVE_MILESTONE, _LAST_CONSOLE_MILESTONE
     _ACTIVE_MILESTONE = msg
     suffix = f"  (Est. {estimate})" if estimate else ""
-    print(f"\n==> {msg}{suffix}", flush=True)
+    if msg != _LAST_CONSOLE_MILESTONE:
+        print(f"\n==> {msg}{suffix}", flush=True)
+        _LAST_CONSOLE_MILESTONE = msg
     _log_line("STEP", f"{msg}{suffix}")
 
 
@@ -185,35 +188,13 @@ def trace(msg: str) -> None:
 # Install progress (printed to the visible installer console)
 # --------------------------------------------------------------------------
 def progress(phase: str, message: str, percent: float | None = None, **extra) -> None:
-    """Render one compact tqdm-style progress bar; detail stays in the log."""
+    """Persist detailed progress without printing overlapping nested bars."""
     try:
         if percent is None:
             milestone(message)
             return
-        overall = max(0, min(100, int(round(percent))))
-        ranges = {
-            "cleaning": (66, 69),
-            "installing_deps": (70, 90),
-            "installing_crypto": (90, 92),
-            "installing_mcp": (91, 94),
-            "copying": (90, 96),
-            "verifying": (95, 98),
-            "starting": (97, 100),
-            "done": (100, 100),
-        }
-        start, end = ranges.get(phase, (0, 100))
-        local = 100 if start == end and overall >= end else int(
-            round(100 * (overall - start) / max(1, end - start))
-        )
-        local = max(2, min(100, local))
-        width = 30
-        filled = int(round(width * local / 100))
-        bar = "#" * filled + "-" * (width - filled)
-        sys.stdout.write(f"\r  {local:3d}%|{bar}| {message:<42.42}")
-        sys.stdout.flush()
-        _log_line("PROGRESS", f"{overall}% overall / {local}% {phase}: {message}")
-        if local >= 100:
-            sys.stdout.write("\n")
+        value = max(0, min(100, int(round(percent))))
+        _log_line("PROGRESS", f"{value}% {phase}: {message}")
     except Exception:
         pass
 
@@ -791,12 +772,67 @@ def _kill_pid(pid: int) -> None:
         pass
 
 
-def stop_running_agent() -> None:
-    """Best-effort: stop a previously-installed agent before overwriting files.
+def _port_owner_pids(port: int) -> set[int]:
+    """Return listener PIDs using OS-native tools; empty means no known owner."""
+    if os.name != "nt":
+        return set()
+    result = _run(["netstat", "-ano", "-p", "tcp"], capture_output=True, text=True)
+    pids: set[int] = set()
+    for line in (result.stdout or "").splitlines():
+        fields = line.split()
+        if len(fields) >= 5 and fields[1].endswith(f":{port}") and fields[3] == "LISTENING":
+            try:
+                pids.add(int(fields[4]))
+            except ValueError:
+                continue
+    return pids
 
-    On Windows, files held open by a running agent cannot be deleted, so this
-    must happen before we remove the old build.
-    """
+
+def _windows_process_is_agent(pid: int) -> bool:
+    """Only authorize termination when the command line identifies our agent."""
+    script = (
+        f"$p=Get-CimInstance Win32_Process -Filter 'ProcessId={pid}';"
+        "if($p){$p.Name; $p.CommandLine}"
+    )
+    result = _run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+    )
+    identity = (result.stdout or "").lower()
+    return "python" in identity and (
+        "-m agent" in identity
+        or "testingtoolkitweb" in identity
+        or "testing-toolkit" in identity
+    )
+
+
+def _release_agent_port(port: int, timeout: float = 10.0) -> bool:
+    """Terminate only recognized stale agent owners and wait for release."""
+    if _port_free(port):
+        return True
+    if os.name != "nt":
+        return False
+    owners = _port_owner_pids(port)
+    if not owners:
+        return False
+    unknown = [pid for pid in owners if not _windows_process_is_agent(pid)]
+    if unknown:
+        error(f"Port {port} is owned by an unrecognized process (PID {unknown[0]}).")
+        return False
+    for pid in owners:
+        info(f"Stopping stale agent listener (pid {pid})...")
+        _kill_pid(pid)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _port_free(port):
+            return True
+        time.sleep(0.25)
+    return _port_free(port)
+
+
+def stop_running_agent() -> bool:
+    """Stop PID-file and orphaned listeners before replacing program files."""
     if PID_FILE.exists():
         try:
             pid = int(PID_FILE.read_text().strip())
@@ -809,6 +845,7 @@ def stop_running_agent() -> None:
             PID_FILE.unlink()
         except Exception:
             pass
+    return _release_agent_port(AGENT_PORT)
 
 
 def unregister_autostart(os_name: str) -> None:
@@ -890,8 +927,11 @@ def clean_previous_install(os_name: str) -> None:
     settings.json, projects/, runs/, outputs/, logs/, ui_prefs.json - is
     intentionally preserved so a re-install keeps your configuration.
     """
-    stop_running_agent()
     unregister_autostart(os_name)
+    if not stop_running_agent():
+        raise RuntimeError(
+            f"Port {AGENT_PORT} could not be released safely; see the installer log."
+        )
     for d in (VENV_DIR, AGENT_DIR, LIB_DIR):
         if d.exists():
             info(f"Removing previous build: {d}")
@@ -1307,19 +1347,10 @@ def start_agent(launch_python: str, use_pythonpath: bool) -> bool:
         return False
     ok("Self-test passed (agent imports cleanly).")
 
-    # On a reinstall the OLD agent may still be holding port 7842. Wait for it
-    # to actually free up so the new agent can bind it. The web app polls
-    # /health for the real agent at this point.
+    # Re-check immediately before launch: an old autostart entry can race cleanup.
     progress("starting", "Starting the agent", 97)
-    for _ in range(20):
-        if _port_free(AGENT_PORT):
-            break
-        time.sleep(0.5)
-    if not _port_free(AGENT_PORT):
-        error(
-            f"Port {AGENT_PORT} is still owned by an older agent. "
-            "Close it and run the installer again."
-        )
+    if not _release_agent_port(AGENT_PORT):
+        error(f"Port {AGENT_PORT} could not be released safely; see the installer log.")
         return False
 
     # --- Launch the agent, capturing its output to the log file -----------
