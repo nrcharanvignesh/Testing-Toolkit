@@ -79,6 +79,23 @@ that MUST be checked in every Claude Code session working on this project.
     retain completed cases, discard incomplete-case results, and never replay
     side-effecting partial cases automatically.
 
+18. **Never abandon an approved implementation because a response boundary is
+    near**: Persist the task list and current state, continue in the next turn,
+    and report only real blockers. Never emit a generic inability statement for
+    work that can be completed incrementally.
+
+19. **Adversarial QA convergence is mandatory**: Test as a hostile senior QA,
+    developer, architect, operator, accessibility reviewer, security reviewer,
+    and end user. Exercise happy paths, invalid inputs, empty/partial states,
+    concurrency, cancellation, restart recovery, large inputs, low resources,
+    external failures, and rendered UI behavior. Fix every discovered defect,
+    rerun affected and full regression gates, and repeat until a clean pass finds
+    no new actionable defect or a specific blocker is proven.
+
+20. **Evidence before completion claims**: Report exact commands, test counts,
+    rendered/browser checks, deployment state, and residual risks. Compilation
+    alone is never proof of functional correctness.
+
 ---
 
 ## KNOWN CONSTRAINTS & EDGE CASES
