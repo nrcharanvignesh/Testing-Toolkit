@@ -175,20 +175,7 @@ function Trace($level, $msg) {
 # see milestones and one compact progress bar instead of implementation noise.
 $Verbose = ($env:TT_VERBOSE -eq '1')
 
-function Write-Step($m, $estimate = '') {
-  Write-Host ""
-  $suffix = if ($estimate) { '  (Est. ' + $estimate + ')' } else { '' }
-  Write-Host ("==> " + $m + $suffix) -ForegroundColor Cyan
-  Trace 'STEP' ($m + $suffix)
-}
-function Show-MilestoneBar($percent, $message) {
-  $pct = [Math]::Max(0, [Math]::Min(100, [int]$percent))
-  $w = 28; $fill = [int][Math]::Round(($pct / 100.0) * $w)
-  $bar = ('#' * $fill) + ('-' * ($w - $fill))
-  Write-Host -NoNewline ("\`r    [{0}] {1,3}%  {2,-40}" -f $bar, $pct, $message)
-  Trace 'PROGRESS' ($pct.ToString() + '% ' + $message)
-  if ($pct -ge 100) { Write-Host "" }
-}
+function Write-Step($m) { Write-Host ""; Write-Host "==> $m" -ForegroundColor Cyan; Trace 'STEP' $m }
 function Write-Dbg($m)  { Trace 'TRACE' $m; if ($Verbose) { Write-Host ("    [debug] " + $m) -ForegroundColor DarkGray } }
 
 Trace 'INFO' '================ installer worker started ================'
@@ -301,21 +288,19 @@ try {
   Write-Dbg ("work dir:  " + $work)
   Write-Dbg ("parts cache: " + $partsDir)
 
-  Write-Step "Reading bundle manifest" "under 1 min"
-  Show-MilestoneBar 10 "Reading release metadata"
+  Write-Step "Reading bundle manifest"
   $manifestUrl = $ApiBase + 'manifest.json?ref=' + $Ref
   Write-Dbg ("GET " + $manifestUrl)
   $manifest = Invoke-RestMethod -Uri $manifestUrl -Headers $headers -UseBasicParsing
   $parts = @($manifest.parts)
   Trace 'INFO' (("{0} bundle parts" -f $manifest.partCount))
-  Show-MilestoneBar 100 "Release metadata ready"
   if ($Verbose) {
     foreach ($p in $parts) {
       Write-Dbg ("part " + $p.name + "  sha256=" + $p.sha256.Substring(0, 12) + "...")
     }
   }
 
-  Write-Step "Downloading agent bundle" "4–8 min"
+  Write-Step "Downloading agent bundle"
 
   # The download worker. Returns a structured result object (never throws) so
   # the main thread can log rich per-part diagnostics in real time.
@@ -523,8 +508,7 @@ try {
     throw ([string]$failures.Count + ' part(s) failed to download. Completed parts are cached and will be skipped when you re-run this installer. See the log: ' + $LogFile)
   }
 
-  Write-Step "Reassembling bundle" "under 1 min"
-  Show-MilestoneBar 5 "Joining downloaded parts"
+  Write-Step "Reassembling bundle"
   $zip = Join-Path $work $manifest.archive
   $out = [IO.File]::Create($zip)
   foreach ($p in ($parts | Sort-Object name)) {
@@ -537,23 +521,18 @@ try {
   $full = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLower()
   if ($full -ne $manifest.sha256.ToLower()) { throw 'Final archive checksum mismatch - download may be corrupt. Delete the cache folder and re-run.' }
   Trace 'INFO' 'archive verified'
-  Show-MilestoneBar 100 "Bundle verified"
-
-  Write-Step "Extracting" "1–2 min"
-  Show-MilestoneBar 10 "Extracting bundle files"
+  Write-Step "Extracting"
   $dest = Join-Path $scriptDir $manifest.extractTo
   if (Test-Path $dest) { Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue }
   Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force
   Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
-  Show-MilestoneBar 100 "Bundle extracted"
 
   # --- Overlay the latest Python code on top of the bundle ----------------
   # The 470 MB bundle (wheels/runtime/models) changes rarely, but the agent
   # code + installer change often. Rather than re-pack the whole bundle for
   # every code fix, pull the current source from the repo and lay it over the
   # extracted files. Best-effort: if it fails we fall back to bundled code.
-  Write-Step "Applying latest agent code" "under 1 min"
-  Show-MilestoneBar 10 "Checking latest agent release"
+  Write-Step "Applying latest agent code"
   try {
     function Get-OverlayFile($uri, $outFile) {
       $last = $null
@@ -610,12 +589,11 @@ try {
     Trace 'WARN' ("atomic overlay skipped; coherent bundled version retained: " + $_.Exception.Message)
     Trace 'INFO' 'using coherent bundled agent version'
   }
-  Show-MilestoneBar 100 "Agent release staged"
 
   $installCmd = Join-Path $dest 'install.cmd'
   if (-not (Test-Path $installCmd)) { throw ('install.cmd not found in extracted bundle at ' + $dest) }
 
-  Write-Step "Installing and verifying the agent" "5–10 min"
+  Write-Step "Installing and verifying the agent"
   Trace 'INFO' 'offline installation started'
   # Hand the auto-update settings to install.py so the agent can fetch future
   # patches on its own. These are read by write_update_config() in install.py.

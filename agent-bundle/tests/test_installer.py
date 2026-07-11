@@ -132,6 +132,45 @@ def test_health_rejects_stale_or_legacy_process():
     )
 
 
+def test_agent_contract_requires_every_modern_route(monkeypatch):
+    requested = []
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def open_ok(url, timeout):
+        requested.append((url, timeout))
+        return Response()
+
+    monkeypatch.setattr("urllib.request.urlopen", open_ok)
+    assert inst._agent_contract_is_current("http://127.0.0.1:7842")
+    assert [url for url, _ in requested] == [
+        "http://127.0.0.1:7842/metrics",
+        "http://127.0.0.1:7842/sources/projects",
+        "http://127.0.0.1:7842/update/status",
+    ]
+
+
+def test_agent_contract_rejects_legacy_404(monkeypatch):
+    class Response:
+        status = 404
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_args, **_kwargs: Response())
+    assert not inst._agent_contract_is_current("http://127.0.0.1:7842")
+
+
 # --- source/binary drift guard --------------------------------------------
 def test_every_hard_requirement_has_a_bundled_wheel():
     """Every HARD dep in requirements.txt must have a wheel in the wheelhouse.

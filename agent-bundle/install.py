@@ -1259,6 +1259,21 @@ def _health_matches_installed_agent(payload: dict, expected_version: str) -> boo
     )
 
 
+def _agent_contract_is_current(base_url: str) -> bool:
+    """Require routes used by the web app, not just a spoofable health route."""
+    import urllib.error
+    import urllib.request
+
+    for path in ("/metrics", "/sources/projects", "/update/status"):
+        try:
+            with urllib.request.urlopen(base_url + path, timeout=2) as response:
+                if response.status != 200:
+                    return False
+        except (OSError, urllib.error.URLError):
+            return False
+    return True
+
+
 def start_agent(launch_python: str, use_pythonpath: bool) -> bool:
     info(f"Starting agent on localhost:{AGENT_PORT}...")
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -1341,13 +1356,20 @@ def start_agent(launch_python: str, use_pythonpath: bool) -> bool:
                 f"http://127.0.0.1:{AGENT_PORT}/health", timeout=1
             ) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
-                if resp.status == 200 and _health_matches_installed_agent(
+                identity_ok = resp.status == 200 and _health_matches_installed_agent(
                     payload, expected_version
-                ):
+                )
+                contract_ok = identity_ok and _agent_contract_is_current(
+                    f"http://127.0.0.1:{AGENT_PORT}"
+                )
+                if identity_ok and contract_ok:
                     ok(f"Agent {expected_version} is running on localhost:{AGENT_PORT}")
                     progress("done", "Agent is running", 100)
                     return True
-                trace(f"health identity mismatch: expected={expected_version} got={payload}")
+                trace(
+                    f"agent verification mismatch: expected={expected_version} "
+                    f"identity_ok={identity_ok} contract_ok={contract_ok} payload={payload}"
+                )
         except Exception:
             pass
         time.sleep(1)
