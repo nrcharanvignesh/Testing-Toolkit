@@ -1,7 +1,7 @@
 {
-  "version": "2.10.6",
+  "version": "2.11.0",
   "ref": "main",
-  "generatedAt": "2026-07-09T09:25:25.830Z",
+  "generatedAt": "2026-07-11T12:40:24.818Z",
   "files": [
     {
       "path": ".env.enc",
@@ -76,7 +76,7 @@
     {
       "path": "agent/routes/chat.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/chat.py?ref=main",
-      "hash": "24d2de1d8865fcb753a301fc9bae14b0e7c317b7aec5b41e1e4dca1491fd47a8"
+      "hash": "5be872d4c3ae3be5f0498cd5f05fe948d00a684c7638ce16d2e99b5d4b9436e1"
     },
     {
       "path": "agent/routes/credentials.py",
@@ -91,7 +91,7 @@
     {
       "path": "agent/routes/e2e.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/e2e.py?ref=main",
-      "hash": "3c3f45356902daf46e86bd07e0e994d04e88db637b90b49db106abb76ebeddce"
+      "hash": "b482d0e1e47382f07f93fb15c45f090ace18da3aa16722c1724d82aa8f9ffe7f"
     },
     {
       "path": "agent/routes/generate.py",
@@ -116,7 +116,7 @@
     {
       "path": "agent/routes/kb.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/routes/kb.py?ref=main",
-      "hash": "bd23ec04cbc99099d6ac03bb8bc4e26e35479c608c20b2e42ec1b69c0571e70e"
+      "hash": "481962cfcc0223dcb3fd881d94ff59f6db1545bbd8416272c8420dd64d1fb866"
     },
     {
       "path": "agent/routes/llm.py",
@@ -156,7 +156,7 @@
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "4ac54d7e1283d12e1c5cc3e60a574e90c61367b5c568e63b1813071599660e52"
+      "hash": "19ef17e5e9a16678a96b68f37d829ba7f99799a103fb66448a2043ee35122cf9"
     },
     {
       "path": "automation/__init__.py",
@@ -174,9 +174,14 @@
       "hash": "288830ea62abf2039519d2b336addf61bb8b5c220222d408b0865245d31c31f6"
     },
     {
+      "path": "automation/e2e_plan.py",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/automation/e2e_plan.py?ref=main",
+      "hash": "636ec4cd94a8ed54dc6befcd4a8b84a1c2312a67ebe8bf127300320ffddb92bf"
+    },
+    {
       "path": "automation/e2e_runner.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/automation/e2e_runner.py?ref=main",
-      "hash": "f09f60db4aa6e38f75aed4991e715821d4595c271a32158e5db476012cd030bc"
+      "hash": "1559a69102811090580757bcb915aa0bbdc01378814303eb7f6bd70dd30b2cc2"
     },
     {
       "path": "automation/execution_store.py",
@@ -226,12 +231,12 @@
     {
       "path": "core/chat_tools.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/chat_tools.py?ref=main",
-      "hash": "50ba2ba6140b64f6bbb3bf448d6c2fc03cd3c821525b6e488dff4b190cf62d3e"
+      "hash": "9e288329657f56574bc28218bcde34a76b9a9cc774b1c671be4cc88a1bb9a80d"
     },
     {
       "path": "core/diagnostics.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/diagnostics.py?ref=main",
-      "hash": "315e10435c822b09daface05371295d47b6c1b630eb31661516d931f54c62c20"
+      "hash": "354e1a96c1fe973ba4a53580c19d7e6a1c9a5389113bd81893daa6f367dcd2e2"
     },
     {
       "path": "core/guardrails.py",
@@ -251,7 +256,7 @@
     {
       "path": "core/mcp_bridge.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/mcp_bridge.py?ref=main",
-      "hash": "bfc1964f9c276db2fe1c681f812069f03365a425e3d3871a692c2e0e21a1b765"
+      "hash": "2d32fb26581f1e65efa9fc9d23df5c9e9c6561a029825f06aff8803d3248f372"
     },
     {
       "path": "core/model_cache.py",
@@ -296,7 +301,7 @@
     {
       "path": "core/project_store.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/project_store.py?ref=main",
-      "hash": "2166b63f332be39886c2348bffdbfaab25974a867ce92ab9bddc88e206818dbf"
+      "hash": "2b5ed87b76297e8103145d0a064501878f9613f330739e97215a9505a2b36809"
     },
     {
       "path": "core/protocols.py",
@@ -391,7 +396,7 @@
     {
       "path": "kb/context_summary.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/context_summary.py?ref=main",
-      "hash": "03a387353b15d9c7ada76d16f3410d21be7740e4c01ae38fac0da38343984424"
+      "hash": "170580888f07660595640ed863b2b21c38eac8a3a1a59f5e23e8d014168f0845"
     },
     {
       "path": "kb/contextual.py",
