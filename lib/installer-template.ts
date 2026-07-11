@@ -171,10 +171,9 @@ function Trace($level, $msg) {
   $line = ('{0}  [{1}] {2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'), $level, $msg)
   if ($global:TtLogWriter) { try { $global:TtLogWriter.WriteLine($line) } catch {} }
 }
-# Trace-level logging is ON by default (operator asked for verbose traces). The
-# file ALWAYS gets full detail; set TT_VERBOSE=0 only to quiet the on-console
-# debug lines (irrelevant while hidden, useful when run with a console).
-$Verbose = -not ($env:TT_VERBOSE -eq '0')
+# The file ALWAYS gets full trace detail. Console debug is opt-in only so users
+# see milestones and one compact progress bar instead of implementation noise.
+$Verbose = ($env:TT_VERBOSE -eq '1')
 
 function Write-Step($m) { Write-Host ""; Write-Host "==> $m" -ForegroundColor Cyan; Trace 'STEP' $m }
 function Write-Dbg($m)  { Trace 'TRACE' $m; if ($Verbose) { Write-Host ("    [debug] " + $m) -ForegroundColor DarkGray } }
@@ -536,32 +535,60 @@ try {
   # extracted files. Best-effort: if it fails we fall back to bundled code.
   Write-Step "Applying latest agent code"
   try {
+    function Get-OverlayFile($uri, $outFile) {
+      $last = $null
+      for ($attempt = 1; $attempt -le 4; $attempt++) {
+        try {
+          Invoke-RestMethod -Uri $uri -Headers $headers -UseBasicParsing -OutFile $outFile
+          return
+        } catch {
+          $last = $_
+          if ($attempt -lt 4) { Start-Sleep -Seconds ([Math]::Min(8, [Math]::Pow(2, $attempt))) }
+        }
+      }
+      throw $last
+    }
+
     $um = Invoke-RestMethod -Uri ($ApiBase + 'agent-update.json?ref=' + $Ref) -Headers $headers -UseBasicParsing
     $srcRef = $um.ref
+    $stage = Join-Path $CacheDir ('overlay-stage-' + $stamp)
+    if (Test-Path $stage) { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue }
+    New-Item -ItemType Directory -Force -Path (Join-Path $stage 'src') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $stage 'wheelhouse') | Out-Null
     Write-Dbg ("overlay ref=" + $srcRef + " files=" + @($um.files).Count)
-    $n = 0
+
     foreach ($f in $um.files) {
-      $target = Join-Path (Join-Path $dest 'src') ($f.path -replace '/', '\\')
+      $target = Join-Path (Join-Path $stage 'src') ($f.path -replace '/', '\\')
       New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
-      Invoke-RestMethod -Uri $f.url -Headers $headers -UseBasicParsing -OutFile $target
-      $n++
-    }
-    Invoke-RestMethod -Uri ($ApiBase + 'agent-bundle/install.py?ref=' + $srcRef) -Headers $headers -UseBasicParsing -OutFile (Join-Path $dest 'install.py')
-    # Overlay the latest requirements.txt so newly-added deps install offline.
-    if ($um.requirements -and $um.requirements.url) {
-      Invoke-RestMethod -Uri $um.requirements.url -Headers $headers -UseBasicParsing -OutFile (Join-Path $dest 'requirements.txt')
-    }
-    # Drop any extra wheels into the extracted wheelhouse so offline pip finds them.
-    if ($um.extraWheels) {
-      $wh = Join-Path $dest 'wheelhouse'
-      New-Item -ItemType Directory -Force -Path $wh | Out-Null
-      foreach ($w in $um.extraWheels) {
-        Invoke-RestMethod -Uri $w.url -Headers $headers -UseBasicParsing -OutFile (Join-Path $wh $w.name)
+      Get-OverlayFile $f.url $target
+      if ($f.hash) {
+        $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $target).Hash.ToLower()
+        if ($actual -ne $f.hash.ToLower()) { throw ('overlay checksum mismatch: ' + $f.path) }
       }
     }
-    Write-Host ("    updated {0} source files to the latest version" -f $n) -ForegroundColor Green
+    Get-OverlayFile ($ApiBase + 'agent-bundle/install.py?ref=' + $srcRef) (Join-Path $stage 'install.py')
+    if ($um.requirements -and $um.requirements.url) {
+      Get-OverlayFile $um.requirements.url (Join-Path $stage 'requirements.txt')
+    }
+    foreach ($w in @($um.extraWheels)) {
+      Get-OverlayFile $w.url (Join-Path (Join-Path $stage 'wheelhouse') $w.name)
+    }
+
+    # Commit only after every source, requirement and wheel has downloaded and
+    # validated. A transient GitHub failure therefore leaves the coherent base
+    # bundle untouched instead of mixing new requirements with old wheels.
+    Copy-Item -Path (Join-Path $stage 'src\*') -Destination (Join-Path $dest 'src') -Recurse -Force
+    Copy-Item -LiteralPath (Join-Path $stage 'install.py') -Destination (Join-Path $dest 'install.py') -Force
+    if (Test-Path (Join-Path $stage 'requirements.txt')) {
+      Copy-Item -LiteralPath (Join-Path $stage 'requirements.txt') -Destination (Join-Path $dest 'requirements.txt') -Force
+    }
+    Get-ChildItem -LiteralPath (Join-Path $stage 'wheelhouse') -File | ForEach-Object {
+      Copy-Item -LiteralPath $_.FullName -Destination (Join-Path (Join-Path $dest 'wheelhouse') $_.Name) -Force
+    }
+    Write-Host ("    latest agent version staged ({0} files)" -f @($um.files).Count) -ForegroundColor Green
   } catch {
-    Write-Host ("    (using bundled code; overlay skipped: " + $_.Exception.Message + ")") -ForegroundColor DarkGray
+    Trace 'WARN' ("atomic overlay skipped; coherent bundled version retained: " + $_.Exception.Message)
+    Write-Host "    using bundled agent version" -ForegroundColor DarkGray
   }
 
   $installCmd = Join-Path $dest 'install.cmd'
@@ -697,9 +724,8 @@ MAX_RETRIES = 6
 # via TT_CONCURRENCY. Paired with byte-range resume so a killed transfer
 # continues instead of restarting the whole part.
 CONCURRENCY = int(os.environ.get("TT_CONCURRENCY") or "1")
-# Trace logging is ON by default (the file always gets full detail). Set
-# TT_VERBOSE=0 only to quiet the on-console debug echo.
-VERBOSE = os.environ.get("TT_VERBOSE") != "0"
+# The file always gets full trace detail. Console debug is opt-in only.
+VERBOSE = os.environ.get("TT_VERBOSE") == "1"
 
 # --- logging: console + durable trace file -------------------------------
 # Always write a trace-level log to a documented, stable folder shared with the
@@ -1006,32 +1032,52 @@ try:
     try:
         um = json.loads(fetch("agent-update.json").decode("utf-8"))
         src_ref = um.get("ref", ref)
+        stage = os.path.join(_ws_root, ".cache", "overlay-stage-%s" % _stamp)
+        shutil.rmtree(stage, ignore_errors=True)
+        os.makedirs(os.path.join(stage, "src"), exist_ok=True)
+        os.makedirs(os.path.join(stage, "wheelhouse"), exist_ok=True)
         dbg("overlay ref=%s files=%d" % (src_ref, len(um.get("files", []))))
-        n = 0
+
+        def overlay_get(url):
+            last = None
+            for attempt in range(1, 5):
+                try:
+                    return _get(url, AUTH_HEADERS, timeout=120)
+                except Exception as exc:
+                    last = exc
+                    if attempt < 4:
+                        time.sleep(min(8, 2 ** attempt))
+            raise last
+
         for f in um.get("files", []):
             rel = f["path"]
-            target = os.path.join(dest, "src", *rel.split("/"))
+            target = os.path.join(stage, "src", *rel.split("/"))
             os.makedirs(os.path.dirname(target), exist_ok=True)
+            data = overlay_get(f["url"])
+            if f.get("hash") and hashlib.sha256(data).hexdigest().lower() != f["hash"].lower():
+                raise RuntimeError("overlay checksum mismatch: " + rel)
             with open(target, "wb") as out:
-                out.write(_get(f["url"], AUTH_HEADERS, timeout=120))
-            n += 1
-        ip_url = api + "agent-bundle/install.py?ref=" + src_ref
-        with open(os.path.join(dest, "install.py"), "wb") as out:
-            out.write(_get(ip_url, AUTH_HEADERS, timeout=120))
-        # Overlay requirements.txt so newly-added deps install offline.
+                out.write(data)
+        with open(os.path.join(stage, "install.py"), "wb") as out:
+            out.write(overlay_get(api + "agent-bundle/install.py?ref=" + src_ref))
         reqs = um.get("requirements")
         if reqs and reqs.get("url"):
-            with open(os.path.join(dest, "requirements.txt"), "wb") as out:
-                out.write(_get(reqs["url"], AUTH_HEADERS, timeout=120))
-        # Drop extra wheels into the extracted wheelhouse for offline pip.
+            with open(os.path.join(stage, "requirements.txt"), "wb") as out:
+                out.write(overlay_get(reqs["url"]))
         for w in (um.get("extraWheels") or []):
-            wh = os.path.join(dest, "wheelhouse")
-            os.makedirs(wh, exist_ok=True)
-            with open(os.path.join(wh, w["name"]), "wb") as out:
-                out.write(_get(w["url"], AUTH_HEADERS, timeout=120))
-        log("    updated %d source files to the latest version" % n)
+            with open(os.path.join(stage, "wheelhouse", w["name"]), "wb") as out:
+                out.write(overlay_get(w["url"]))
+
+        # Commit only after all source, requirements and wheels are present.
+        shutil.copytree(os.path.join(stage, "src"), os.path.join(dest, "src"), dirs_exist_ok=True)
+        shutil.copy2(os.path.join(stage, "install.py"), os.path.join(dest, "install.py"))
+        if os.path.exists(os.path.join(stage, "requirements.txt")):
+            shutil.copy2(os.path.join(stage, "requirements.txt"), os.path.join(dest, "requirements.txt"))
+        shutil.copytree(os.path.join(stage, "wheelhouse"), os.path.join(dest, "wheelhouse"), dirs_exist_ok=True)
+        log("    latest agent version staged (%d files)" % len(um.get("files", [])))
     except Exception as e:
-        log("    (using bundled code; overlay skipped: %s)" % e)
+        dbg("atomic overlay skipped; coherent bundled version retained: %s" % e)
+        log("    using bundled agent version")
 
     install_sh = os.path.join(dest, "install.sh")
     install_py = os.path.join(dest, "install.py")

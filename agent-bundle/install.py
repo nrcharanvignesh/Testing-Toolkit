@@ -145,8 +145,14 @@ def _close_logging() -> None:
 
 
 def info(msg: str) -> None:
-    print(f"[INFO] {msg}", flush=True)
+    """Record routine detail in the trace log without flooding the console."""
     _log_line("INFO", msg)
+
+
+def milestone(msg: str) -> None:
+    """Show one user-facing phase while retaining it in the full trace log."""
+    print(f"\n==> {msg}", flush=True)
+    _log_line("STEP", msg)
 
 
 def warn(msg: str) -> None:
@@ -173,18 +179,20 @@ def trace(msg: str) -> None:
 # Install progress (printed to the visible installer console)
 # --------------------------------------------------------------------------
 def progress(phase: str, message: str, percent: float | None = None, **extra) -> None:
-    """Print a single progress line to the console.
-
-    The installer runs in a visible terminal, so progress is shown to the user
-    directly on stdout (there is no install beacon / shared progress file). Any
-    extra kwargs are accepted for forward-compatibility and ignored. Never
-    raises: progress reporting must never break an install.
-    """
+    """Render one compact tqdm-style progress bar; detail stays in the log."""
     try:
-        if percent is not None:
-            print("  [%3d%%] %s" % (max(0, min(100, round(percent))), message))
-        else:
-            print("  %s" % message)
+        if percent is None:
+            milestone(message)
+            return
+        pct = max(0, min(100, int(round(percent))))
+        width = 30
+        filled = int(round(width * pct / 100))
+        bar = "#" * filled + "-" * (width - filled)
+        sys.stdout.write(f"\r  {pct:3d}%|{bar}| {message:<42.42}")
+        sys.stdout.flush()
+        _log_line("PROGRESS", f"{pct}% {phase}: {message}")
+        if pct >= 100:
+            sys.stdout.write("\n")
     except Exception:
         pass
 
@@ -1845,9 +1853,8 @@ def main() -> int:
     _setup_logging()
 
     os_name, arch = detect_platform()
-    print("[INFO] ============================================")
-    print("[INFO] Testing Toolkit Agent Installer (offline)")
-    print("[INFO] ============================================")
+    print("\nTesting Toolkit Agent Installer")
+    print(f"Detailed log: {_LOG_PATH or LOG_DIR}")
     info(f"Platform: {os_name}-{arch}")
     info(f"Bundle:   {BUNDLE_DIR}")
     info(f"Install:  {INSTALL_DIR}")
@@ -1880,6 +1887,7 @@ def main() -> int:
     # the GenAI proxy API (kb/embeddings.py uses _APIEmbedder only). Nothing
     # to ship or check here.
 
+    milestone("Preparing installation")
     progress("cleaning", "Preparing a clean install", 66)
     # Remove any previous build first (keeps user data) so re-installs are clean.
     clean_previous_install(os_name)
@@ -1932,6 +1940,8 @@ def main() -> int:
         # An online fallback is allowed when NOT air-gapped and this specific
         # interpreter is not offline-covered (wrong OS/arch OR wrong version).
         return (not offline_only) and (not _covered(exe))
+
+    milestone("Installing dependencies")
 
     if system_py:
         pv = _py_version(system_py)
@@ -2032,6 +2042,8 @@ def main() -> int:
     # node_modules_bundle is committed in the repo -- no internet needed.
     # Non-fatal: agent starts without MCP tools; mcp_bridge degrades gracefully.
     _install_mcp_servers()
+
+    milestone("Installing and verifying the agent")
 
     # --- Copy source -----------------------------------------------------
     # No local ML models are bundled: embeddings, reranking, OCR and audio

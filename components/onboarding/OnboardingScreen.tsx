@@ -27,8 +27,8 @@ const INSTALLER_MAP = {
  *    user re-downloads and re-runs the installer. Settings, preferences,
  *    artifacts, KB documents, vectors, project context and tour completion are
  *    retained; only disposable runtime caches are refreshed. We detect
- *    completion by watching the agent drop (installer stops it) and reconnect,
- *    and also offer a manual "Continue" once the agent is reachable again.
+ *    completion by watching the agent drop (installer stops it) and reconnect;
+ *    the app resumes automatically as soon as the fresh agent is healthy.
  */
 export function OnboardingScreen({
   reinstall = false,
@@ -236,18 +236,6 @@ export function OnboardingScreen({
                 : "Follow the installer window, then wait for the agent to connect..."}
             </div>
 
-            {/* Reinstall manual continue (enabled once the agent is back). */}
-            {reinstall && (
-              <button
-                onClick={onReinstallComplete}
-                disabled={status !== "connected"}
-                className="mt-1 inline-flex h-9 items-center rounded-lg border border-border bg-muted/40 px-4 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {status === "connected"
-                  ? "Continue to app"
-                  : "Continue (waiting for agent)"}
-              </button>
-            )}
           </motion.div>
         )}
       </motion.div>
