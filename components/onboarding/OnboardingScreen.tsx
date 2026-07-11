@@ -220,14 +220,27 @@ export function OnboardingScreen({
               </p>
             </div>
 
-            {/* The installer runs in its own visible terminal and shows live
-                progress there. Here we simply wait for the agent to come
-                online once the install finishes. */}
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <div className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
-              {reinstall
-                ? "Follow the installer window, then wait for the agent to restart..."
-                : "Follow the installer window, then wait for the agent to connect..."}
+            {/* This is intentionally an indeterminate visual indicator. The
+                browser cannot read CLI progress, so it animates until the agent
+                reconnects and the onboarding screen closes automatically. */}
+            <div className="flex w-full flex-col gap-2 text-left">
+              <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
+                <span>{reinstall ? "Reinstalling agent" : "Installing agent"}</span>
+                <span className="animate-pulse">In progress</span>
+              </div>
+              <div
+                className="h-2 w-full overflow-hidden rounded-full bg-[var(--tt-outline)]"
+                role="progressbar"
+                aria-label={reinstall ? "Reinstalling agent" : "Installing agent"}
+                aria-valuetext="In progress"
+              >
+                <span className="tt-progress-indeterminate block h-full w-2/5 rounded-full bg-primary" />
+              </div>
+              <p className="text-center text-xs text-muted-foreground">
+                {reinstall
+                  ? "Keep the installer open. This page will continue when the agent restarts."
+                  : "Keep the installer open. This page will continue when the agent connects."}
+              </p>
             </div>
 
           </motion.div>
