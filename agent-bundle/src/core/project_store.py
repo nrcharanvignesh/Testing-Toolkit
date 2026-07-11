@@ -327,6 +327,8 @@ def _maybe_extract_context(
         maps_dir=p.context_maps_dir, kb_fingerprint=fingerprint,
         on_log=on_log, on_progress=on_sub_progress, force=force,
     ))
+    if previous is not None:
+        context.enabled = previous.enabled
     # A partial aggregate is useful and must not fail the KB lifecycle. Preserve
     # the previous complete summary only when this run mapped nothing at all;
     # successful per-document maps remain checkpointed for the next retry.

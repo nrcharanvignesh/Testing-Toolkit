@@ -323,7 +323,8 @@ export interface ProjectContextSummary {
     glossary: number;
   }>;
   summary: string;
-  status: "complete" | "partial" | "unavailable";
+  status: "complete" | "partial" | "preserved" | "unavailable";
+  enabled: boolean;
   mapped_documents: number;
   total_documents: number;
   failed_documents: string[];
@@ -1323,18 +1324,28 @@ export const agent = {
 
   // -- Project context summary (desktop KB dialog "Project Context") --
   async activeContextJob(project: string): Promise<{
-  job_id: string | null;
-  progress: { stage?: string; current?: number; total?: number } | null;
+    job_id: string | null;
+    progress: { stage?: string; current?: number; total?: number } | null;
   }> {
-  return agentFetch(
-  `/kb/context/active/${encodeURIComponent(project)}`
-  );
+    return agentFetch(
+      `/kb/context/active/${encodeURIComponent(project)}`
+    );
   },
 
   async projectContext(project: string): Promise<ProjectContextSummary> {
-  return agentFetch<ProjectContextSummary>(
-  `/kb/context/${encodeURIComponent(project)}`
-  );
+    return agentFetch<ProjectContextSummary>(
+      `/kb/context/${encodeURIComponent(project)}`
+    );
+  },
+
+  async setContextEnabled(project: string, enabled: boolean): Promise<ProjectContextSummary> {
+    return agentFetch<ProjectContextSummary>(
+      `/kb/context/${encodeURIComponent(project)}/setting`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ enabled }),
+      }
+    );
   },
 
   async regenerateContext(project: string): Promise<ProjectContextSummary> {

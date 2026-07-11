@@ -53,6 +53,7 @@ class ProjectContext:
     extracted_at: float = 0.0
     kb_fingerprint: str = ""
     status: str = "complete"
+    enabled: bool = True
     mapped_documents: int = 0
     total_documents: int = 0
     failed_documents: list[str] = field(default_factory=list)
@@ -61,7 +62,7 @@ class ProjectContext:
         return not any(getattr(self, category) for category in CATEGORIES)
 
     def to_prompt_section(self) -> str:
-        if self.is_empty():
+        if not self.enabled or self.is_empty():
             return ""
         titles = {
             "actors": "ACTORS/ROLES", "entities": "BUSINESS ENTITIES",
@@ -106,6 +107,7 @@ class ProjectContext:
             **kwargs, extracted_at=float(data.get("extracted_at", 0.0) or 0.0),
             kb_fingerprint=str(data.get("kb_fingerprint", "")),
             status=str(data.get("status", "complete")),
+            enabled=bool(data.get("enabled", True)),
             mapped_documents=int(data.get("mapped_documents", 0) or 0),
             total_documents=int(data.get("total_documents", 0) or 0),
             failed_documents=[str(item) for item in data.get("failed_documents", [])],
@@ -172,7 +174,11 @@ def merge_context_maps(maps: list[ProjectContext], fingerprint: str) -> ProjectC
                     existing.description = f"{existing.description} {item.description}".strip()
                 existing.sources = sorted(set(existing.sources + item.sources))
     values = {category: sorted(items.values(), key=lambda item: item.name.lower()) for category, items in merged.items()}
-    return ProjectContext(**values, extracted_at=time.time(), kb_fingerprint=fingerprint)
+    enabled = all(context.enabled for context in maps) if maps else True
+    return ProjectContext(
+        **values, extracted_at=time.time(), kb_fingerprint=fingerprint,
+        enabled=enabled,
+    )
 
 
 async def _extract_window(client: Any, model: str, source: str, text: str) -> ProjectContext:

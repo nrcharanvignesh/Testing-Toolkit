@@ -581,8 +581,9 @@ def _context_payload(project: str) -> dict:
     if ctx is None or ctx.is_empty():
         return {
             "has": False, "n_items": 0, "counts": {}, "summary": "",
-            "status": "unavailable", "mapped_documents": 0,
-            "total_documents": 0, "failed_documents": [],
+            "status": "unavailable", "enabled": True,
+            "mapped_documents": 0, "total_documents": 0,
+            "failed_documents": [],
         }
     counts = {
         "actors": len(ctx.actors),
@@ -603,6 +604,7 @@ def _context_payload(project: str) -> dict:
         "counts": counts,
         "summary": ctx.to_prompt_section(),
         "status": ctx.status,
+        "enabled": ctx.enabled,
         "mapped_documents": ctx.mapped_documents,
         "total_documents": ctx.total_documents,
         "failed_documents": ctx.failed_documents,
@@ -626,6 +628,25 @@ async def get_context(project: str) -> dict:
     """Return the auto-extracted project context summary (actors, entities,
     workflows, screens, ...). Web equivalent of the desktop dialog's
     "View" button + status label."""
+    return _context_payload(project)
+
+
+class ContextSettingRequest(BaseModel):
+    enabled: bool
+
+
+@router.put("/context/{project}/setting")
+async def set_context_setting(project: str, req: ContextSettingRequest) -> dict:
+    """Enable or disable injecting the stored summary into generation."""
+    import core.project_store as ps
+
+    context = await asyncio.to_thread(ps.read_context_summary, project)
+    if context is None or context.is_empty():
+        raise HTTPException(409, "Project context has not been generated yet.")
+    context.enabled = req.enabled
+    written = await asyncio.to_thread(ps.write_context_summary, project, context)
+    if not written:
+        raise HTTPException(500, "Could not persist the project context setting.")
     return _context_payload(project)
 
 

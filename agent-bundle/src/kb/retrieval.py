@@ -576,23 +576,38 @@ class HybridRetriever:
                 existing = scores.get(ch.chunk_id)
                 if existing is None or ch.score > existing[0]:
                     scores[ch.chunk_id] = (ch.score, ch)
-        ranked = sorted(scores.values(), key=lambda t: t[0], reverse=True)
-        merged = [ch for _s, ch in ranked[:candidate_k]]
-        # Single rerank pass on the merged candidates.
+        ranked = sorted(scores.values(), key=lambda item: item[0], reverse=True)
+        merged = [chunk for _score, chunk in ranked[:candidate_k]]
         reranker = self._ensure_reranker()
         if reranker is not None and merged:
-            cand = [(ch.chunk_id, ch.text) for ch in merged]
+            candidates = [(chunk.chunk_id, chunk.text) for chunk in merged]
             try:
                 reranked = reranker.rerank(
-                    " ".join(q[:200] for q in queries[:4]), cand, top_k
+                    " ".join(query[:200] for query in queries[:4]),
+                    candidates, len(candidates),
                 )
-                if reranked:
-                    id_to_ch = {ch.chunk_id: ch for ch in merged}
-                    return [id_to_ch[cid] for cid, _s in reranked
-                            if cid in id_to_ch]
+                rerank_scores = {
+                    chunk_id: max(0.0, min(1.0, float(score)))
+                    for chunk_id, score in reranked
+                }
+                for chunk in merged:
+                    chunk.reranker_score = rerank_scores.get(chunk.chunk_id, 0.0)
+                    chunk.score += self.config.reranker_weight * chunk.reranker_score
+                merged.sort(key=lambda chunk: (-chunk.score, chunk.chunk_id))
             except Exception:
                 pass
-        return merged[:top_k]
+        # ponytail: sub-query results are already deduplicated and source-capped;
+        # a shared selector is the upgrade path if cross-query overlap grows.
+        source_counts: dict[str, int] = {}
+        out: list[RetrievedChunk] = []
+        for chunk in merged:
+            if source_counts.get(chunk.doc, 0) >= self.config.per_source_cap:
+                continue
+            out.append(chunk)
+            source_counts[chunk.doc] = source_counts.get(chunk.doc, 0) + 1
+            if len(out) >= min(top_k, self.config.final_k):
+                break
+        return out
 
 
 def _decompose_query_heuristic(work_item_dump: str) -> list[str]:
@@ -621,7 +636,7 @@ def _decompose_query_heuristic(work_item_dump: str) -> list[str]:
                     current_block = []
                 continue
             # Detect numbered/bulleted items
-            if re.match(r"^(\d+[\.\)]\s|[-*•]\s|Given\b|When\b|Then\b)",
+            if re.match(r"^(\d+[\.\)]\s|[-*]\s|Given\b|When\b|Then\b)",
                         stripped):
                 if current_block:
                     ac_lines.append(" ".join(current_block))
