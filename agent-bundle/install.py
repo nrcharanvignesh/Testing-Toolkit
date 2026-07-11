@@ -779,6 +779,34 @@ def copy_tree(src: Path, dst: Path) -> None:
     shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
+def protect_release_credential(path: Path) -> None:
+    """Restrict the installed ciphertext before the agent can launch.
+
+    The file remains authenticated ciphertext; these ACLs are defense in depth.
+    Failure is non-fatal because the runtime can still authenticate the envelope,
+    but it is surfaced without printing any credential-derived data.
+    """
+    if not path.is_file():
+        warn("Authenticated AI credential envelope is missing; AI features will be unavailable.")
+        return
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    if os.name == "nt":
+        username = (os.environ.get("USERNAME") or "").strip()
+        if username:
+            result = _run(
+                ["icacls", str(path), "/inheritance:r", "/grant:r", f"{username}:(R,W)"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                warn("Could not restrict the credential envelope ACL; authenticated encryption remains active.")
+                return
+    ok("Credential envelope installed with owner-restricted access.")
+
+
 # --------------------------------------------------------------------------
 # Clean previous install (so a re-install never leaves a stale build behind)
 # --------------------------------------------------------------------------
@@ -1531,11 +1559,10 @@ def _install_cryptography_optional(launch_python: str, use_pythonpath: bool) -> 
 
     cryptography (+ cffi/pycparser deps) is pre-downloaded as wheels committed
     in agent-bundle/wheelhouse/, so this works with zero network access. It is
-    kept OUT of requirements.txt on purpose: it is only needed to Fernet-decrypt
-    the centrally managed bundled service key (core/app_config.py), and the
-    import is already guarded. A hard requirement would fail the ENTIRE offline
-    install whenever a shipped bundle's wheelhouse
-    predates the wheel (the 2.10.1 regression). Non-fatal either way.
+    kept OUT of requirements.txt to prevent source/binary drift from breaking
+    the core install. It supplies AES-256-GCM and Scrypt for the authenticated
+    release credential envelope; without it AI features fail closed while the
+    rest of the agent remains available (the 2.10.1 regression guard).
     Skipped when cryptography>=42.0 is already present. Installs into the SAME
     place the agent imports from: the venv for the venv strategy, or LIB_DIR
     (via --target) for the portable strategy (use_pythonpath=True).
@@ -2219,6 +2246,7 @@ def main() -> int:
     progress("copying", "Installing agent files", 91)
     info("Installing agent source...")
     copy_tree(SRC_DIR, AGENT_DIR / "src")
+    protect_release_credential(AGENT_DIR / "src" / ".env.enc")
 
     # --- Auto-update config ----------------------------------------------
     write_update_config()

@@ -389,10 +389,13 @@ def build_llm_client(cfg: "RuntimeConfig | None" = None):
 
 def runtime_summary() -> dict[str, Any]:
     """Non-secret source/runtime snapshot for diagnostics."""
+    from core.app_config import credential_protection_state
+
     return {
         "organization": get_setting(KEY_ORG),
         "project_prefix": get_setting(KEY_PREFIX),
         "tls_mode": get_setting(KEY_TLS_MODE),
         "ai_service_configured": has_api_key(),
+        "ai_credential_protection": credential_protection_state(),
         "has_pat": bool(load_pat_value()),
     }

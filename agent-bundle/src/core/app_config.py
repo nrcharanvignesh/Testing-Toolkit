@@ -25,74 +25,12 @@ from pathlib import Path
 from typing import Final
 
 
-# --------------------- .env loader (no deps) ---------------------
-# The frozen agent bundle ships its LLM service-account credentials in a
-# bundled .env (dev) or DPAPI-encrypted .env.enc (frozen Windows build), the
-# same way the desktop app does. Process environment variables still take
-# precedence so cloud/dev deployments can override without a file.
-def _dpapi_decrypt_bytes(data: bytes) -> bytes | None:
-    """Decrypt bytes with Windows DPAPI (CurrentUser scope). Returns None on
-    non-Windows or on failure."""
-    if sys.platform != "win32":
-        return None
-    try:
-        import ctypes
-        import ctypes.wintypes
-
-        class _Blob(ctypes.Structure):
-            _fields_ = [
-                ("cbData", ctypes.wintypes.DWORD),
-                ("pbData", ctypes.POINTER(ctypes.c_char)),
-            ]
-
-        inp = _Blob(len(data), ctypes.create_string_buffer(data, len(data)))
-        out = _Blob()
-        if ctypes.windll.crypt32.CryptUnprotectData(
-            ctypes.byref(inp), None, None, None, None, 0, ctypes.byref(out)
-        ):
-            result = ctypes.string_at(out.pbData, out.cbData)
-            ctypes.windll.kernel32.LocalFree(out.pbData)
-            return result
-    except Exception:
-        return None
-    return None
-
-
-def _portable_fernet_key() -> bytes:
-    """Derive the Fernet key used to seal/open the bundled .env.enc.
-
-    Unlike DPAPI (which is bound to the Windows user+machine that encrypted the
-    blob), this is portable: the same key is derived on every end-user machine,
-    so a single .env.enc encrypted once at build time opens everywhere.
-
-    ponytail: obfuscation only -- the passphrase below ships inside the agent,
-    so a determined operator on the machine can re-derive the key and read the
-    credentials. This blocks casual/accidental exposure, not a motivated
-    attacker. For true secrecy route calls through a server-side proxy the
-    end user never holds (see app/api/llm), or rotate the service key.
-    """
-    import base64
-    import hashlib
-
-    # Non-secret (by cryptographic standards) passphrase. Its only job is to
-    # keep the bundled service-account credentials out of plain sight.
-    secret = b"TestingToolkit/GenAI/bundled-env/v1"
-    return base64.urlsafe_b64encode(hashlib.sha256(secret).digest())
-
-
-def _portable_decrypt_bytes(data: bytes) -> bytes | None:
-    """Open a Fernet-sealed .env.enc. Portable across OSes and machines.
-    Returns None on any failure (wrong format, missing lib, tampered token)."""
-    try:
-        from cryptography.fernet import Fernet
-
-        return Fernet(_portable_fernet_key()).decrypt(data)
-    except Exception:
-        return None
-
-
+# ---------------- authenticated release credential loader ----------------
+# Packaged agents receive only a versioned AES-256-GCM .env.enc envelope.
+# Process environment variables remain an explicit owner/developer override.
+# Plaintext .env files are deliberately never loaded by the web agent.
 def _parse_env_text(text: str) -> dict[str, str]:
-    """Parse KEY=VALUE lines from env text, skipping comments and blanks."""
+    """Legacy parser retained for deterministic compatibility tests only."""
     result: dict[str, str] = {}
     for raw in text.splitlines():
         line = raw.strip()
@@ -105,33 +43,31 @@ def _parse_env_text(text: str) -> dict[str, str]:
     return result
 
 
+_CREDENTIAL_PROTECTION_STATE = "not-loaded"
+
+
 def _load_env() -> dict[str, str]:
-    """Load LLM config from .env (dev) or .env.enc (frozen/encrypted).
-    Frozen builds use a DPAPI-encrypted .env.enc for secret protection; dev
-    mode reads a plaintext .env. Returns an empty dict on any failure."""
+    """Authenticate the release envelope and prefer OS-bound rewrapped data."""
+    global _CREDENTIAL_PROTECTION_STATE
     mei: str = getattr(sys, "_MEIPASS", "")
     base = Path(mei) if mei else Path(__file__).resolve().parent.parent
+    try:
+        from core.credential_store import load_release_credentials
 
-    enc_path = base / ".env.enc"
-    if enc_path.exists():
-        try:
-            raw = enc_path.read_bytes()
-            # Portable Fernet (the format the web agent ships) first, then fall
-            # back to a DPAPI blob (desktop frozen build) for compatibility.
-            decrypted = _portable_decrypt_bytes(raw) or _dpapi_decrypt_bytes(raw)
-            if decrypted:
-                return _parse_env_text(decrypted.decode("utf-8"))
-        except Exception:
-            pass
+        values, state = load_release_credentials(base / ".env.enc")
+        _CREDENTIAL_PROTECTION_STATE = state
+        return values
+    except Exception:
+        # Never include an exception here: crypto errors can contain input
+        # fragments in third-party implementations. Diagnostics expose only a
+        # non-secret state label.
+        _CREDENTIAL_PROTECTION_STATE = "unavailable"
+        return {}
 
-    env_path = base / ".env"
-    if env_path.exists():
-        try:
-            return _parse_env_text(env_path.read_text(encoding="utf-8"))
-        except OSError:
-            pass
 
-    return {}
+def credential_protection_state() -> str:
+    """Return a non-secret diagnostic label for credential-at-rest strength."""
+    return _CREDENTIAL_PROTECTION_STATE
 
 
 _ENV: Final[dict[str, str]] = _load_env()

@@ -49,8 +49,11 @@ python install.py
 1. Detects platform (Windows/macOS/Linux, amd64/arm64).
 2. Creates a clean Python virtual environment under `~/TestingToolkitWeb/venv/`.
 3. Installs Python packages from `wheelhouse/` (offline on Windows x64) or PyPI.
-4. Installs Playwright from PyPI and downloads Chromium. Non-fatal; skip with `TT_OFFLINE_ONLY=1`.
-5. **Installs MCP servers — fully offline:**
+4. Installs `cryptography` from bundled wheels so the authenticated GenAI
+   credential envelope can be opened. Failure does not block non-AI features;
+   AI fails closed.
+5. Installs Playwright from PyPI and downloads Chromium. Non-fatal; skip with `TT_OFFLINE_ONLY=1`.
+6. **Installs MCP servers — fully offline:**
    a. Checks if `node` is already in PATH.
    b. If not found: downloads Node.js from the `parts` branch (reassembles split parts,
       verifies sha256, extracts to `~/TestingToolkitWeb/mcp_servers/node/`).
@@ -58,9 +61,12 @@ python install.py
    d. Runs `npm ci --offline --cache <extracted-cache>` using the bundled lockfile.
       Falls back to online `npm install` if offline install fails for any reason.
    e. Verifies entry points for all three MCP servers.
-6. Copies agent `src/` into `~/TestingToolkitWeb/agent/`.
-7. Registers a login auto-start entry (Task Scheduler / launchd / systemd).
-8. Starts the agent on `http://127.0.0.1:7842` and waits for healthy status.
+7. Copies agent `src/` into `~/TestingToolkitWeb/agent/`, restricts `.env.enc`
+   to the current user, and starts the credential migration.
+8. On first load, authenticates/decrypts the release envelope and rewraps it into
+   Windows DPAPI, macOS Keychain, or Linux Secret Service when available.
+9. Registers a login auto-start entry (Task Scheduler / launchd / systemd).
+10. Starts the agent on `http://127.0.0.1:7842` and waits for healthy status.
 
 ## MCP servers
 
@@ -83,6 +89,29 @@ Configure in the app under **Settings**:
 | ADO MCP | Organization URL + PAT (same as core ADO integration) |
 | JIRA MCP | JIRA URL + Email + API Token (same as core JIRA integration) |
 | Playwright MCP | None — starts headless automatically |
+
+### Centrally managed GenAI credential
+
+The user does not enter or view the GenAI URL/API key. Release owners keep
+`LLM_UPSTREAM_BASE_URL` and `LLM_UPSTREAM_API_KEY` in Vercel project variables and
+seal them before publishing:
+
+```bash
+python tools/seal_env.py --from-vercel-env
+python tools/seal_env.py --verify
+```
+
+The tool reads only named process variables and prints metadata only. It writes
+`src/.env.enc` atomically with owner-only permissions. The v2 format uses
+AES-256-GCM, a randomized salt/nonce, Scrypt (`N=32768, r=8, p=1`), strict field
+validation, and authenticated metadata. Never pass credentials on a command line,
+put them in a plaintext `.env`, print them, or attach `.env.enc` to a ticket.
+
+At runtime, `ai_credential_protection` in diagnostics reports only a non-secret
+state such as `os-bound`, `release-envelope`, or `invalid-envelope`. A changed
+release envelope is authenticated before it can replace an existing OS-bound
+credential. Rotate by updating the Vercel variables, resealing, publishing a new
+agent version, and verifying the state after upgrade.
 
 ### Manual install (if automatic install failed)
 
@@ -117,7 +146,6 @@ The ADO, JIRA, and Playwright rows show `Connected` when the servers start.
 | `TT_INSTALL_DIR` | `~/TestingToolkitWeb` | Override install root |
 | `TT_LOG_DIR` | `$TT_INSTALL_DIR/logs` | Override log directory |
 | `TT_OFFLINE_ONLY` | unset | Set to `1` to skip Playwright browser download |
-| `TT_ENFORCE_DENSE` | `1` | Set to `0` to allow install without bundled models |
 | `TT_UPDATE_TOKEN` | unset | GitHub PAT for auto-update from the `parts` branch |
 
 ## Node.js binary distribution

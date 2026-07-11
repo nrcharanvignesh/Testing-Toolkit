@@ -224,33 +224,52 @@ and executes them via a self-healing runner:
 ## 7. Data and secret flow
 
 ```
-Browser          Agent                ADO / LiteLLM proxy
-   |                |                        |
-   |  GET /health   |                        |
-   |<-----------    |                        |
-   |                |                        |
-   |  POST /settings {pat, api_key, ...}     |
-   |--------------> |                        |
-   |                | store in OS keyring    |
-   |                |                        |
-   |  GET /sources/projects                  |
-   |--------------> |                        |
-   |                |  ADO list projects (PAT auth)
-   |                |----------------------->|
-   |                |<-----------------------|
-   |<-------------- |                        |
-   |                |                        |
-   |  POST /generate/start                   |
-   |--------------> |                        |
-   |                | retrieve KB + call LLM |
-   |                |----------------------->|
-   |                |<-----------------------|
-   |  GET /jobs/{id} (poll)                  |
-   |<-------------- |                        |
+Release owner / Vercel                 Installed local agent
+LLM_UPSTREAM_* variables                         |
+   | seal_env.py (no value output)               |
+   v                                              |
+AES-256-GCM .env.enc -- installer/update ------->| authenticate + decrypt
+                                                  | rewrap per user
+                                                  v
+                                      DPAPI / Keychain / Secret Service
+                                                  |
+Browser -- loopback request -------------------->| approved API operation
+                                                  | Authorization header
+                                                  v
+                                           GenAI gateway
 ```
 
-`GET /settings` returns only `has_api_key`, `has_pat` booleans — never the
-actual secrets.
+The browser never receives the GenAI base URL or API key. The release envelope
+uses randomized AES-256-GCM with Scrypt-derived material and authenticated
+metadata. It is installed with owner-restricted permissions; first use migrates
+it to OS-bound storage where available. Plaintext files and plaintext fallback
+are prohibited. If secure OS storage is unavailable, runtime continues from the
+authenticated ciphertext envelope and never writes a plaintext cache.
+
+Rotation is update-driven: the new release envelope has a different ciphertext
+fingerprint, is authenticated, and only then replaces the OS-bound value. If the
+new envelope is corrupt, the last valid OS-bound value is retained. Diagnostics
+return only `ai_service_configured` and `ai_credential_protection` state labels.
+
+ADO/JIRA credentials still enter through Settings and are stored through their
+OS keyring paths. `GET /settings` and runtime diagnostics return presence/status
+metadata only, never secret values. Requirement context is sent from the agent
+to the approved GenAI gateway for AI operations; it does not transit Vercel or
+the browser.
+
+All central file and streamed Activity Logs pass through secret redaction. This
+layer removes exact configured gateway values and credential-like key/token
+strings; callers must still avoid logging headers, request objects, encrypted
+payloads, or user secrets.
+
+### Security boundary
+
+The autonomous client must ultimately present a usable credential to the remote
+gateway. These controls materially reduce accidental disclosure, plaintext-at-
+rest exposure, naive extraction, and undetected tampering, but cannot guarantee
+non-extractability against a determined administrator who controls the process,
+memory, debugger, or operating system. A server-side broker or hardware-backed
+attestation is required to move that trust boundary off the client.
 
 ---
 
@@ -258,7 +277,7 @@ actual secrets.
 
 ```
 ~/TestingToolkit/
-  settings.json             base_url, model, org, prefix, provider_format
+  settings.json             non-secret source settings and UI preferences
   projects/<name>/
     system_prompt.txt       per-project RLM prompt
     kb/                     dropped requirement documents

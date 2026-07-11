@@ -36,6 +36,7 @@ from __future__ import annotations
 import faulthandler
 import logging
 import os
+import re
 import sys
 import threading
 from logging.handlers import RotatingFileHandler
@@ -53,6 +54,30 @@ _initialized: bool = False
 _qt_handler_installed: bool = False
 _fault_file: Any = None        # keep the faulthandler stream alive
 _ROOT_NAME = "testing_toolkit"
+_SECRET_TOKEN_RE = re.compile(r"(?i)\b(?:sk|key|token|bearer)[-_][A-Za-z0-9._~+/=-]{12,}\b")
+
+
+def redact_secrets(text: object) -> str:
+    """Remove configured credentials and credential-like tokens from log text."""
+    value = str(text)
+    secrets: list[str] = []
+    for name in ("LLM_UPSTREAM_API_KEY", "API_KEY", "LLM_UPSTREAM_BASE_URL", "BASE_URL"):
+        candidate = (os.environ.get(name) or "").strip()
+        if candidate:
+            secrets.append(candidate)
+    try:
+        from core.app_config import LLM_API_KEY, LLM_BASE_URL
+        secrets.extend((LLM_API_KEY, LLM_BASE_URL))
+    except Exception:
+        pass
+    for secret in sorted({s for s in secrets if len(s) >= 8}, key=len, reverse=True):
+        value = value.replace(secret, "[REDACTED]")
+    return _SECRET_TOKEN_RE.sub("[REDACTED]", value)
+
+
+class _RedactingFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        return redact_secrets(super().format(record))
 
 
 def _candidate_dirs() -> list[Path]:
@@ -115,7 +140,7 @@ def init_logging() -> Path | None:
             str(_log_path), maxBytes=_MAX_BYTES,
             backupCount=_BACKUP_COUNT, encoding="utf-8",
         )
-        fmt = logging.Formatter(
+        fmt = _RedactingFormatter(
             "%(asctime)s %(levelname)-7s [%(name)s] %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
@@ -171,7 +196,7 @@ class _CallbackLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            msg = record.getMessage()
+            msg = redact_secrets(record.getMessage())
             # Preserve any existing [TAG] prefix so the UI colors it correctly;
             # otherwise annotate WARNING/ERROR so they stand out, and leave
             # INFO/DEBUG unprefixed (the UI treats unprefixed as INFO).
@@ -241,7 +266,7 @@ def log_line(text: str, source: str = "ui") -> None:
             if stripped.startswith(tag):
                 level = lvl
                 break
-        logger.log(level, text)
+        logger.log(level, redact_secrets(text))
     except Exception:
         pass
 

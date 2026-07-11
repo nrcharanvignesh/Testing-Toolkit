@@ -4,13 +4,13 @@
 
 A browser-based QA platform that turns **Azure DevOps** work items into
 LLM-generated test cases, requirement PDF packets, E2E automation scripts, and
-bulk defect uploads — without any secret or requirement data ever leaving the
-user's machine.
+bulk defect uploads. Secrets never enter the browser; requirement context leaves
+the machine only in authenticated requests from the local agent to the approved
+GenAI gateway.
 
 The web app is deployed on **Vercel** and talks only to a small **local compute
-agent** (`http://127.0.0.1:7842`) running on the user's machine. All credentials,
-ADO traffic, and LLM calls happen inside that agent. The browser never touches a
-secret.
+agent** (`http://127.0.0.1:7842`) running on the user's machine. ADO and GenAI
+credentials remain agent-side and are never returned by its API.
 
 ---
 
@@ -107,6 +107,15 @@ triggers a production deployment automatically.
 |---|---|---|
 | `BUNDLE_READ_TOKEN` | for installer downloads | Fine-grained `contents:read` GitHub token embedded in generated installers at download time |
 | `GITHUB_TOKEN` | fallback | Used when `BUNDLE_READ_TOKEN` is unset |
+| `LLM_UPSTREAM_BASE_URL` | agent release | Centrally managed HTTPS GenAI gateway URL; never exposed to the browser |
+| `LLM_UPSTREAM_API_KEY` | agent release | Centrally managed GenAI bearer credential; never exposed to the browser |
+| `LLM_PROVIDER_FORMAT` | optional | `anthropic` (default) or `openai` wire format |
+
+Agent release credentials are converted by `agent-bundle/tools/seal_env.py` into
+an authenticated, randomized AES-256-GCM envelope. The script accepts only named
+process variables, never a plaintext file, and never prints values. The resulting
+`.env.enc` is ciphertext, but it is still sensitive release material and must not
+be attached to tickets, logs, or public artifacts.
 
 ---
 
@@ -192,13 +201,31 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full distribution flow.
 ## Security
 
 - Agent binds to **loopback only** (`127.0.0.1`); trust comes from same-machine
-  reachability, not a bearer token
-- Secrets (ADO PAT, LLM API key) stored in **OS secret store**, never returned
-  by the API (`GET /settings` returns only `has_*` booleans)
-- All ADO and LLM calls originate **from the agent** — credentials and requirement
-  content never reach the browser or Vercel
-- E2E scripts use environment-variable injection for sensitive fields — plaintext
-  passwords are never embedded in generated scripts
+  reachability, not a bearer token.
+- The centrally managed GenAI credential is shipped only as a strict,
+  authenticated AES-256-GCM envelope derived with Scrypt. Plaintext `.env`
+  fallback is intentionally unsupported.
+- On first successful load, the release credential is rewrapped into the strongest
+  available per-user OS facility: Windows DPAPI, macOS Keychain, or Linux Secret
+  Service. If no secure backend exists, the encrypted release envelope remains
+  the fallback; plaintext is never written.
+- Envelope corruption or tampering fails closed. A corrupt release update cannot
+  overwrite a previously valid OS-bound credential.
+- ADO/JIRA/user E2E credentials use the existing OS secret-store paths. API
+  responses expose only presence/status booleans, never values.
+- Central log redaction removes configured gateway values and credential-like
+  bearer/key/token strings from rotating files and streamed Activity Logs.
+- All ADO and GenAI calls originate **from the agent**. Credentials never reach
+  the browser or Vercel; requirement context is sent to the approved GenAI
+  gateway when an AI operation requires it.
+- E2E scripts use environment-variable injection for sensitive fields; plaintext
+  passwords are never embedded in generated scripts.
+
+**Threat-model boundary:** this prevents accidental disclosure, plaintext-at-rest
+leaks, naive repository extraction, and undetected ciphertext modification. It
+does not make a credential mathematically unrecoverable from an autonomous client
+controlled by a determined local administrator or debugger. True non-extractability
+requires a server-side token broker or hardware-backed remote attestation.
 
 ---
 
