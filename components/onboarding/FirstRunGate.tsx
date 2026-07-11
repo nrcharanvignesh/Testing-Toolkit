@@ -140,10 +140,7 @@ function SetupWizard({
           transition={{ duration: 0.2 }}
           className="tt-dialog my-auto w-full max-w-xl p-6"
         >
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Setup · Step 2 of 4
-        </span>
-        <h2 className="mt-1 text-lg font-bold tracking-tight text-[var(--tt-text-bright)]">
+        <h2 className="text-lg font-bold tracking-tight text-[var(--tt-text-bright)]">
           Set up your connection
         </h2>
         <p className="mt-1 text-sm leading-relaxed text-muted-foreground">

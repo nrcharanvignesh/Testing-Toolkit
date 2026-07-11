@@ -77,9 +77,6 @@ export function OnboardingScreen({
     setDownloaded(true);
   }
 
-  const stepLabel = reinstall
-    ? "Reinstall · Step 1 of 4"
-    : "Download & install · Step 1 of 4";
   const downloadLabel = reinstall
     ? `Re-download for ${installer.label}`
     : `Download for ${installer.label}`;
@@ -115,9 +112,6 @@ export function OnboardingScreen({
           <p className="text-muted-foreground">
             AI-powered test case generation for Azure DevOps
           </p>
-          <span className="mt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground/70">
-            {stepLabel}
-          </span>
         </div>
 
         {/* Reinstall warning note */}
