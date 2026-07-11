@@ -7,7 +7,7 @@ import {
   agent,
 } from "../agent-client";
 import type { WorkItemRow } from "../agent-client";
-import { userStoryIds } from "../board-utils";
+import { coveredWorkItemIds, userStoryIds } from "../board-utils";
 import { humanSize } from "../../components/ui/download-links";
 import { ErrorBoundary } from "../../components/ui/error-boundary";
 import { buildWindowsInstaller } from "../installer-template";
@@ -40,6 +40,28 @@ describe("Windows installer console contract", () => {
       "Join-Path (Join-Path (Join-Path $stage 'src') 'agent') 'version.py'"
     );
     expect(worker).not.toContain("srcagent");
+  });
+});
+
+describe("board coverage traceability", () => {
+  const rows = [
+    { wi_id: 1536939 },
+    { wi_id: 1536942 },
+  ] as WorkItemRow[];
+
+  it("does not mark a work item covered when its test case has no steps", () => {
+    const covered = coveredWorkItemIds(rows, [
+      { wi_id: "1536939", step_count: 0 },
+    ] as never[]);
+    expect([...covered]).toEqual([]);
+  });
+
+  it("ignores stale test cases for work items absent from the current board", () => {
+    const covered = coveredWorkItemIds(rows, [
+      { wi_id: "9999999", step_count: 3 },
+      { wi_id: "1536942", step_count: 2 },
+    ] as never[]);
+    expect([...covered]).toEqual(["1536942"]);
   });
 });
 

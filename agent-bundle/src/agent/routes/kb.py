@@ -175,6 +175,7 @@ def _run_kb_index(job: "Job", project: str, force: bool = False) -> None:
             llm_model=ctx_model,
             on_sub_progress=_on_sub_progress,
             force=force,
+            build_context=False,
         )
         docs = int(getattr(result, "n_docs", 0) or 0)
         chunks = len(getattr(result, "chunks", []) or [])
@@ -187,10 +188,20 @@ def _run_kb_index(job: "Job", project: str, force: bool = False) -> None:
             has_dense = bool(hybrid_has_dense(ps.ensure_project(project).hybrid_dir))
         except Exception:
             has_dense = False
+        context_job_id = None
+        if chunks > 0 and ctx_client is not None:
+            context_job_id = _start_context_job(
+                project, force=force, client=ctx_client, model=ctx_model,
+            )
+            job.log(
+                f"[INFO] Project context mapping started concurrently as job "
+                f"{context_job_id}."
+            )
         job.finish({
             "n_documents": docs,
             "n_chunks": chunks,
             "has_dense": has_dense,
+            "context_job_id": context_job_id,
         })
         if chunks > 0:
             job.log(
@@ -204,6 +215,74 @@ def _run_kb_index(job: "Job", project: str, force: bool = False) -> None:
         job.log(f"[ERROR] KB indexing did not finish: {job.error}")
     finally:
         _log_bridge.__exit__()
+
+
+def _run_context_job(
+    job: "Job", project: str, force: bool = False,
+    client: Any | None = None, model: str = "",
+) -> None:
+    """Map project context independently so retrieval is never blocked."""
+    import core.project_store as ps
+
+    def _log(message: str) -> None:
+        if message:
+            job.log(message)
+
+    def _progress(phase: str, current: int, total: int) -> None:
+        job.set_progress(phase, int(current), int(total))
+        if total > 0:
+            job.log(
+                f"[INFO] Project context {phase}: {current}/{total} "
+                f"({int(100 * current / total)}%)"
+            )
+
+    try:
+        if client is None:
+            from core.settings_store import build_anthropic_client, model_pair
+            client = build_anthropic_client()
+            _, model = model_pair()
+        index = ps.get_index(project)
+        if not getattr(index, "chunks", None):
+            raise RuntimeError("KB index has no chunks")
+        job.log(f"[INFO] Project context mapping started for '{project}'.")
+        ps.extract_project_context(
+            project, index, client, model,
+            on_log=_log, on_progress=_progress, force=force,
+        )
+        context = ps.read_context_summary(project)
+        if context is None or context.status != "complete":
+            status = getattr(context, "status", "unavailable")
+            raise RuntimeError(f"project context ended with status '{status}'")
+        job.finish({
+            "mapped_documents": context.mapped_documents,
+            "total_documents": context.total_documents,
+            "status": context.status,
+        })
+        job.log(
+            f"[SUCCESS] Project context ready: {context.mapped_documents}/"
+            f"{context.total_documents} document(s)."
+        )
+    except Exception as exc:  # noqa: BLE001
+        job.fail(f"{type(exc).__name__}: {exc}")
+        job.log(f"[ERROR] Project context did not finish: {job.error}")
+
+
+def _start_context_job(
+    project: str, force: bool = False,
+    client: Any | None = None, model: str = "",
+) -> str:
+    """Return a deduplicated context job id and run it in the background."""
+    from agent.jobs import JOBS
+
+    existing = JOBS.find_active("kb_context", project)
+    if existing is not None and not force:
+        return existing.id
+    context_job = JOBS.create("kb_context", project=project)
+    context_job.log("[INFO] Starting project context mapping...")
+    asyncio.create_task(asyncio.to_thread(
+        _run_context_job, context_job, project, force, client, model,
+    ))
+    return context_job.id
 
 
 @router.post("/index")

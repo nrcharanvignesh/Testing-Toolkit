@@ -6,6 +6,19 @@ import { sortWiIds } from "./agent-client";
  * Mirrors the desktop main_window._on_generate auto-select: when SIT/UAT is
  * triggered with no ticked items, every User Story is selected automatically.
  */
+export function coveredWorkItemIds(
+  rows: WorkItemRow[],
+  testCases: Array<{ wi_id: string; step_count: number }>
+): Set<string> {
+  const currentIds = new Set(rows.map((row) => String(row.wi_id)));
+  const covered = new Set<string>();
+  for (const testCase of testCases) {
+    const wiId = String(testCase.wi_id || "");
+    if (wiId && currentIds.has(wiId) && testCase.step_count > 0) covered.add(wiId);
+  }
+  return covered;
+}
+
 export function userStoryIds(rows: WorkItemRow[]): WiId[] {
   return sortWiIds(
     rows

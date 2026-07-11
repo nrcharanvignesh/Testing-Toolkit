@@ -210,6 +210,7 @@ def index_project_resumable(
     llm_client: "Any | None" = None,
     llm_model: str = "",
     force: bool = False,
+    build_context: bool = True,
 ) -> KbIndex:
     """Build/refresh this project's KB index incrementally and resumably
     (see kb_indexer), then build the hybrid retrieval index (BM25 always;
@@ -253,7 +254,7 @@ def index_project_resumable(
     # available and the KB changed. Injected into generation via
     # rlm.generate_test_cases_rlm(project_full=...). Best-effort: never blocks
     # indexing.
-    if llm_client and getattr(index, "chunks", None):
+    if build_context and llm_client and getattr(index, "chunks", None):
         try:
             _maybe_extract_context(
                 p, index, llm_client, llm_model, on_log,
@@ -280,6 +281,18 @@ def index_project_resumable(
         except OSError:
             pass
     return index
+
+
+def extract_project_context(
+    full_name: str, index: "Any", llm_client: "Any", llm_model: str,
+    on_log: "Any | None" = None, on_progress: "Any | None" = None,
+    force: bool = False,
+) -> None:
+    """Build project context for an already-usable index."""
+    _maybe_extract_context(
+        ensure_project(full_name), index, llm_client, llm_model,
+        on_log=on_log, on_sub_progress=on_progress, force=force,
+    )
 
 
 def _maybe_extract_context(

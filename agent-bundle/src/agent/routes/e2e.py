@@ -103,6 +103,7 @@ def list_test_cases(project: str) -> dict[str, Any]:
             "category": str(tc.get("category", "")),
         }
         for i, tc in enumerate(tcs)
+        if str(tc.get("id", "")).strip() and len(tc.get("steps") or []) > 0
     ]
     return {"test_cases": out}
 

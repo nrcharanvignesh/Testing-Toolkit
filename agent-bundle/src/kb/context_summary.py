@@ -180,15 +180,32 @@ async def _extract_window(client: Any, model: str, source: str, text: str) -> Pr
         f"Source document: {source}\nReturn exactly these keys: {', '.join(CATEGORIES)}.\n"
         f"<document>\n{text}\n</document>"
     )
-    result = await client.complete_async(
-        model=model, system=_SYSTEM, user=prompt,
-        max_tokens=_MAX_TOKENS, temperature=0.0,
-    )
-    context = ProjectContext.from_dict(_parse_llm_response(str(getattr(result, "text", "") or "")))
-    for category in CATEGORIES:
-        for item in getattr(context, category):
-            item.sources = [source]
-    return context
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        retry_note = ""
+        if attempt > 1:
+            retry_note = (
+                "\nYour previous response was invalid. Return one JSON object only, "
+                "with no prose or markdown fences."
+            )
+        try:
+            result = await client.complete_async(
+                model=model, system=_SYSTEM, user=prompt + retry_note,
+                max_tokens=_MAX_TOKENS, temperature=0.0,
+            )
+            raw = str(getattr(result, "text", "") or "")
+            if not raw.strip():
+                raise ValueError("empty context response")
+            context = ProjectContext.from_dict(_parse_llm_response(raw))
+            for category in CATEGORIES:
+                for item in getattr(context, category):
+                    item.sources = [source]
+            return context
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            last_error = exc
+            if attempt < 3:
+                await asyncio.sleep(0.5 * attempt)
+    raise RuntimeError(f"invalid context JSON after 3 attempts: {last_error}")
 
 
 async def build_context_incremental_async(
@@ -210,6 +227,17 @@ async def build_context_incremental_async(
     semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
     completed: dict[str, ProjectContext] = {}
     failures: list[str] = []
+    progress_done = 0
+    progress_lock = asyncio.Lock()
+
+    async def report_progress(source: str) -> None:
+        nonlocal progress_done
+        async with progress_lock:
+            progress_done += 1
+            current = progress_done
+        log(f"[INFO] Context mapped {current}/{len(wanted)}: {source}")
+        if on_progress:
+            on_progress("context-map", current, len(wanted))
 
     async def process(signature: str, source: str, text: str, position: int) -> None:
         path = maps_dir / f"{signature}.json"
@@ -218,10 +246,9 @@ async def build_context_incremental_async(
             if cached is not None:
                 completed[signature] = cached
                 log(f"[DEBUG] Context map cache hit: {source}")
-                if on_progress:
-                    on_progress("context-map", position, len(wanted))
+                await report_progress(source)
                 return
-        log(f"[INFO] Context map {position}/{len(wanted)}: {source}")
+        log(f"[INFO] Context map queued {position}/{len(wanted)}: {source}")
         try:
             async with semaphore:
                 window_maps = [await _extract_window(client, model, source, window) for window in _windows(text)]
@@ -233,8 +260,7 @@ async def build_context_incremental_async(
         except Exception as exc:  # noqa: BLE001
             failures.append(source)
             log(f"[WARN] Context map failed for {source}: {type(exc).__name__}: {exc}")
-        if on_progress:
-            on_progress("context-map", position, len(wanted))
+        await report_progress(source)
 
     await asyncio.gather(*(
         process(signature, source, text, position)

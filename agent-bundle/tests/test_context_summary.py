@@ -120,6 +120,43 @@ async def test_incremental_context_reports_partial_failure_and_resumes(tmp_path)
     assert client.calls == ["bad.md"]
 
 
+@pytest.mark.asyncio
+async def test_invalid_context_json_retries_then_succeeds(tmp_path):
+    class FlakyClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def complete_async(self, **_kwargs):
+            self.calls += 1
+            if self.calls < 3:
+                return SimpleNamespace(text="not json")
+            return SimpleNamespace(text=_response("retry.md"))
+
+    client = FlakyClient()
+    result = await build_context_incremental_async(
+        _index({"retry.md": "Retry requirements"}),
+        client, "model", tmp_path / "maps", "fp-retry",
+    )
+    assert client.calls == 3
+    assert result.status == "complete"
+    assert result.mapped_documents == 1
+
+
+@pytest.mark.asyncio
+async def test_context_progress_is_monotonic_completion_count(tmp_path):
+    progress: list[tuple[str, int, int]] = []
+    result = await build_context_incremental_async(
+        _index({"a.md": "A requirements", "b.md": "B requirements"}),
+        _Client(), "model", tmp_path / "maps", "fp-progress",
+        on_progress=lambda phase, current, total: progress.append(
+            (phase, current, total)
+        ),
+    )
+    mapped = [current for phase, current, _total in progress if phase == "context-map"]
+    assert mapped == [1, 2]
+    assert result.status == "complete"
+
+
 def test_merge_preserves_provenance_and_legacy_summary_loads(tmp_path):
     merged = merge_context_maps([
         ProjectContext(actors=[ContextItem("Admin", "Creates users", ["a.md"])]),

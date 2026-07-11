@@ -21,6 +21,7 @@ import {
   NO_ITER,
   UNASSIGNED,
   groupRowsByColumn,
+  coveredWorkItemIds,
   stateColor,
   typeColor,
   uniqueSorted,
@@ -87,12 +88,11 @@ export function BoardGrid() {
     { refreshInterval: 60_000, revalidateOnFocus: false, shouldRetryOnError: false }
   );
 
-  const coveredSet = useMemo(() => {
-    const s = new Set<string>();
-    for (const tc of testCases ?? []) if (tc.wi_id) s.add(String(tc.wi_id));
-    return s;
-  }, [testCases]);
-  const hasCoverageData = (testCases?.length ?? 0) > 0;
+  const coveredSet = useMemo(
+    () => coveredWorkItemIds(rows, testCases ?? []),
+    [rows, testCases]
+  );
+  const hasCoverageData = testCases !== undefined;
 
   const runStatus = useMemo(() => {
     const m = new Map<string, "pass" | "fail">();
