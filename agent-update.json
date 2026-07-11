@@ -1,12 +1,12 @@
 {
-  "version": "2.16.0",
+  "version": "2.16.1",
   "ref": "main",
-  "generatedAt": "2026-07-11T20:32:45.097Z",
+  "generatedAt": "2026-07-11T21:12:08.194Z",
   "files": [
     {
       "path": ".env.enc",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/.env.enc?ref=main",
-      "hash": "ee1db7c55c1b292a8cb329fc03ae236e89cb457c25827b27bbca2cd9e2266ed9"
+      "hash": "0986f4ac0fd445a88f46cff9d051a00cf4006555ea062649e28ee8b61a9307d0"
     },
     {
       "path": "ado/__init__.py",
@@ -156,7 +156,7 @@
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "283f0c8d94fac8b80fc4a69139e5069ed26ab7b7187ad0767a6235fb8a8d5f6f"
+      "hash": "46290a42e1c5e22bb5ea59e264ef693948388a2fc53d24ae481392f090558489"
     },
     {
       "path": "automation/__init__.py",
@@ -221,17 +221,27 @@
     {
       "path": "core/app_config.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/app_config.py?ref=main",
-      "hash": "c420bf9e9b316519988b19bbd54ef25ad755e2de0c2f9f1a96c3720f973498fe"
+      "hash": "b8f90fe9019f04adbd1a6b1d5d202d3d58f44a6c64cf39e59df532db41de00da"
     },
     {
       "path": "core/app_logging.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/app_logging.py?ref=main",
-      "hash": "3bef12a3d4a3254cec0a0191e2cf8d36bffa56fd159d13ab46700b2294f294bc"
+      "hash": "a9c6f87fc70d6d378d69f6398eac8393ea9ea1e94190b5571dd54017de00dc3b"
     },
     {
       "path": "core/chat_tools.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/chat_tools.py?ref=main",
       "hash": "9e288329657f56574bc28218bcde34a76b9a9cc774b1c671be4cc88a1bb9a80d"
+    },
+    {
+      "path": "core/credential_envelope.py",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/credential_envelope.py?ref=main",
+      "hash": "3aa9af8d0f011ba6bfdc7767d6199388a454bd8f2be6b516cb456f36910d817f"
+    },
+    {
+      "path": "core/credential_store.py",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/credential_store.py?ref=main",
+      "hash": "734e6ab94c0b33a13d0fc956b9a6ddaaa3236fdc1d136aeb340fa3a4a9a918ba"
     },
     {
       "path": "core/diagnostics.py",
@@ -311,7 +321,7 @@
     {
       "path": "core/settings_store.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/settings_store.py?ref=main",
-      "hash": "6fa6b920c38a57e4b9443b3c75078c60411e41bc5180def08acbaba8a5dd0e7b"
+      "hash": "6e4f07666fcf06b75f86a94e83c6dbd48e38dfd640ac7eb2ef130e8de9e2f689"
     },
     {
       "path": "core/source_registry.py",
