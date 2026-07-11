@@ -195,7 +195,7 @@ export function NavPanel() {
         </div>
 
         {/* ── Bottom toolbar ─────────────────────────────────────── */}
-        <div className="flex flex-wrap items-center gap-0.5 border-t border-[var(--tt-outline-soft)] pt-2">
+        <div className="grid grid-cols-2 gap-1 border-t border-[var(--tt-outline-soft)] pt-2 min-[300px]:grid-cols-3">
           <Dropdown
             align="left"
             direction="up"
@@ -304,11 +304,11 @@ const NavLabelBtn = React.forwardRef<
       title={title}
       aria-label={rest["aria-label"] ?? title}
       disabled={disabled}
-      className="tt-btn-ghost flex items-center gap-1 !px-1.5 !py-1 !text-[10px] disabled:opacity-40"
+      className="tt-btn-ghost flex min-w-0 items-center justify-center gap-1.5 !px-2 !py-1.5 !text-[11px] disabled:opacity-40"
       onClick={onClick}
     >
       {icon}
-      <span>{label}</span>
+      <span className="truncate">{label}</span>
     </button>
   );
 });

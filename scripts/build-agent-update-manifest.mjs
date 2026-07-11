@@ -40,6 +40,7 @@ const SRC_DIR = join(ROOT, "agent-bundle", "src");
 const VERSION_FILE = join(SRC_DIR, "agent", "version.py");
 const REQUIREMENTS_FILE = join(ROOT, "agent-bundle", "requirements.txt");
 const EXTRA_WHEELS_DIR = join(ROOT, "agent-bundle", "extra-wheels");
+const MCP_DIR = join(ROOT, "agent-bundle", "mcp_servers");
 const OUT_FILE = join(ROOT, "agent-update.json");
 
 function contentsUrl(repoPath) {
@@ -96,6 +97,23 @@ function main() {
         }))
     : [];
 
+  const mcpFiles = existsSync(MCP_DIR)
+    ? walk(MCP_DIR, [])
+        .sort()
+        .map((full) => {
+          const content = readFileSync(full);
+          const name = relative(MCP_DIR, full).split("\\").join("/");
+          return {
+            name,
+            url: contentsUrl(`agent-bundle/mcp_servers/${name}`),
+            hash: createHash("sha256").update(content).digest("hex"),
+          };
+        })
+    : [];
+  if (mcpFiles.length === 0) {
+    throw new Error("agent-bundle/mcp_servers payload is missing");
+  }
+
   const manifest = {
     version,
     ref: SRC_REF,
@@ -103,11 +121,12 @@ function main() {
     files: entries,
     requirements,
     extraWheels,
+    mcpFiles,
   };
 
   writeFileSync(OUT_FILE, JSON.stringify(manifest, null, 2) + "\n");
   console.log(
-    `Wrote ${OUT_FILE}\n  version=${version} ref=${SRC_REF} files=${entries.length} extraWheels=${extraWheels.length}`,
+    `Wrote ${OUT_FILE}\n  version=${version} ref=${SRC_REF} files=${entries.length} extraWheels=${extraWheels.length} mcpFiles=${mcpFiles.length}`,
   );
   console.log(
     "Next: commit agent-update.json to the `parts` branch so installed agents can see it.",

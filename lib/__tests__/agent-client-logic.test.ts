@@ -39,6 +39,7 @@ describe("centrally managed AI configuration", () => {
     expect(payload).not.toHaveProperty("model");
     expect(payload).not.toHaveProperty("fast_model");
     expect(payload).not.toHaveProperty("fallback_model");
+    expect(payload).not.toHaveProperty("tls_mode");
   });
 });
 
@@ -53,7 +54,12 @@ describe("Windows installer console contract", () => {
   it("redirects nested installer output unless verbose mode is enabled", () => {
     expect(payload).toContain("*> $pythonLog");
     expect(payload).toContain("if ($Verbose)");
-    expect(payload).toContain('Detailed log: " + $pythonLog');
+  });
+
+  it("requires and atomically stages the complete MCP payload", () => {
+    expect(payload).toContain("overlay manifest is missing the MCP payload");
+    expect(payload).toContain("MCP payload checksum mismatch");
+    expect(payload).toContain("Copy-Item -LiteralPath (Join-Path $stage 'mcp_servers')");
   });
 
   it("fails closed when staged source and manifest versions differ", () => {

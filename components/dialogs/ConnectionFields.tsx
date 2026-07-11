@@ -7,7 +7,6 @@ export interface ConnectionValues {
   pat: string;
   organization: string;
   project_prefix: string;
-  tls_mode: string;
   // -- JIRA source (optional second work-item source) --
   jira_url: string;
   jira_user: string;
@@ -22,7 +21,6 @@ export function useConnectionFields(initial?: Partial<ConnectionValues>) {
     pat: initial?.pat ?? "",
     organization: initial?.organization ?? "",
     project_prefix: initial?.project_prefix ?? "",
-    tls_mode: initial?.tls_mode ?? "system",
     jira_url: initial?.jira_url ?? "",
     jira_user: initial?.jira_user ?? "",
     jira_pat: initial?.jira_pat ?? "",
@@ -35,7 +33,6 @@ export function toPayload(v: ConnectionValues): SaveSettingsPayload {
   const p: SaveSettingsPayload = {
     organization: v.organization,
     project_prefix: v.project_prefix,
-    tls_mode: v.tls_mode || "system",
   };
   // AI secrets, endpoints, and model IDs are intentionally never accepted from
   // browser state. The installed agent resolves centrally managed secrets and

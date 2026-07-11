@@ -566,6 +566,7 @@ try {
     if (Test-Path $stage) { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Force -Path (Join-Path $stage 'src') | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $stage 'wheelhouse') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $stage 'mcp_servers') | Out-Null
     Write-Dbg ("overlay ref=" + $srcRef + " files=" + @($um.files).Count)
 
     foreach ($f in $um.files) {
@@ -583,6 +584,15 @@ try {
     }
     foreach ($w in @($um.extraWheels)) {
       Get-OverlayFile $w.url (Join-Path (Join-Path $stage 'wheelhouse') $w.name)
+    }
+    $mcpFiles = @($um.mcpFiles)
+    if ($mcpFiles.Count -eq 0) { throw 'overlay manifest is missing the MCP payload' }
+    foreach ($f in $mcpFiles) {
+      $target = Join-Path (Join-Path $stage 'mcp_servers') ($f.name -replace '/', '\\')
+      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+      Get-OverlayFile $f.url $target
+      $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $target).Hash.ToLower()
+      if ($actual -ne $f.hash.ToLower()) { throw ('MCP payload checksum mismatch: ' + $f.name) }
     }
 
     # The release version is a hard coherence boundary. A manifest that omits
@@ -607,7 +617,8 @@ try {
     Get-ChildItem -LiteralPath (Join-Path $stage 'wheelhouse') -File | ForEach-Object {
       Copy-Item -LiteralPath $_.FullName -Destination (Join-Path (Join-Path $dest 'wheelhouse') $_.Name) -Force
     }
-    Trace 'INFO' (("latest agent version staged ({0} files)" -f @($um.files).Count))
+    Copy-Item -LiteralPath (Join-Path $stage 'mcp_servers') -Destination $dest -Recurse -Force
+    Trace 'INFO' (("latest agent version staged ({0} source files, {1} MCP files)" -f @($um.files).Count, $mcpFiles.Count))
   } catch {
     Trace 'ERROR' ("atomic overlay failed: " + $_.Exception.Message)
     throw ('latest agent code could not be staged safely: ' + $_.Exception.Message)
@@ -1066,6 +1077,7 @@ try:
         shutil.rmtree(stage, ignore_errors=True)
         os.makedirs(os.path.join(stage, "src"), exist_ok=True)
         os.makedirs(os.path.join(stage, "wheelhouse"), exist_ok=True)
+        os.makedirs(os.path.join(stage, "mcp_servers"), exist_ok=True)
         dbg("overlay ref=%s files=%d" % (src_ref, len(um.get("files", []))))
 
         def overlay_get(url):
@@ -1097,14 +1109,26 @@ try:
         for w in (um.get("extraWheels") or []):
             with open(os.path.join(stage, "wheelhouse", w["name"]), "wb") as out:
                 out.write(overlay_get(w["url"]))
+        mcp_files = um.get("mcpFiles") or []
+        if not mcp_files:
+            raise RuntimeError("overlay manifest is missing the MCP payload")
+        for f in mcp_files:
+            target = os.path.join(stage, "mcp_servers", *f["name"].split("/"))
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            data = overlay_get(f["url"])
+            if hashlib.sha256(data).hexdigest().lower() != f["hash"].lower():
+                raise RuntimeError("MCP payload checksum mismatch: " + f["name"])
+            with open(target, "wb") as out:
+                out.write(data)
 
-        # Commit only after all source, requirements and wheels are present.
+        # Commit only after all source, requirements, wheels and MCP files are present.
         shutil.copytree(os.path.join(stage, "src"), os.path.join(dest, "src"), dirs_exist_ok=True)
         shutil.copy2(os.path.join(stage, "install.py"), os.path.join(dest, "install.py"))
         if os.path.exists(os.path.join(stage, "requirements.txt")):
             shutil.copy2(os.path.join(stage, "requirements.txt"), os.path.join(dest, "requirements.txt"))
         shutil.copytree(os.path.join(stage, "wheelhouse"), os.path.join(dest, "wheelhouse"), dirs_exist_ok=True)
-        log("    latest agent version staged (%d files)" % len(um.get("files", [])))
+        shutil.copytree(os.path.join(stage, "mcp_servers"), os.path.join(dest, "mcp_servers"), dirs_exist_ok=True)
+        log("    latest agent version staged (%d source files, %d MCP files)" % (len(um.get("files", [])), len(mcp_files)))
     except Exception as e:
         dbg("atomic overlay skipped; coherent bundled version retained: %s" % e)
         log("    using bundled agent version")
