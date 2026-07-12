@@ -22,6 +22,75 @@ VALUES = {
     "LLM_PROVIDER_FORMAT": "anthropic",
 }
 
+# The real credential envelope shipped inside the agent bundle.
+SHIPPED_ENVELOPE = Path(__file__).resolve().parent.parent / "src" / ".env.enc"
+
+
+def test_pure_python_aes256_matches_fips197_known_answer():
+    from core._aesgcm_fallback import _AES256
+
+    # FIPS-197 AES-256 block known-answer + key-schedule word 8 (Appendix A.3).
+    aes = _AES256(bytes(range(32)))
+    ct = aes.encrypt_block(bytes.fromhex("00112233445566778899aabbccddeeff"))
+    assert ct.hex() == "8ea2b7ca516745bfeafc49904b496089"
+    assert bytes(_AES256._expand_key(bytes(range(32)))[2][:4]).hex() == "a573c29f"
+
+
+def test_pure_python_gcm_matches_cryptography_across_random_vectors():
+    """The stdlib fallback must be byte-identical to the native binding."""
+    crypto = pytest.importorskip("cryptography.hazmat.primitives.ciphers.aead")
+    from core._aesgcm_fallback import decrypt as pure_decrypt
+
+    AESGCM = crypto.AESGCM
+    for n in range(40):
+        key = os.urandom(32)
+        nonce = os.urandom(12)
+        aad = os.urandom(n % 30)
+        msg = os.urandom((n * 17) % 300)
+        blob = AESGCM(key).encrypt(nonce, msg, aad)
+        assert pure_decrypt(key, nonce, blob, aad) == msg
+
+
+def test_pure_python_gcm_rejects_tampered_tag():
+    from core._aesgcm_fallback import decrypt as pure_decrypt
+
+    key = os.urandom(32)
+    nonce = os.urandom(12)
+    # Tamper a known-good cryptography blob and confirm the fallback rejects it.
+    crypto = pytest.importorskip("cryptography.hazmat.primitives.ciphers.aead")
+    blob = bytearray(crypto.AESGCM(key).encrypt(nonce, b"payload", b""))
+    blob[-1] ^= 0x01
+    with pytest.raises(ValueError):
+        pure_decrypt(key, nonce, bytes(blob), b"")
+
+
+def test_envelope_opens_without_cryptography(monkeypatch):
+    """The managed credential must decrypt even if cryptography is unavailable.
+
+    cryptography is imported lazily inside _derive_key / _aesgcm_decrypt, so
+    blocking the import at call time exercises the pure-Python fallback WITHOUT
+    reloading the module (a reload would swap out CredentialEnvelopeError and
+    break every other test's pytest.raises).
+    """
+    import builtins
+
+    from core.credential_envelope import open_credentials
+
+    real_import = builtins.__import__
+
+    def blocked(name, *args, **kwargs):
+        if name.startswith("cryptography"):
+            raise ImportError("simulated: cryptography binding unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocked)
+
+    sealed = json.loads(SHIPPED_ENVELOPE.read_text())  # ensure it is v3 json
+    assert sealed["version"] == 3
+    values = open_credentials(SHIPPED_ENVELOPE.read_bytes())
+    assert values.get("API_KEY")
+    assert values.get("BASE_URL")
+
 
 def test_envelope_roundtrip_is_random_and_contains_no_plaintext():
     first = seal_credentials(VALUES)
