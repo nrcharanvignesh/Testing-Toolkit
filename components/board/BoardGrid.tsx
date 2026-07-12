@@ -14,6 +14,7 @@ import {
   PanelRightClose,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { useAppState } from "@/lib/app-state";
 import { usePreferences, getPreferences, setSizePref } from "@/lib/preferences";
@@ -23,6 +24,7 @@ import {
   COLLAPSED_WIDTH,
   type BoardColumnId,
 } from "@/lib/board-columns";
+import { useCollapsedLanes } from "@/lib/board-lanes";
 import { ResizeHandle } from "@/components/ui/resizer";
 import {
   agent,
@@ -68,6 +70,14 @@ export function BoardGrid() {
     setWidth: setColWidth,
     toggleCollapsed: toggleColCollapsed,
   } = useBoardColumns();
+
+  // Persisted collapsed state for row groups (swim lanes). Clicking a lane
+  // header hides its rows; restored automatically on next launch.
+  const {
+    isCollapsed: laneCollapsed,
+    toggle: toggleLaneCollapsed,
+    setAll: setAllLanesCollapsed,
+  } = useCollapsedLanes();
 
   // Clicking a work item activates it and auto-opens the detail panel.
   const activateRow = (id: WiId) => {
@@ -260,6 +270,21 @@ export function BoardGrid() {
           >
             Clear
           </button>
+          <button
+            className="tt-btn-ghost shrink-0 !px-3 !py-1.5 text-xs"
+            onClick={() => {
+              const laneNames = groups.map(([lane]) => lane);
+              // If every visible lane is already collapsed, expand all; else
+              // collapse all.
+              const allCollapsed =
+                laneNames.length > 0 && laneNames.every((l) => laneCollapsed(l));
+              setAllLanesCollapsed(laneNames, !allCollapsed);
+            }}
+            disabled={!groups.length}
+            title="Collapse or expand all row groups"
+          >
+            Collapse all
+          </button>
         </div>
 
         {/* Filter row 2 */}
@@ -326,6 +351,7 @@ export function BoardGrid() {
                       laneRows={laneRows}
                       allChecked={allChecked}
                       someChecked={someChecked}
+                      collapsed={laneCollapsed(lane)}
                       selected={selected}
                       activeWiId={activeWiId}
                       testCounts={testCounts}
@@ -333,6 +359,7 @@ export function BoardGrid() {
                       hasCoverageData={hasCoverageData}
                       runStatus={runStatus}
                       hasRunData={hasRunData}
+                      onToggleCollapsed={() => toggleLaneCollapsed(lane)}
                       onToggleLane={(on) => toggleLane(laneRows, on)}
                       onToggleRow={toggleSelected}
                       onActivate={activateRow}
@@ -557,6 +584,7 @@ function LaneGroup({
   laneRows,
   allChecked,
   someChecked,
+  collapsed,
   selected,
   activeWiId,
   testCounts,
@@ -564,6 +592,7 @@ function LaneGroup({
   hasCoverageData,
   runStatus,
   hasRunData,
+  onToggleCollapsed,
   onToggleLane,
   onToggleRow,
   onActivate,
@@ -572,6 +601,7 @@ function LaneGroup({
   laneRows: WorkItemRow[];
   allChecked: boolean;
   someChecked: boolean;
+  collapsed: boolean;
   selected: Set<WiId>;
   activeWiId: WiId | null;
   testCounts: Map<string, number>;
@@ -579,6 +609,7 @@ function LaneGroup({
   hasCoverageData: boolean;
   runStatus: Map<string, "pass" | "fail">;
   hasRunData: boolean;
+  onToggleCollapsed: () => void;
   onToggleLane: (on: boolean) => void;
   onToggleRow: (id: WiId, on: boolean) => void;
   onActivate: (id: WiId) => void;
@@ -601,16 +632,27 @@ function LaneGroup({
           />
         </td>
         <td colSpan={8} className="px-2 py-2">
-          <div className="flex items-center gap-2">
-            <span className="tt-group-tri">▼</span>
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            aria-expanded={!collapsed}
+            aria-label={`${collapsed ? "Expand" : "Collapse"} ${lane} group`}
+            className="flex w-full items-center gap-2 text-left"
+          >
+            {collapsed ? (
+              <ChevronRight className="h-3.5 w-3.5 text-[var(--tt-text-muted)]" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5 text-[var(--tt-text-muted)]" />
+            )}
             <span className="text-xs font-bold uppercase tracking-wide text-[var(--tt-text-secondary)]">
               {lane}
             </span>
             <span className="tt-badge tt-badge-neutral">{laneRows.length}</span>
-          </div>
+          </button>
         </td>
       </tr>
-      {laneRows.map((r) => {
+      {!collapsed &&
+        laneRows.map((r) => {
         const isActive = r.wi_id === activeWiId;
         const typeBadgeClass = wiTypeBadgeClass(r.wi_type);
         const typeBorderClass = wiTypeBorderClass(r.wi_type);

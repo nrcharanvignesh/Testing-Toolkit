@@ -471,12 +471,17 @@ async def _fetch_rows_streaming(
     client: httpx.AsyncClient, org: str, project: str,
     ids: list[int], cfg: RuntimeConfig,
     on_batch: BatchCallback | None = None,
+    counts: dict[int, int] | None = None,
 ) -> list[WorkItemRow]:
     """Fetch work items in batches, emitting each batch via callback as it
     arrives. Enables progressive UI rendering without waiting for all data.
     Uses sys.intern() on repeated low-cardinality strings (type, state,
-    column) to reduce memory via pointer dedup."""
+    column) to reduce memory via pointer dedup. ``counts`` (linked test-case
+    counts keyed by work-item id) is stamped onto each row before emission so
+    the streamed batches carry the "Generated Tests" count immediately."""
     from sys import intern as _intern
+
+    counts = counts or {}
 
     rows: list[WorkItemRow] = []
     url = (
@@ -509,9 +514,11 @@ async def _fetch_rows_streaming(
                     )
                     tags_raw = str(f.get("System.Tags", "") or "")
                     tags = [t.strip() for t in tags_raw.split(";") if t.strip()]
+                    _wid = int(wi.get("id", 0) or 0)
                     # intern low-cardinality fields: saves ~40 bytes per dupe
                     batch_rows.append(WorkItemRow(
-                        wi_id=int(wi.get("id", 0) or 0),
+                        wi_id=_wid,
+                        test_case_count=counts.get(_wid, 0),
                         title=str(f.get("System.Title", "")).strip(),
                         wi_type=_intern(
                             str(f.get("System.WorkItemType", "")).strip()),
@@ -578,7 +585,17 @@ async def _fetch_test_case_counts(
                     wid = int(wi.get("id", 0) or 0)
                     n = 0
                     for rel in wi.get("relations", []) or []:
-                        if str(rel.get("rel", "")) == _TESTED_BY_REL:
+                        rtype = str(rel.get("rel", ""))
+                        rname = str(
+                            (rel.get("attributes") or {}).get("name", "")
+                        )
+                        # Match by reference name (TestedBy-Forward) OR the
+                        # friendly attribute name ADO shows ("Tested By"), so
+                        # the count is robust to reference-name variations.
+                        if (
+                            rtype == _TESTED_BY_REL
+                            or rname.strip().lower() == "tested by"
+                        ):
                             n += 1
                     if wid and n:
                         counts[wid] = n
@@ -626,20 +643,24 @@ async def load_board_view_streaming(
         ids = await _run_wiql(client, org, project, query, cfg)
         if on_log:
             on_log(f"[INFO] WIQL matched {len(ids)} work item(s)")
+        # Fetch linked test-case counts BEFORE streaming the rows so every
+        # emitted batch already carries the count. Previously the counts were
+        # computed after all batches were streamed, but the streamed rows were
+        # never re-sent, so the UI's "Generated Tests" column stayed "None".
+        counts = (
+            await _fetch_test_case_counts(client, org, project, ids, cfg)
+            if ids else {}
+        )
+        if on_log and counts:
+            on_log(
+                f"[INFO] Linked test cases found on {len(counts)} work item(s)"
+            )
         rows = (
             await _fetch_rows_streaming(
-                client, org, project, ids, cfg, on_batch=on_batch
+                client, org, project, ids, cfg, on_batch=on_batch, counts=counts
             )
             if ids else []
         )
-        if rows:
-            counts = await _fetch_test_case_counts(client, org, project, ids, cfg)
-            _apply_test_case_counts(rows, counts)
-            if on_log and counts:
-                on_log(
-                    f"[INFO] Linked test cases found on "
-                    f"{len(counts)} work item(s)"
-                )
     return BoardView(columns=columns, rows=rows)
 
 
