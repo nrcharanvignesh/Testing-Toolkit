@@ -658,16 +658,32 @@ try {
     # IMPORTANT: .env.enc is a dotfile and can carry the Hidden attribute on
     # Windows. Get-ChildItem without -Force silently omitted it while promoting
     # every visible source file, producing a current agent with no AI credential.
+    $credentialMeta = @($um.files | Where-Object { $_.path -eq '.env.enc' }) | Select-Object -First 1
+    if (-not $credentialMeta -or -not $credentialMeta.hash) {
+      throw 'overlay manifest is missing authenticated AI credential metadata'
+    }
     $stageCredential = Join-Path (Join-Path $stage 'src') '.env.enc'
     if (-not (Test-Path -LiteralPath $stageCredential -PathType Leaf)) {
       throw 'overlay is missing the authenticated AI credential envelope'
     }
     Get-ChildItem -LiteralPath (Join-Path $stage 'src') -Force | Copy-Item -Destination (Join-Path $dest 'src') -Recurse -Force
     $promotedCredential = Join-Path (Join-Path $dest 'src') '.env.enc'
+    # A stale bundle may already contain this file with Hidden/ReadOnly flags.
+    # Copy-Item -Force is not reliable for replacing that combination on every
+    # Windows PowerShell version, so remove the exact target and promote anew.
+    if (Test-Path -LiteralPath $promotedCredential) {
+      attrib -H -R $promotedCredential 2>$null
+      Remove-Item -LiteralPath $promotedCredential -Force -ErrorAction Stop
+    }
     Copy-Item -LiteralPath $stageCredential -Destination $promotedCredential -Force
     if (-not (Test-Path -LiteralPath $promotedCredential -PathType Leaf)) {
       throw 'authenticated AI credential envelope was not promoted'
     }
+    $promotedCredentialHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $promotedCredential).Hash.ToLower()
+    if ($promotedCredentialHash -ne ([string]$credentialMeta.hash).ToLower()) {
+      throw ('authenticated AI credential checksum mismatch after promotion: expected=' + $credentialMeta.hash + ' actual=' + $promotedCredentialHash)
+    }
+    Trace 'INFO' ('authenticated AI credential promoted and verified: ' + $promotedCredentialHash)
     Copy-Item -LiteralPath (Join-Path $stage 'install.py') -Destination (Join-Path $dest 'install.py') -Force
     if (Test-Path (Join-Path $stage 'requirements.txt')) {
       Copy-Item -LiteralPath (Join-Path $stage 'requirements.txt') -Destination (Join-Path $dest 'requirements.txt') -Force

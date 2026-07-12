@@ -302,12 +302,13 @@ def test_linux_autostart_quotes_paths_and_metacharacters():
     assert "WorkingDirectory='/home/a user/Testing Toolkit;false'" in unit
 
 
-def test_import_selftest_never_blocks_core_agent_on_ai_credentials():
-    """AI configuration failures must remain diagnosable after agent startup."""
+def test_import_selftest_requires_managed_ai_credentials():
+    """A release must not report success while every AI feature is unusable."""
     source = _INSTALL_PY.read_text(encoding="utf-8")
     assert "importlib.import_module('agent.server')" in source
-    assert "assert cfg.LLM_API_KEY" not in source
-    assert "AI features will be unavailable" in source
+    assert "assert cfg.LLM_API_KEY" in source
+    assert "cfg.LLM_BASE_URL != cfg.DEFAULT_LLM_BASE_URL" in source
+    assert "IMPORT_OK AI_CONFIG_OK" in source
 
 
 # --- source/binary drift guard --------------------------------------------

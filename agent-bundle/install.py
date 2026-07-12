@@ -1348,7 +1348,13 @@ def _run_import_selftest(launch_python: str, env: dict, workdir: Path) -> str:
         "import importlib;"
         "importlib.import_module('agent');"
         "importlib.import_module('agent.server');"
-        "print('IMPORT_OK')"
+        "cfg=importlib.import_module('core.app_config');"
+        "state=cfg.credential_protection_state();"
+        "assert cfg.LLM_API_KEY, 'managed AI credential unavailable (state='+state+')';"
+        "assert cfg.LLM_BASE_URL and cfg.LLM_BASE_URL != cfg.DEFAULT_LLM_BASE_URL, "
+        "'managed AI URL unavailable (state='+state+')';"
+        "assert state in ('os-bound','release-envelope'), 'managed AI credential unreadable (state='+state+')';"
+        "print('IMPORT_OK AI_CONFIG_OK '+state)"
     )
     try:
         res = _run(
