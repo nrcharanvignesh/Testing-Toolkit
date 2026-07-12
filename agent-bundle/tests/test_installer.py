@@ -272,6 +272,25 @@ def test_python_progress_is_log_only(monkeypatch):
     assert logged == [("PROGRESS", "78% installing_deps: Installing packages")]
 
 
+def test_macos_autostart_escapes_xml_paths():
+    plist = inst._macos_plist(
+        "/Users/A & B/Python <3>/python",
+        Path("/Users/A & B/Testing <Toolkit>"),
+    )
+    assert "/Users/A &amp; B/Python &lt;3&gt;/python" in plist
+    assert "/Users/A &amp; B/Testing &lt;Toolkit&gt;" in plist
+    assert "/Users/A & B" not in plist
+
+
+def test_linux_autostart_quotes_paths_and_metacharacters():
+    unit = inst._linux_unit(
+        "/home/a user/python;false",
+        Path("/home/a user/Testing Toolkit;false"),
+    )
+    assert "ExecStart='/home/a user/python;false' -m agent" in unit
+    assert "WorkingDirectory='/home/a user/Testing Toolkit;false'" in unit
+
+
 # --- source/binary drift guard --------------------------------------------
 def test_every_hard_requirement_has_a_bundled_wheel():
     """Every HARD dep in requirements.txt must have a wheel in the wheelhouse.

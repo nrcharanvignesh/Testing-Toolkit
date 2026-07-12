@@ -9,6 +9,8 @@
  * live logs + progress.
  */
 
+import sanitizeHtml from "sanitize-html";
+
 const AGENT_URL = "http://127.0.0.1:7842";
 
 // ---------------------------------------------------------------------------
@@ -643,16 +645,48 @@ function adoBlobUrl(project: string, url: string, filename?: string): string {
   return `${AGENT_URL}/ado/blob?${q.toString()}`;
 }
 
-/** Rewrite ADO-hosted <img src> values to load through the agent blob proxy. */
+const WORK_ITEM_HTML_OPTIONS: sanitizeHtml.IOptions = {
+  allowedTags: [
+    "a", "b", "blockquote", "br", "code", "del", "div", "em", "h1", "h2",
+    "h3", "h4", "h5", "h6", "hr", "i", "img", "li", "ol", "p", "pre",
+    "s", "span", "strong", "table", "tbody", "td", "th", "thead", "tr", "u", "ul",
+  ],
+  allowedAttributes: {
+    a: ["href", "rel", "target", "title"],
+    img: ["alt", "height", "src", "title", "width"],
+    td: ["colspan", "rowspan"],
+    th: ["colspan", "rowspan"],
+  },
+  allowedSchemes: ["http", "https", "mailto"],
+  allowProtocolRelative: false,
+  transformTags: {
+    a: (_tagName, attribs) => ({
+      tagName: "a",
+      attribs: { ...attribs, rel: "noopener noreferrer", target: "_blank" },
+    }),
+  },
+};
+
+/**
+ * Sanitize source-system HTML before React renders it. ADO and JIRA content is
+ * user-controlled and must be treated as untrusted even though it came through
+ * the local agent.
+ */
+export function sanitizeWorkItemHtml(html: string): string {
+  return html ? sanitizeHtml(html, WORK_ITEM_HTML_OPTIONS) : "";
+}
+
+/** Rewrite authenticated ADO media, then enforce the work-item HTML allowlist. */
 function rewriteHtmlMedia(html: string, project: string): string {
   if (!html) return "";
-  return html.replace(/<img\b[^>]*>/gi, (tag) => {
+  const rewritten = html.replace(/<img\b[^>]*>/gi, (tag) => {
     const m = /\ssrc=("|')(.*?)\1/i.exec(tag);
     if (!m) return tag;
     const src = m[2];
     if (!/^https?:/i.test(src) || !ADO_BLOB_HOST_RE.test(src)) return tag;
     return tag.replace(m[0], ` src="${adoBlobUrl(project, src)}"`);
   });
+  return sanitizeWorkItemHtml(rewritten);
 }
 
 // ---------------------------------------------------------------------------

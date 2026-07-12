@@ -4,6 +4,7 @@ import {
   splitWiIds,
   agentLogLevel,
   mergeCommentsHtml,
+  sanitizeWorkItemHtml,
   agent,
 } from "../agent-client";
 import type { WorkItemRow } from "../agent-client";
@@ -180,6 +181,31 @@ describe("agentLogLevel", () => {
   });
   it("defaults to INFO for unprefixed lines", () => {
     expect(agentLogLevel("plain line")).toBe("INFO");
+  });
+});
+
+describe("sanitizeWorkItemHtml", () => {
+  it("removes executable markup and event handlers from source-system HTML", () => {
+    const out = sanitizeWorkItemHtml(
+      '<p onclick="alert(1)">safe<script>alert(2)</script></p>' +
+        '<img src="javascript:alert(3)" onerror="alert(4)">' +
+        '<a href="javascript:alert(5)">bad link</a>'
+    );
+
+    expect(out).toContain("<p>safe</p>");
+    expect(out).not.toMatch(/script|onclick|onerror|javascript:/i);
+  });
+
+  it("retains supported formatting and hardens safe links", () => {
+    const out = sanitizeWorkItemHtml(
+      '<table><tr><td colspan="2"><strong>ok</strong></td></tr></table>' +
+        '<a href="https://example.com">docs</a>'
+    );
+
+    expect(out).toContain('<td colspan="2"><strong>ok</strong></td>');
+    expect(out).toContain('href="https://example.com"');
+    expect(out).toContain('rel="noopener noreferrer"');
+    expect(out).toContain('target="_blank"');
   });
 });
 

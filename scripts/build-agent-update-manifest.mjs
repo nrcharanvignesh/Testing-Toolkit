@@ -10,8 +10,8 @@
  * agent (which has a read-only token) can fetch changed files directly.
  *
  * Usage:
- *   node scripts/build-agent-update-manifest.mjs            # ref = project-deployment
- *   UPDATE_SRC_REF=main node scripts/build-agent-update-manifest.mjs
+ *   node scripts/build-agent-update-manifest.mjs            # ref = main
+ *   UPDATE_SRC_REF=<branch> node scripts/build-agent-update-manifest.mjs
  *
  * Deploy flow (each time you ship an agent change):
  *   1. Bump AGENT_VERSION in agent-bundle/src/agent/version.py
@@ -33,7 +33,7 @@ import {
 import { join, relative } from "node:path";
 
 const REPO = "nrcharanvignesh/Testing-Toolkit";
-const SRC_REF = process.env.UPDATE_SRC_REF || "project-deployment";
+const SRC_REF = process.env.UPDATE_SRC_REF || "main";
 
 const ROOT = process.cwd();
 const SRC_DIR = join(ROOT, "agent-bundle", "src");

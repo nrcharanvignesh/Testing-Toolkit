@@ -28,6 +28,7 @@ import json
 import os
 import platform
 import shutil
+import shlex
 import signal
 import socket
 import subprocess
@@ -35,6 +36,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 AGENT_PORT = 7842
 MIN_PY = (3, 9)
@@ -1279,6 +1281,8 @@ def register_autostart(os_name: str, launch_python: str, use_pythonpath: bool) -
 
 
 def _macos_plist(python_exe: str, workdir: Path) -> str:
+    safe_python = escape(python_exe)
+    safe_workdir = escape(str(workdir))
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1286,8 +1290,8 @@ def _macos_plist(python_exe: str, workdir: Path) -> str:
 <dict>
   <key>Label</key><string>com.testingtoolkit.agent</string>
   <key>ProgramArguments</key>
-  <array><string>{python_exe}</string><string>-m</string><string>agent</string></array>
-  <key>WorkingDirectory</key><string>{workdir}</string>
+  <array><string>{safe_python}</string><string>-m</string><string>agent</string></array>
+  <key>WorkingDirectory</key><string>{safe_workdir}</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
 </dict>
@@ -1296,14 +1300,16 @@ def _macos_plist(python_exe: str, workdir: Path) -> str:
 
 
 def _linux_unit(python_exe: str, workdir: Path) -> str:
+    safe_python = shlex.quote(python_exe)
+    safe_workdir = shlex.quote(str(workdir))
     return f"""[Unit]
 Description=Testing Toolkit Agent
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory={workdir}
-ExecStart={python_exe} -m agent
+WorkingDirectory={safe_workdir}
+ExecStart={safe_python} -m agent
 Restart=on-failure
 
 [Install]
