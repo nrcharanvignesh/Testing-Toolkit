@@ -22,6 +22,14 @@ _SERVICE: Final[str] = "TestingToolkit.GenAI.ReleaseCredential.v2"
 _ACCOUNT: Final[str] = "central-service"
 _MAX_STORED_BYTES: Final[int] = 16_384
 
+# Last non-secret reason an envelope failed to open (for diagnostics only).
+_LAST_ENVELOPE_ERROR: str = ""
+
+
+def last_envelope_error() -> str:
+    """Return the most recent non-secret envelope-open failure reason, if any."""
+    return _LAST_ENVELOPE_ERROR
+
 
 def _workspace() -> Path:
     override = (os.environ.get("TT_WORKSPACE_DIR") or "").strip()
@@ -204,7 +212,14 @@ def load_release_credentials(envelope_path: Path) -> tuple[dict[str, str], str]:
 
     try:
         current = open_credentials(envelope)
-    except CredentialEnvelopeError:
+    except CredentialEnvelopeError as exc:
+        # Record the SPECIFIC non-secret reason (e.g. "credential cryptography
+        # unavailable", "credential envelope authentication failed") so the
+        # installer self-test and Doctor report can name it instead of just
+        # "invalid-envelope". CredentialEnvelopeError messages are secret-free
+        # by design.
+        global _LAST_ENVELOPE_ERROR
+        _LAST_ENVELOPE_ERROR = str(exc)
         if stored:
             return stored[0], "os-bound-stale-release"
         return {}, "invalid-envelope"

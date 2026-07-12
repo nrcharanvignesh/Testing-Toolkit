@@ -61,10 +61,20 @@ def _load_env() -> dict[str, str]:
         if not values:
             # File present but empty result: record a non-secret reason so the
             # installer self-test and Doctor report say WHY, not just "missing".
-            _CREDENTIAL_PROTECTION_DETAIL = (
-                "envelope missing" if not envelope_path.exists()
-                else f"loaded empty credential (state={state}) on {sys.platform}"
-            )
+            if not envelope_path.exists():
+                _CREDENTIAL_PROTECTION_DETAIL = "envelope missing"
+            else:
+                reason = ""
+                try:
+                    from core.credential_store import last_envelope_error
+
+                    reason = last_envelope_error()
+                except Exception:
+                    reason = ""
+                suffix = f": {reason}" if reason else ""
+                _CREDENTIAL_PROTECTION_DETAIL = (
+                    f"loaded empty credential (state={state}) on {sys.platform}{suffix}"
+                )
         return values
     except Exception as exc:
         # Never surface a raw crypto exception: third-party implementations can

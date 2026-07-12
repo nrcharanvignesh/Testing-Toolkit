@@ -62,12 +62,13 @@ def _derive_key(salt: bytes, kdf: str) -> bytes:
     material = b"".join(_WRAP_PARTS)
     try:
         if kdf == _KDF_V3:
-            from cryptography.hazmat.primitives import hashes
-            from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+            # Stdlib PBKDF2 (hashlib) is byte-identical to cryptography's
+            # PBKDF2HMAC for the same params, needs no native binding, and cannot
+            # fail from a missing/broken cryptography wheel on Windows. This is
+            # the ONLY key-derivation path for shipped (v3) envelopes.
+            import hashlib
 
-            return PBKDF2HMAC(
-                algorithm=hashes.SHA256(), salt=salt, length=32, iterations=600_000
-            ).derive(material)
+            return hashlib.pbkdf2_hmac("sha256", material, salt, 600_000, dklen=32)
         if kdf == _KDF_V2:
             from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
@@ -77,6 +78,29 @@ def _derive_key(salt: bytes, kdf: str) -> bytes:
     except Exception as exc:
         raise CredentialEnvelopeError("credential key derivation failed") from exc
     raise CredentialEnvelopeError("unsupported credential key derivation")
+
+
+def _aesgcm_decrypt(key: bytes, nonce: bytes, ciphertext: bytes, aad: bytes) -> bytes:
+    """Decrypt+verify AES-256-GCM, preferring the native binding.
+
+    Falls back to a stdlib-only pure-Python implementation when the compiled
+    ``cryptography`` wheel is missing or its native binding fails to load - a
+    real failure mode on some locked-down Windows hosts. The fallback is
+    byte-for-byte identical and cross-validated in the test suite.
+    """
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        return AESGCM(key).decrypt(nonce, ciphertext, aad)
+    except CredentialEnvelopeError:
+        raise
+    except Exception:
+        # Native path unavailable/broken: use the dependency-free fallback so the
+        # managed AI credential still decrypts. Any auth failure here raises
+        # ValueError, which the caller maps to a safe envelope error.
+        from core._aesgcm_fallback import decrypt as _pure_decrypt
+
+        return _pure_decrypt(key, nonce, ciphertext, aad)
 
 
 def validate_credentials(values: Mapping[str, object]) -> dict[str, str]:
@@ -154,8 +178,8 @@ def open_credentials(data: bytes) -> dict[str, str]:
     nonce = _b64d(outer["nonce"], field="nonce", expected=12)
     ciphertext = _b64d(outer["ciphertext"], field="ciphertext")
     try:
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        plaintext = AESGCM(_derive_key(salt, kdf)).decrypt(nonce, ciphertext, aad)
+        key = _derive_key(salt, kdf)
+        plaintext = _aesgcm_decrypt(key, nonce, ciphertext, aad)
         payload = json.loads(plaintext.decode("utf-8"))
     except CredentialEnvelopeError:
         raise
