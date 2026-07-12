@@ -206,7 +206,11 @@ function DocumentsSection({
     };
   }, [project, contextRunning, indexing]);
 
-  const docs = status?.documents ?? [];
+  // Coerce to an array defensively: `?? []` only guards null/undefined, so an
+  // unexpected shape (e.g. a numeric count from an older/partial agent) would
+  // otherwise make `docs.map` throw and crash the whole dialog — hiding the
+  // Documents list AND the Project Context Edit/Copy/Clear controls below it.
+  const docs = Array.isArray(status?.documents) ? status.documents : [];
 
   // Refresh the persisted document list as each upload completes so files show
   // up ASAP (instead of only after the whole batch finishes). Re-fetch whenever
@@ -506,7 +510,7 @@ function DocumentsSection({
       {status && !indexing && !contextRunning && (
         <p className="text-xs leading-relaxed text-[var(--tt-success)]">
           {status.indexed
-            ? `Indexing ${status.n_documents ?? status.documents.length} document(s), ${
+            ? `Indexing ${status.n_documents ?? docs.length} document(s), ${
                 status.n_chunks ?? "?"
               } chunk(s). Generation mode: recursive retrieval (navigate + map). Retrieval: BM25 lexical (always on), dense vectors, reranker.`
             : "Not yet indexed. Click Rebuild index."}
