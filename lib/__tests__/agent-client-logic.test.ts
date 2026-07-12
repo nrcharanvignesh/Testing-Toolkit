@@ -49,7 +49,7 @@ describe("Windows installer console contract", () => {
 
   it("prints no zero-percent bars for atomic milestones", () => {
     expect(payload).not.toContain("Show-StepBar 0");
-    expect(payload).toContain('Show-StepBar 100 "Agent verified"');
+    expect(payload).toContain("Show-StepBar 100 'Agent installed and verified'");
   });
 
   it("shows a single progress bar during the long install/verify step instead of a silent blocking call", () => {
@@ -69,10 +69,22 @@ describe("Windows installer console contract", () => {
     expect(payload).toContain("*> $pythonLog");
   });
 
-  it("shows live per-file progress while overlaying agent code (no silent multi-minute gap)", () => {
-    expect(payload).toContain('("Fetching agent code " + $srcDone + "/" + $srcFiles.Count)');
-    expect(payload).toContain('("Fetching dependencies " + $wheelDone + "/" + $wheels.Count)');
-    expect(payload).toContain('("Fetching automation payload " + $mcpDone + "/" + $mcpFiles.Count)');
+  it("shows ONE consolidated progress bar for the overlay milestone (no stacked bars)", () => {
+    // The whole "Applying latest agent code" milestone must advance a single
+    // bar across source + wheels + MCP payload, capped at 99% until staged.
+    expect(payload).toContain("$ovTotal = [Math]::Max(1, $srcFiles.Count + $wheels.Count + $mcpFiles.Count)");
+    expect(payload).toContain("Show-StepBar $p 'Applying latest agent code'");
+    // The old per-group bar labels must be gone (they produced 3 stacked bars).
+    expect(payload).not.toContain("Fetching agent code ");
+    expect(payload).not.toContain("Fetching dependencies ");
+    expect(payload).not.toContain("Fetching automation payload ");
+  });
+
+  it("prints the logs folder location and reliably reads the installer exit code", () => {
+    expect(payload).toContain('("  Logs folder: " + $LogDir)');
+    // Touch .Handle + WaitForExit so ExitCode is populated (no blank "code .").
+    expect(payload).toContain("$null = $proc.Handle");
+    expect(payload).toContain("if ($null -eq $code) { $code = 0 }");
   });
 
   it("generates a structurally balanced PowerShell worker (braces and parentheses)", () => {
