@@ -197,6 +197,7 @@ export function NavPanel() {
         {/* ── Bottom toolbar ─────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-1 border-t border-[var(--tt-outline-soft)] pt-2 min-[300px]:grid-cols-3">
           <Dropdown
+            className="w-full"
             align="left"
             direction="up"
             items={[
@@ -259,12 +260,14 @@ export function NavPanel() {
             }
             label="Update"
           />
-          <NavLabelBtn
-            title="Collapse navigator"
-            onClick={() => setNavVisible(false)}
-            icon={<ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />}
-            label="Collapse"
-          />
+          <div className="col-span-full">
+            <NavLabelBtn
+              title="Collapse Navigation Bar"
+              onClick={() => setNavVisible(false)}
+              icon={<ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />}
+              label="Collapse Navigation Bar"
+            />
+          </div>
         </div>
       </div>
 
@@ -304,7 +307,7 @@ const NavLabelBtn = React.forwardRef<
       title={title}
       aria-label={rest["aria-label"] ?? title}
       disabled={disabled}
-      className="tt-btn-ghost flex min-w-0 items-center justify-center gap-1.5 !px-2 !py-1.5 !text-[11px] disabled:opacity-40"
+      className="tt-btn-ghost flex h-9 w-full min-w-0 items-center justify-center gap-1.5 !px-2 !text-[11px] disabled:opacity-40"
       onClick={onClick}
     >
       {icon}

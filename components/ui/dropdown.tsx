@@ -22,6 +22,7 @@ interface DropdownProps {
   items: MenuItem[];
   align?: "left" | "right";
   direction?: "down" | "up";
+  className?: string;
 }
 
 export function Dropdown({
@@ -29,6 +30,7 @@ export function Dropdown({
   items,
   align = "left",
   direction = "down",
+  className = "",
 }: DropdownProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement | null>(null);
@@ -49,7 +51,7 @@ export function Dropdown({
   }, [open]);
 
   return (
-    <div className="relative">
+    <div className={`relative ${className}`}>
       {trigger({ open, toggle: () => setOpen((o) => !o), ref })}
       {open && (
         <div
