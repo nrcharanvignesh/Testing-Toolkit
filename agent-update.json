@@ -1,7 +1,7 @@
 {
-  "version": "2.17.2",
+  "version": "2.17.3",
   "ref": "main",
-  "generatedAt": "2026-07-12T11:44:39.228Z",
+  "generatedAt": "2026-07-12T12:54:11.484Z",
   "files": [
     {
       "path": ".env.enc",
@@ -156,7 +156,7 @@
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "4e5ae5222725088fa582d30ed300c0898efc895777fad94ca12fff237764e031"
+      "hash": "da41a6a3be435e821d916f1b51fd546ac375dc7ab872d31f7ec3b1dd17541717"
     },
     {
       "path": "automation/__init__.py",
@@ -214,6 +214,11 @@
       "hash": "bee3bec14f55ece97fb28077169143d15ae3e10fcfb548d5fba1522601688181"
     },
     {
+      "path": "core/_aesgcm_fallback.py",
+      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/_aesgcm_fallback.py?ref=main",
+      "hash": "efe401164f508eea6b3e684a7810fd9b274a3102640c2a3170c0ed866ddd857e"
+    },
+    {
       "path": "core/anthropic_client.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/anthropic_client.py?ref=main",
       "hash": "a8de5bcd471435828dc4638b50fe1fa14174dc4db3d48caacf269bd54f2ee391"
@@ -221,7 +226,7 @@
     {
       "path": "core/app_config.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/app_config.py?ref=main",
-      "hash": "ee127617cffc65f3c0cce043d11e4e3b80afaf39e929595da4b4b3a281e94774"
+      "hash": "202b948e470632393407161d7896d1739142437a757cf4d30554fb576aba7aae"
     },
     {
       "path": "core/app_logging.py",
@@ -236,12 +241,12 @@
     {
       "path": "core/credential_envelope.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/credential_envelope.py?ref=main",
-      "hash": "15e57d2d8dc406b0a56e6f5d03a885bb258fa1b8bff873504645dfb7ce64026c"
+      "hash": "16729a8a44b526ce19040d9c343073ce5f3bc443c127752ff434d0b9b20c3d6c"
     },
     {
       "path": "core/credential_store.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/credential_store.py?ref=main",
-      "hash": "e03b4772f5b93d70d46f0d7c5c3a4bdd12126614b278e0c3357a02da64fad452"
+      "hash": "cef1fb614beee4de7f9de2f30b4b2368af3b1d63bc086bdc02b64e7b6e74c9e6"
     },
     {
       "path": "core/diagnostics.py",
