@@ -106,7 +106,7 @@ export function ProjectKbDialog({ onClose }: { onClose: () => void }) {
     <Modal
       open
       onClose={handleClose}
-      title={`Knowledge base${projectLabel ? ` - ${projectLabel}` : ""}`}
+      title={`Project Knowledge Base${projectLabel ? ` - ${projectLabel}` : ""}`}
       width={780}
       footer={
         <button className="tt-btn-ghost" onClick={handleClose}>
@@ -116,7 +116,7 @@ export function ProjectKbDialog({ onClose }: { onClose: () => void }) {
     >
       <div className="flex flex-col gap-5">
         <h3 className="text-sm font-bold text-[var(--tt-text-primary)]">
-          Knowledge base{projectLabel ? ` - ${projectLabel}` : ""}
+          Project Knowledge Base{projectLabel ? ` - ${projectLabel}` : ""}
         </h3>
         <DocumentsSection project={currentProject} pushLog={pushLog} />
         <TemplatesSection project={currentProject} pushLog={pushLog} />

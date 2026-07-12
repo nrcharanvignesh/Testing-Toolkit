@@ -184,3 +184,48 @@ def test_merge_preserves_provenance_and_legacy_summary_loads(tmp_path):
     assert reloaded is not None
     assert reloaded.enabled is False
     assert reloaded.to_prompt_section() == ""
+
+
+def test_merge_deduplicates_repeated_descriptions_and_caps_length():
+    # The same actor described near-identically across 200 documents must NOT
+    # accumulate 200 copies of the sentence (the old concatenation bug).
+    maps = [
+        ProjectContext(
+            actors=[ContextItem("Operator", "Operator manages the workflow.", [f"d{i}.md"])]
+        )
+        for i in range(200)
+    ]
+    # One document adds a genuinely new sentence.
+    maps.append(
+        ProjectContext(
+            actors=[ContextItem("operator", "Operator also approves requests.", ["extra.md"])]
+        )
+    )
+    merged = merge_context_maps(maps, "fp")
+    assert len(merged.actors) == 1
+    desc = merged.actors[0].description
+    # The duplicated sentence appears exactly once; the new one is kept.
+    assert desc.count("Operator manages the workflow") == 1
+    assert "approves requests" in desc
+    # Length stays bounded regardless of document count.
+    assert len(desc) <= 601
+    # Provenance still aggregates across every document.
+    assert len(merged.actors[0].sources) == 201
+
+
+def test_override_summary_is_injected_verbatim_and_persists(tmp_path):
+    ctx = ProjectContext(actors=[ContextItem("User", "Uses the system", ["a.md"])])
+    ctx.override_summary = "HANDWRITTEN CONTEXT: only this text matters."
+    assert ctx.is_empty() is False
+    assert ctx.to_prompt_section() == "HANDWRITTEN CONTEXT: only this text matters."
+
+    target = tmp_path / "summary.json"
+    assert save_context_summary(target, ctx)
+    reloaded = load_context_summary(target)
+    assert reloaded is not None
+    assert reloaded.override_summary == "HANDWRITTEN CONTEXT: only this text matters."
+    assert reloaded.to_prompt_section() == "HANDWRITTEN CONTEXT: only this text matters."
+
+    # Clearing the override falls back to the auto-rendered sections.
+    reloaded.override_summary = ""
+    assert "Uses the system" in reloaded.to_prompt_section()

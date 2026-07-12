@@ -21,8 +21,6 @@ import { Dropdown } from "@/components/ui/dropdown";
 import { agent } from "@/lib/agent-client";
 import { getPreferences, setSizePref } from "@/lib/preferences";
 import { ResizeHandle } from "@/components/ui/resizer";
-import { SourceLogo } from "@/components/ui/source-logo";
-import { projectSourceType } from "@/lib/board-utils";
 import { useAppUpdate } from "@/lib/use-app-update";
 
 export function NavPanel() {
@@ -41,17 +39,11 @@ export function NavPanel() {
     setLogVisible,
     pushLog,
     boardView,
-    settings,
   } = useAppState();
 
   const { theme, toggleTheme } = useTheme();
   const { check: checkForUpdate, busy: updateBusy } = useAppUpdate(pushLog);
   const [width, setWidth] = useState(() => getPreferences().sizes.navWidth);
-
-  const sourceOpts = {
-    jiraConfigured: settings?.jira_configured,
-    adoConfigured: settings?.ado_configured,
-  };
 
   async function onUpdateClick() {
     setLogVisible(true);
@@ -113,8 +105,6 @@ export function NavPanel() {
                     className="tt-list-item flex items-center gap-2 text-sm"
                     title={full}
                   >
-                    {/* Source brand logo (ADO or Jira) */}
-                    <SourceLogo source={source} size={20} />
                     <span className="truncate">{name}</span>
                     {isSelected && (
                       <LayoutDashboard className="ml-auto h-3 w-3 shrink-0 opacity-60" />
@@ -225,7 +215,7 @@ export function NavPanel() {
             disabled={!currentProject}
             onClick={() => openDialog("kb")}
             icon={<Brain className="h-3.5 w-3.5" strokeWidth={2} />}
-            label="KB"
+            label="Project KB"
           />
           <NavLabelBtn
             title="Manage encrypted test-environment credentials for E2E automation"
