@@ -217,6 +217,54 @@ generation.
 The Chat dialog sends messages to the LLM with KB context attached, for
 interactive exploration of the project's requirement corpus.
 
+### 3.9 Linked test-case discovery ("Generated Tests" column)
+
+The board's **Generated Tests** column counts the test cases already linked to
+each work item. Discovery is intentionally tracker-agnostic and tolerant of any
+team's SDLC conventions — it does not depend on a single relation type.
+
+**Azure DevOps** (`ado/boards.py`): a work item's linked test cases are counted
+from its relations via EITHER:
+
+- a **test relation** — reference name or friendly attribute name matching
+  `Tested By`, `Tests`, or a renamed custom test link (matched
+  case/punctuation-insensitively); OR
+- a **parent/child/related/dependency link** whose target work item is itself a
+  **test-type** item (its `System.WorkItemType` contains "test", e.g.
+  `Test Case`).
+
+Targets are de-duplicated by id so a test reachable two ways counts once.
+Relations are fetched with `workitemsbatch` using the capitalized
+`$expand: "Relations"` enum name; if a tenant ignores batch expand, a per-item
+`GET ...?$expand=relations` fallback runs automatically.
+
+**JIRA** (`jira/boards.py`): counted from EITHER:
+
+- an **issue link** whose linked issue type or link-type name mentions "test"
+  (covers `Tests` / `Tested By` link types and `Test` / `Test Execution` /
+  `Test Set` issue types used by Xray/Zephyr); OR
+- a **subtask** whose issue type mentions "test".
+
+De-duplicated by issue key.
+
+**Discovery diagnostic script.** To verify what the app sees for specific work
+items (useful when a tenant uses unusual link/type names), run the shipped
+script from the install's `src` directory:
+
+```
+# Azure DevOps
+python -m scripts.discover_test_cases --tracker ado --project "MyProject" --ids 1536967 1536952
+
+# JIRA
+python -m scripts.discover_test_cases --tracker jira --keys PROJ-101 PROJ-102
+
+# Add --json for machine-readable output, --verbose to list every relation/link
+```
+
+It reuses the app's stored credentials and prints, per work item, the matched
+test cases and WHY each was matched (relation name vs. child type), so an
+unmatched item's real link/type names are immediately visible.
+
 ---
 
 ## 4. First launch and source setup
