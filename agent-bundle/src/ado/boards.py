@@ -552,15 +552,71 @@ async def _fetch_rows_streaming(
 _TESTED_BY_REL: Final[str] = "Microsoft.VSTS.Common.TestedBy-Forward"
 
 
+def _count_tested_by(wi: dict[str, Any]) -> int:
+    """Count "Tested By" relations on a single work-item payload. Matches by
+    the reference name (TestedBy-Forward) OR the friendly attribute name ADO
+    shows ("Tested By"), so it is robust to reference-name variations."""
+    n = 0
+    for rel in wi.get("relations", []) or []:
+        rtype = str(rel.get("rel", ""))
+        rname = str((rel.get("attributes") or {}).get("name", ""))
+        if rtype == _TESTED_BY_REL or rname.strip().lower() == "tested by":
+            n += 1
+    return n
+
+
+async def _fetch_counts_per_item(
+    client: httpx.AsyncClient, org: str, project: str,
+    ids: list[int], cfg: RuntimeConfig,
+) -> dict[int, int]:
+    """Fallback: fetch relations one work item at a time via the single-item
+    GET (?$expand=relations), which is honored even when the batch endpoint
+    ignores $expand. Bounded concurrency keeps this from hammering ADO."""
+    counts: dict[int, int] = {}
+    if not ids:
+        return counts
+    sem = asyncio.Semaphore(8)
+
+    async def _one(wid: int) -> None:
+        url = (
+            f"https://dev.azure.com/{org}/{project}/_apis/wit/workitems/{wid}"
+            f"?$expand=relations&api-version={API_VER_WI}"
+        )
+        async with sem:
+            for attempt in range(cfg.retry_count):
+                try:
+                    r = await client.get(url)
+                    if r.status_code in (429, 503):
+                        await asyncio.sleep(
+                            cfg.retry_backoff_sec * (attempt + 1)
+                        )
+                        continue
+                    r.raise_for_status()
+                    n = _count_tested_by(r.json())
+                    if n:
+                        counts[wid] = n
+                    return
+                except (httpx.HTTPError, _ssl.SSLError):
+                    await asyncio.sleep(cfg.retry_backoff_sec * (attempt + 1))
+
+    await asyncio.gather(*(_one(w) for w in ids))
+    return counts
+
+
 async def _fetch_test_case_counts(
     client: httpx.AsyncClient, org: str, project: str,
     ids: list[int], cfg: RuntimeConfig,
 ) -> dict[int, int]:
     """Count linked Test Case work items ("Tested By" relations) per work item.
 
-    Uses a separate workitemsbatch pass with $expand=relations (the batch API
-    does not allow combining `fields` and `$expand`). Best-effort: returns {}
-    on any error so the board still loads without the count column."""
+    Primary path is a workitemsbatch pass with ``$expand: "Relations"`` (the
+    batch body must use the CAPITALIZED enum name -- lowercase "relations" is
+    silently ignored by ADO, which was why the "Generated Tests" column showed
+    None. The batch API also forbids combining `fields` with `$expand`, so this
+    is a dedicated pass with no fields filter). If a batch response comes back
+    with no relations on ANY item (an org that ignores batch $expand), we fall
+    back to a per-item GET which is always honored. Best-effort: returns {} on
+    error so the board still loads."""
     counts: dict[int, int] = {}
     if not ids:
         return counts
@@ -570,7 +626,9 @@ async def _fetch_test_case_counts(
     )
     for start in range(0, len(ids), _BATCH_LIMIT):
         batch_ids = ids[start:start + _BATCH_LIMIT]
-        body = {"ids": batch_ids, "$expand": "relations"}
+        body = {"ids": batch_ids, "$expand": "Relations"}
+        saw_relations = False
+        got_response = False
         for attempt in range(cfg.retry_count):
             try:
                 r = await client.post(
@@ -581,28 +639,26 @@ async def _fetch_test_case_counts(
                     await asyncio.sleep(cfg.retry_backoff_sec * (attempt + 1))
                     continue
                 r.raise_for_status()
+                got_response = True
                 for wi in r.json().get("value", []) or []:
                     wid = int(wi.get("id", 0) or 0)
-                    n = 0
-                    for rel in wi.get("relations", []) or []:
-                        rtype = str(rel.get("rel", ""))
-                        rname = str(
-                            (rel.get("attributes") or {}).get("name", "")
-                        )
-                        # Match by reference name (TestedBy-Forward) OR the
-                        # friendly attribute name ADO shows ("Tested By"), so
-                        # the count is robust to reference-name variations.
-                        if (
-                            rtype == _TESTED_BY_REL
-                            or rname.strip().lower() == "tested by"
-                        ):
-                            n += 1
+                    if wi.get("relations"):
+                        saw_relations = True
+                    n = _count_tested_by(wi)
                     if wid and n:
                         counts[wid] = n
                 break
             except (httpx.HTTPError, _ssl.SSLError):
                 await asyncio.sleep(cfg.retry_backoff_sec * (attempt + 1))
-        # On exhausted retries just skip this batch (best-effort).
+        # If the batch responded but carried no relations at all, the org is
+        # ignoring batch $expand -> fall back to the per-item GET for this
+        # batch's ids (proven to return relations).
+        if got_response and not saw_relations:
+            counts.update(
+                await _fetch_counts_per_item(
+                    client, org, project, batch_ids, cfg
+                )
+            )
     return counts
 
 
