@@ -608,17 +608,29 @@ try {
     New-Item -ItemType Directory -Force -Path (Join-Path $stage 'mcp_servers') | Out-Null
     Write-Dbg ("overlay ref=" + $srcRef + " files=" + @($um.files).Count)
 
-    foreach ($f in $um.files) {
+    # Show live per-file progress. The overlay pulls 100+ files serially; with no
+    # console feedback this looked frozen for minutes (the silent gap between the
+    # "files=N" and "platform=" trace lines users reported as "stuck").
+    $srcFiles = @($um.files)
+    $srcTotal = [Math]::Max(1, $srcFiles.Count)
+    $srcDone = 0
+    foreach ($f in $srcFiles) {
       $target = Join-Path (Join-Path $stage 'src') ($f.path -replace '/', '\\')
       New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
       Get-OverlayFile $f.url $target $f.hash ('source ' + $f.path)
+      $srcDone++
+      Show-StepBar ([int](($srcDone / $srcTotal) * 100)) ("Fetching agent code " + $srcDone + "/" + $srcFiles.Count)
     }
     if (-not $um.installer -or -not $um.installer.url) { throw 'overlay manifest is missing install.py metadata' }
     Get-OverlayFile $um.installer.url (Join-Path $stage 'install.py') $um.installer.hash 'install.py'
     if (-not $um.requirements -or -not $um.requirements.url) { throw 'overlay manifest is missing requirements.txt metadata' }
     Get-OverlayFile $um.requirements.url (Join-Path $stage 'requirements.txt') $um.requirements.hash 'requirements.txt'
-    foreach ($w in @($um.extraWheels)) {
+    $wheels = @($um.extraWheels)
+    $wheelDone = 0
+    foreach ($w in $wheels) {
       Get-OverlayFile $w.url (Join-Path (Join-Path $stage 'wheelhouse') $w.name) $w.hash ('wheel ' + $w.name)
+      $wheelDone++
+      Show-StepBar ([int](($wheelDone / [Math]::Max(1, $wheels.Count)) * 100)) ("Fetching dependencies " + $wheelDone + "/" + $wheels.Count)
     }
     # PowerShell hashtable keys are case-insensitive. Keep each architecture
     # alias unique ignoring case or Windows PowerShell 5.1 rejects the entire
@@ -634,10 +646,13 @@ try {
     Write-Dbg ('overlay platform=' + $platformKey)
     $mcpFiles = @($um.mcpFiles | Where-Object { -not $_.platforms -or @($_.platforms) -contains $platformKey })
     if ($mcpFiles.Count -eq 0) { throw ('overlay manifest has no MCP payload for ' + $platformKey) }
+    $mcpDone = 0
     foreach ($f in $mcpFiles) {
       $target = Join-Path (Join-Path $stage 'mcp_servers') ($f.name -replace '/', '\\')
       New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
       Get-OverlayFile $f.url $target $f.hash ('MCP payload ' + $f.name)
+      $mcpDone++
+      Show-StepBar ([int](($mcpDone / [Math]::Max(1, $mcpFiles.Count)) * 100)) ("Fetching automation payload " + $mcpDone + "/" + $mcpFiles.Count)
     }
 
     # The release version is a hard coherence boundary. A manifest that omits
@@ -709,15 +724,67 @@ try {
   $env:TT_UPDATE_TOKEN = $Token
   $env:TT_UPDATE_REPO  = $Repo
   $env:TT_UPDATE_REF   = $Ref
+  # Python MUST NOT buffer stdout or the live tail below shows nothing until the
+  # whole multi-minute step finishes - the exact "looks frozen / no tqdm"
+  # symptom on the offline pip install + agent self-test.
+  $env:PYTHONUNBUFFERED = '1'
   $pythonLog = Join-Path $LogDir ('agent-install-' + $stamp + '.log')
-  Push-Location $dest
+  $pythonErr = Join-Path $LogDir ('agent-install-' + $stamp + '.err.log')
   if ($Verbose) {
+    Push-Location $dest
     & cmd /c ('"' + $installCmd + '"')
+    $code = $LASTEXITCODE
+    Pop-Location
   } else {
-    & cmd /c ('"' + $installCmd + '"') *> $pythonLog
+    # Run the offline installer ASYNCHRONOUSLY and animate a live heartbeat while
+    # it works. The offline dependency install and agent self-test legitimately
+    # take several minutes; a blocking call with redirected output made the
+    # console look frozen. We tail the installer's own log so the user sees the
+    # CURRENT activity + an elapsed timer + a spinner, and the trace log gets a
+    # [PROGRESS] line every 10s so support sees forward motion too.
+    $code = $null
+    try {
+      New-Item -ItemType File -Force -Path $pythonLog | Out-Null
+      $proc = Start-Process -FilePath 'cmd.exe' -ArgumentList ('/c "' + $installCmd + '"') -WorkingDirectory $dest -NoNewWindow -PassThru -RedirectStandardOutput $pythonLog -RedirectStandardError $pythonErr
+      $sw = [System.Diagnostics.Stopwatch]::StartNew()
+      $spin = @('|','/','-','\\')
+      $si = 0
+      $lastTrace = -1
+      $lastActivity = 'starting offline installer'
+      while (-not $proc.HasExited) {
+        Start-Sleep -Milliseconds 500
+        try {
+          $tail = Get-Content -LiteralPath $pythonLog -Tail 1 -ErrorAction SilentlyContinue
+          if ($tail) { $t = ([string]$tail).Trim(); if ($t) { $lastActivity = $t } }
+        } catch {}
+        $elapsed = [int]$sw.Elapsed.TotalSeconds
+        $c = $spin[$si % $spin.Count]; $si++
+        $label = ($lastActivity -replace '\\s+', ' ')
+        if ($label.Length -gt 44) { $label = $label.Substring(0, 41) + '...' }
+        $mm = [int]($elapsed / 60); $ss = $elapsed % 60
+        Write-Host -NoNewline ("\`r    [{0}] {1:D2}:{2:D2} elapsed  {3,-46}" -f $c, $mm, $ss, $label)
+        if ($elapsed -ne $lastTrace -and ($elapsed % 10) -eq 0) {
+          $lastTrace = $elapsed
+          Trace 'PROGRESS' ('installing/verifying agent - ' + $mm.ToString('00') + ':' + $ss.ToString('00') + ' elapsed - ' + $label)
+        }
+      }
+      Write-Host ""
+      $code = $proc.ExitCode
+    } catch {
+      Trace 'WARN' ('async install heartbeat unavailable (' + $_.Exception.Message + '); falling back to blocking run')
+      Push-Location $dest
+      & cmd /c ('"' + $installCmd + '"') *> $pythonLog
+      $code = $LASTEXITCODE
+      Pop-Location
+    }
+    # Fold any stderr into the single detail log so support has one file to read.
+    try {
+      if ((Test-Path -LiteralPath $pythonErr) -and ((Get-Item -LiteralPath $pythonErr).Length -gt 0)) {
+        Add-Content -LiteralPath $pythonLog -Value "\`n----- installer stderr -----"
+        Get-Content -LiteralPath $pythonErr | Add-Content -LiteralPath $pythonLog
+      }
+    } catch {}
   }
-  $code = $LASTEXITCODE
-  Pop-Location
   Trace 'INFO' ('offline installer detail log: ' + $pythonLog)
 
   if ($code -eq 0) {

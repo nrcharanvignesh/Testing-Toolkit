@@ -52,9 +52,63 @@ describe("Windows installer console contract", () => {
     expect(payload).toContain('Show-StepBar 100 "Agent verified"');
   });
 
-  it("redirects nested installer output unless verbose mode is enabled", () => {
-    expect(payload).toContain("*> $pythonLog");
+  it("shows a live heartbeat during the long install/verify step instead of a silent blocking call", () => {
+    // The step that looked "frozen" (offline pip install + agent self-test) must
+    // run asynchronously and animate progress while tailing the installer log.
+    expect(payload).toContain('Write-Step "Installing and verifying the agent"');
+    expect(payload).toContain("Start-Process -FilePath 'cmd.exe'");
+    expect(payload).toContain("-RedirectStandardOutput $pythonLog");
+    expect(payload).toContain("while (-not $proc.HasExited)");
+    expect(payload).toContain("Get-Content -LiteralPath $pythonLog -Tail 1");
+    expect(payload).toContain("elapsed");
+    // Python output must be unbuffered or the tail would show nothing live.
+    expect(payload).toContain("$env:PYTHONUNBUFFERED = '1'");
+    // A periodic PROGRESS trace so the log also shows forward motion.
+    expect(payload).toContain("Trace 'PROGRESS' ('installing/verifying agent");
+    // Verbose mode still streams raw output; a defensive fallback still exists.
     expect(payload).toContain("if ($Verbose)");
+    expect(payload).toContain("*> $pythonLog");
+  });
+
+  it("shows live per-file progress while overlaying agent code (no silent multi-minute gap)", () => {
+    expect(payload).toContain('("Fetching agent code " + $srcDone + "/" + $srcFiles.Count)');
+    expect(payload).toContain('("Fetching dependencies " + $wheelDone + "/" + $wheels.Count)');
+    expect(payload).toContain('("Fetching automation payload " + $mcpDone + "/" + $mcpFiles.Count)');
+  });
+
+  it("generates a structurally balanced PowerShell worker (braces and parentheses)", () => {
+    // No pwsh in CI: validate bracket balance of the worker body as a proxy for
+    // a syntax check. A mismatched brace/paren from a bad escape fails here.
+    const worker = payload.slice(payload.indexOf("#PSBEGIN") + "#PSBEGIN".length);
+    const pairs: Record<string, string> = { ")": "(", "}": "{", "]": "[" };
+    const opens = new Set(["(", "{", "["]);
+    let inSingle = false;
+    let inDouble = false;
+    const stack: string[] = [];
+    for (let i = 0; i < worker.length; i++) {
+      const ch = worker[i];
+      if (inSingle) {
+        if (ch === "'") inSingle = false;
+        continue;
+      }
+      if (inDouble) {
+        if (ch === '"') inDouble = false;
+        continue;
+      }
+      if (ch === "'") { inSingle = true; continue; }
+      if (ch === '"') { inDouble = true; continue; }
+      if (ch === "#") { // skip to end of line (line comment)
+        while (i < worker.length && worker[i] !== "\n") i++;
+        continue;
+      }
+      if (opens.has(ch)) stack.push(ch);
+      else if (pairs[ch]) {
+        expect(stack.pop()).toBe(pairs[ch]);
+      }
+    }
+    expect(stack.length).toBe(0);
+    expect(inSingle).toBe(false);
+    expect(inDouble).toBe(false);
   });
 
   it("requires and atomically stages the complete MCP payload", () => {
