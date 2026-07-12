@@ -1,7 +1,7 @@
 {
-  "version": "2.17.3",
+  "version": "2.17.4",
   "ref": "main",
-  "generatedAt": "2026-07-12T12:54:11.484Z",
+  "generatedAt": "2026-07-12T13:40:48.086Z",
   "files": [
     {
       "path": ".env.enc",
@@ -156,7 +156,7 @@
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "da41a6a3be435e821d916f1b51fd546ac375dc7ab872d31f7ec3b1dd17541717"
+      "hash": "2e876854f5956bb6bc47a7572024d61e863605b1326b56ddc0de469793512c76"
     },
     {
       "path": "automation/__init__.py",
@@ -221,7 +221,7 @@
     {
       "path": "core/anthropic_client.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/anthropic_client.py?ref=main",
-      "hash": "a8de5bcd471435828dc4638b50fe1fa14174dc4db3d48caacf269bd54f2ee391"
+      "hash": "698d1db22858fe7c33344c76af898c22d2abdad90e94f9a629adf80deeb30629"
     },
     {
       "path": "core/app_config.py",
