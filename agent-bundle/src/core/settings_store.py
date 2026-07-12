@@ -209,7 +209,6 @@ def _file_delete(path: Path) -> bool:
 KEY_ORG: Final[str] = "organization"
 KEY_PREFIX:     Final[str] = "project_prefix"
 KEY_TLS_MODE:   Final[str] = "tls_mode"
-KEY_TOUR_DONE:  Final[str] = "tour_completed"
 
 # --- JIRA source (non-secret parts; the JIRA PAT lives in the keyring) ---
 KEY_JIRA_URL:    Final[str] = "jira_url"
@@ -271,17 +270,6 @@ def save_settings(values: dict[str, str]) -> bool:
     for k, v in values.items():
         data[k] = (v or "").strip()
     return _write_all(data)
-
-
-def get_tour_completed() -> bool:
-    """True once the user has finished or skipped the first-run guided tour.
-    Persisted server-side so it survives the web origin/port changing between
-    launches (which would otherwise wipe the browser localStorage copy)."""
-    return get_setting(KEY_TOUR_DONE, "").strip().lower() in ("1", "true", "yes")
-
-
-def set_tour_completed(value: bool) -> bool:
-    return save_setting(KEY_TOUR_DONE, "true" if value else "false")
 
 
 # ---------------------------------------------------------------------

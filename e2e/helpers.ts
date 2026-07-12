@@ -58,7 +58,6 @@ export async function enterApp(page: Page): Promise<void> {
  */
 export interface MockAgentOptions {
   configured?: boolean;
-  tourCompleted?: boolean;
   projects?: string[];
 }
 
@@ -82,7 +81,6 @@ export async function mockAgent(
   opts: MockAgentOptions = {}
 ): Promise<void> {
   const configured = opts.configured ?? true;
-  const tourCompleted = opts.tourCompleted ?? true;
   // Unconfigured agents have no source connection, so they list no projects
   // (keeps the manual-mode "empty board" state truthful).
   const projects = opts.projects ?? (configured ? ["Demo Project"] : []);
@@ -108,7 +106,6 @@ export async function mockAgent(
     has_pat: configured,
     organization: configured ? "demo-org" : "",
     project_prefix: "",
-    tour_completed: tourCompleted,
   };
   const workItemRow = {
     wi_id: 101,
@@ -138,7 +135,6 @@ export async function mockAgent(
     if (path === "/settings" && route.request().method() === "GET")
       return json(route, settings);
     if (path === "/settings") return json(route, settings); // POST save
-    if (path === "/settings/tour") return json(route, { ok: true });
     // /sources/projects -> string[]
     if (path === "/sources/projects") return json(route, projects);
     // /sources/boards/{project} -> Board[]

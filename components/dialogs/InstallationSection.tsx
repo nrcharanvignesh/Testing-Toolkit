@@ -44,7 +44,7 @@ export function InstallationSection() {
     setConfirmReinstall(false);
     pushLog("INFO", "Reinstall requested — returning to the installer step.");
     // Shared with the blocking AgentUpdateRequired gate: reopen the installer
-    // while preserving settings, project data, artifacts and tour completion.
+    // while preserving settings, project data and artifacts.
     requestReinstall();
   };
 

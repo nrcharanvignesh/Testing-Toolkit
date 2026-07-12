@@ -86,7 +86,7 @@ def test_settings_roundtrip(client, tmp_install):
     assert body["organization"] == "acme-corp"
     assert set(body) == {
         "ado_configured", "jira_configured", "has_pat", "organization",
-        "project_prefix", "tour_completed", "has_jira_pat", "jira_url",
+        "project_prefix", "has_jira_pat", "jira_url",
         "jira_user", "jira_project_prefix",
     }
 
@@ -118,11 +118,6 @@ def test_llm_and_chat_reject_model_overrides(client):
         },
     )
     assert chat.status_code == 422, chat.text
-
-
-def test_tour_roundtrip(client):
-    r = client.post("/settings/tour", json={"completed": True})
-    assert r.status_code == 200
 
 
 def test_system_prompt_default(client):
@@ -202,7 +197,6 @@ def test_context_worker_can_start_without_asyncio_loop(monkeypatch):
 # --------------------------------------------------------------------------
 _BODIES = {
     "/settings": {"organization": "x"},
-    "/settings/tour": {"completed": True},
     "/kb/retrieve": {"project": "P", "query": "q", "top_k": 3},
     "/kb/embed": {"texts": ["a", "b"]},
     "/kb/rerank": {"query": "q", "documents": ["a"], "top_k": 1},

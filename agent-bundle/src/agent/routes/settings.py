@@ -14,7 +14,6 @@ class SettingsResponse(BaseModel):
     has_pat: bool
     organization: str
     project_prefix: str
-    tour_completed: bool
     # -- JIRA source (secondary work-item source) --
     has_jira_pat: bool = False
     jira_url: str = ""
@@ -48,7 +47,6 @@ class SaveSettingsRequest(BaseModel):
 async def get_settings() -> SettingsResponse:
     from core.settings_store import (
         get_setting,
-        get_tour_completed,
         is_configured,
         is_jira_configured,
         load_jira_pat,
@@ -65,7 +63,6 @@ async def get_settings() -> SettingsResponse:
         has_pat=bool(load_pat_value()),
         organization=get_setting(KEY_ORG),
         project_prefix=get_setting(KEY_PREFIX),
-        tour_completed=get_tour_completed(),
         has_jira_pat=bool(load_jira_pat()),
         jira_url=get_setting(KEY_JIRA_URL),
         jira_user=get_setting(KEY_JIRA_USER),
@@ -110,20 +107,6 @@ async def save_settings(req: SaveSettingsRequest) -> dict:
             raise HTTPException(500, "Failed to save JIRA token")
 
     return {"ok": True}
-
-
-class TourRequest(BaseModel):
-    completed: bool = True
-
-
-@router.post("/tour")
-async def set_tour(req: TourRequest) -> dict:
-    """Persist whether the first-run guided tour has been completed/skipped, so
-    it does not reappear on refresh even if the browser localStorage is wiped."""
-    from core.settings_store import set_tour_completed
-
-    set_tour_completed(req.completed)
-    return {"ok": True, "tour_completed": req.completed}
 
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@ import { guardAdoWrites, mockAgent } from "./helpers";
 
 test.describe("No-source startup", () => {
   test.beforeEach(async ({ page }) => {
-    await mockAgent(page, { configured: false, tourCompleted: true });
+    await mockAgent(page, { configured: false });
     guardAdoWrites(page);
   });
 

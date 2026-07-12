@@ -143,8 +143,6 @@ export interface SettingsResponse {
   organization: string;
   project_prefix: string;
   tls_mode?: string;
-  /** Server-persisted: true once the first-run guided tour is done/skipped. */
-  tour_completed?: boolean;
   // -- JIRA source (secondary work-item source) --
   has_jira_pat?: boolean;
   jira_url?: string;

@@ -25,8 +25,8 @@ const INSTALLER_MAP = {
  *  - first run (default): shown while the agent is offline.
  *  - reinstall (`reinstall` prop): forced on top of a connected agent so the
  *    user re-downloads and re-runs the installer. Settings, preferences,
- *    artifacts, KB documents, vectors, project context and tour completion are
- *    retained; only disposable runtime caches are refreshed. We detect
+ *    artifacts, KB documents, vectors and project context are retained; only
+ *    disposable runtime caches are refreshed. We detect
  *    completion by watching the agent drop (installer stops it) and reconnect;
  *    the app resumes automatically as soon as the fresh agent is healthy.
  */
