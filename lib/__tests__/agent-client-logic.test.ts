@@ -77,6 +77,15 @@ describe("Windows installer console contract", () => {
     expect(payload).toContain("Where-Object { -not $_.platforms -or @($_.platforms) -contains $platformKey }");
   });
 
+  it("does not emit case-insensitive duplicate PowerShell hashtable keys", () => {
+    const aliases = payload.match(/\$platformAliases = @\{([\s\S]*?)\n    \}/)?.[1] ?? "";
+    const keys = [...aliases.matchAll(/'([^']+)'\s*=/g)].map((match) =>
+      match[1].toLowerCase()
+    );
+    expect(keys.length).toBeGreaterThan(0);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
   it("fails closed when staged source and manifest versions differ", () => {
     expect(payload).toContain("overlay version mismatch: manifest=");
     expect(payload).toContain("latest agent code could not be staged safely");

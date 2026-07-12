@@ -33,6 +33,15 @@ class SaveSettingsRequest(BaseModel):
     jira_user: str | None = None
     jira_pat: str | None = None
     jira_project_prefix: str | None = None
+    # Compatibility-only inputs for a stale/cached web client. These values are
+    # deliberately accepted and ignored: AI configuration remains backend-owned,
+    # while an older browser tab no longer makes every Settings save fail with 422.
+    api_key: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+    fast_model: str | None = None
+    fallback_model: str | None = None
+    tls_mode: str | None = None
 
 
 @router.get("", response_model=SettingsResponse)

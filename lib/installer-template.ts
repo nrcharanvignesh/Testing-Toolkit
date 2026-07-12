@@ -620,9 +620,12 @@ try {
     foreach ($w in @($um.extraWheels)) {
       Get-OverlayFile $w.url (Join-Path (Join-Path $stage 'wheelhouse') $w.name) $w.hash ('wheel ' + $w.name)
     }
+    # PowerShell hashtable keys are case-insensitive. Keep each architecture
+    # alias unique ignoring case or Windows PowerShell 5.1 rejects the entire
+    # installer at parse time before the worker can create its log.
     $platformAliases = @{
       'AMD64' = 'x64'; 'x86_64' = 'x64'; 'x64' = 'x64'
-      'ARM64' = 'arm64'; 'aarch64' = 'arm64'; 'arm64' = 'arm64'
+      'ARM64' = 'arm64'; 'aarch64' = 'arm64'
     }
     $nativeArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
     $archKey = $platformAliases[$nativeArch]

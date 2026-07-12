@@ -93,11 +93,15 @@ def test_settings_roundtrip(client, tmp_install):
 
 @pytest.mark.parametrize(
     "field",
-    ["api_key", "base_url", "model", "fast_model", "fallback_model"],
+    ["api_key", "base_url", "model", "fast_model", "fallback_model", "tls_mode"],
 )
-def test_settings_rejects_ai_overrides(client, field):
+def test_settings_ignores_deprecated_browser_overrides(client, field):
+    """Cached older web clients may still submit removed fields. Accept those
+    keys for wire compatibility but never persist or use their values."""
+    before = client.get("/settings").json()
     r = client.post("/settings", json={field: "browser-controlled"})
-    assert r.status_code == 422, r.text
+    assert r.status_code == 200, r.text
+    assert client.get("/settings").json() == before
 
 
 def test_llm_and_chat_reject_model_overrides(client):
