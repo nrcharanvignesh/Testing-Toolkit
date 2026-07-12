@@ -157,6 +157,17 @@ def test_node_platform_key_matrix():
     assert inst._platform_key("macos", "arm64") == "darwin-arm64"
 
 
+def test_node_manifest_never_maps_intel_macos_to_arm_binary():
+    import json
+
+    manifest_path = _INSTALL_PY.parent / "mcp_servers" / "node-bins.json"
+    manifest = json.loads(manifest_path.read_text())
+    intel = manifest["platforms"]["darwin-x64"]
+    assert "unsupported_reason" in intel
+    assert "parts" not in intel
+    assert "arm64" not in intel.get("node_exe_path", "")
+
+
 # --- launched-agent identity ----------------------------------------------
 def test_health_matches_exact_installed_agent():
     assert inst._health_matches_installed_agent(

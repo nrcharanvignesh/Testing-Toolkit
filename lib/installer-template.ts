@@ -546,15 +546,54 @@ try {
   # extracted files. Best-effort: if it fails we fall back to bundled code.
   Write-Step "Applying latest agent code"
   try {
-    function Get-OverlayFile($uri, $outFile) {
+    function Get-OverlayFile($uri, $outFile, $expectedHash, $label) {
+      if (-not $expectedHash) { throw ('overlay manifest is missing a checksum for ' + $label) }
       $last = $null
+      $partial = $outFile + '.part'
       for ($attempt = 1; $attempt -le 4; $attempt++) {
+        $client = $null; $response = $null; $stream = $null; $file = $null
         try {
-          Invoke-RestMethod -Uri $uri -Headers $headers -UseBasicParsing -OutFile $outFile
+          if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue }
+          Add-Type -AssemblyName System.Net.Http
+          $handler = New-Object System.Net.Http.HttpClientHandler
+          $handler.AllowAutoRedirect = $true
+          try {
+            $handler.UseProxy = $true
+            $handler.Proxy = [System.Net.WebRequest]::GetSystemWebProxy()
+            $handler.Proxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials
+          } catch {}
+          $client = New-Object System.Net.Http.HttpClient($handler)
+          $client.Timeout = [TimeSpan]::FromMinutes(30)
+          $request = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Get, $uri)
+          [void]$request.Headers.TryAddWithoutValidation('Authorization', 'Bearer ' + $Token)
+          [void]$request.Headers.TryAddWithoutValidation('Accept', 'application/vnd.github.raw')
+          [void]$request.Headers.TryAddWithoutValidation('User-Agent', 'TestingToolkit-Installer')
+          $response = $client.SendAsync($request, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+          if (-not $response.IsSuccessStatusCode) { throw ('HTTP ' + [int]$response.StatusCode + ' for ' + $label) }
+          $stream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+          $file = [IO.File]::Open($partial, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+          $stream.CopyTo($file, 1MB)
+          $file.Flush(); $file.Close(); $file = $null
+          $stream.Dispose(); $stream = $null
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $partial).Hash.ToLower()
+          if ($actual -ne $expectedHash.ToLower()) {
+            Trace 'OVERLAY' ($label + ' checksum mismatch: expected=' + $expectedHash.ToLower() + ' actual=' + $actual)
+            throw ('checksum mismatch for ' + $label)
+          }
+          Move-Item -LiteralPath $partial -Destination $outFile -Force
           return
         } catch {
           $last = $_
+          Trace 'OVERLAY' ($label + ' attempt ' + $attempt + ' failed: ' + $_.Exception.Message)
+          if ($file) { try { $file.Close() } catch {} }
+          if ($stream) { try { $stream.Dispose() } catch {} }
+          if ($response) { try { $response.Dispose() } catch {} }
+          if ($client) { try { $client.Dispose() } catch {} }
+          if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue }
           if ($attempt -lt 4) { Start-Sleep -Seconds ([Math]::Min(8, [Math]::Pow(2, $attempt))) }
+        } finally {
+          if ($response) { try { $response.Dispose() } catch {} }
+          if ($client) { try { $client.Dispose() } catch {} }
         }
       }
       throw $last
@@ -572,27 +611,30 @@ try {
     foreach ($f in $um.files) {
       $target = Join-Path (Join-Path $stage 'src') ($f.path -replace '/', '\\')
       New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
-      Get-OverlayFile $f.url $target
-      if ($f.hash) {
-        $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $target).Hash.ToLower()
-        if ($actual -ne $f.hash.ToLower()) { throw ('overlay checksum mismatch: ' + $f.path) }
-      }
+      Get-OverlayFile $f.url $target $f.hash ('source ' + $f.path)
     }
-    Get-OverlayFile ($ApiBase + 'agent-bundle/install.py?ref=' + $srcRef) (Join-Path $stage 'install.py')
-    if ($um.requirements -and $um.requirements.url) {
-      Get-OverlayFile $um.requirements.url (Join-Path $stage 'requirements.txt')
-    }
+    if (-not $um.installer -or -not $um.installer.url) { throw 'overlay manifest is missing install.py metadata' }
+    Get-OverlayFile $um.installer.url (Join-Path $stage 'install.py') $um.installer.hash 'install.py'
+    if (-not $um.requirements -or -not $um.requirements.url) { throw 'overlay manifest is missing requirements.txt metadata' }
+    Get-OverlayFile $um.requirements.url (Join-Path $stage 'requirements.txt') $um.requirements.hash 'requirements.txt'
     foreach ($w in @($um.extraWheels)) {
-      Get-OverlayFile $w.url (Join-Path (Join-Path $stage 'wheelhouse') $w.name)
+      Get-OverlayFile $w.url (Join-Path (Join-Path $stage 'wheelhouse') $w.name) $w.hash ('wheel ' + $w.name)
     }
-    $mcpFiles = @($um.mcpFiles)
-    if ($mcpFiles.Count -eq 0) { throw 'overlay manifest is missing the MCP payload' }
+    $platformAliases = @{
+      'AMD64' = 'x64'; 'x86_64' = 'x64'; 'x64' = 'x64'
+      'ARM64' = 'arm64'; 'aarch64' = 'arm64'; 'arm64' = 'arm64'
+    }
+    $nativeArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+    $archKey = $platformAliases[$nativeArch]
+    if (-not $archKey) { throw ('unsupported CPU architecture for MCP payload: ' + $nativeArch) }
+    $platformKey = 'win32-' + $archKey
+    Write-Dbg ('overlay platform=' + $platformKey)
+    $mcpFiles = @($um.mcpFiles | Where-Object { -not $_.platforms -or @($_.platforms) -contains $platformKey })
+    if ($mcpFiles.Count -eq 0) { throw ('overlay manifest has no MCP payload for ' + $platformKey) }
     foreach ($f in $mcpFiles) {
       $target = Join-Path (Join-Path $stage 'mcp_servers') ($f.name -replace '/', '\\')
       New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
-      Get-OverlayFile $f.url $target
-      $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $target).Hash.ToLower()
-      if ($actual -ne $f.hash.ToLower()) { throw ('MCP payload checksum mismatch: ' + $f.name) }
+      Get-OverlayFile $f.url $target $f.hash ('MCP payload ' + $f.name)
     }
 
     # The release version is a hard coherence boundary. A manifest that omits
@@ -1100,24 +1142,48 @@ try:
                 raise RuntimeError("overlay checksum mismatch: " + rel)
             with open(target, "wb") as out:
                 out.write(data)
+        def verified_overlay_file(url, expected_hash, label):
+            if not expected_hash:
+                raise RuntimeError("overlay manifest is missing a checksum for " + label)
+            data = overlay_get(url)
+            actual = hashlib.sha256(data).hexdigest().lower()
+            if actual != expected_hash.lower():
+                raise RuntimeError("%s checksum mismatch: expected=%s actual=%s" % (label, expected_hash.lower(), actual))
+            return data
+
+        installer = um.get("installer") or {}
+        if not installer.get("url"):
+            raise RuntimeError("overlay manifest is missing install.py metadata")
         with open(os.path.join(stage, "install.py"), "wb") as out:
-            out.write(overlay_get(api + "agent-bundle/install.py?ref=" + src_ref))
-        reqs = um.get("requirements")
-        if reqs and reqs.get("url"):
-            with open(os.path.join(stage, "requirements.txt"), "wb") as out:
-                out.write(overlay_get(reqs["url"]))
+            out.write(verified_overlay_file(installer["url"], installer.get("hash"), "install.py"))
+        reqs = um.get("requirements") or {}
+        if not reqs.get("url"):
+            raise RuntimeError("overlay manifest is missing requirements.txt metadata")
+        with open(os.path.join(stage, "requirements.txt"), "wb") as out:
+            out.write(verified_overlay_file(reqs["url"], reqs.get("hash"), "requirements.txt"))
         for w in (um.get("extraWheels") or []):
             with open(os.path.join(stage, "wheelhouse", w["name"]), "wb") as out:
-                out.write(overlay_get(w["url"]))
-        mcp_files = um.get("mcpFiles") or []
+                out.write(verified_overlay_file(w["url"], w.get("hash"), "wheel " + w["name"]))
+
+        os_key = {"darwin": "darwin", "linux": "linux"}.get(sys.platform)
+        arch_key = {
+            "x86_64": "x64", "amd64": "x64", "x64": "x64",
+            "arm64": "arm64", "aarch64": "arm64",
+        }.get(platform.machine().lower())
+        if not os_key or not arch_key:
+            raise RuntimeError("unsupported platform for MCP payload: %s-%s" % (sys.platform, platform.machine()))
+        platform_key = "%s-%s" % (os_key, arch_key)
+        dbg("overlay platform=%s" % platform_key)
+        mcp_files = [
+            f for f in (um.get("mcpFiles") or [])
+            if not f.get("platforms") or platform_key in f["platforms"]
+        ]
         if not mcp_files:
-            raise RuntimeError("overlay manifest is missing the MCP payload")
+            raise RuntimeError("overlay manifest has no MCP payload for " + platform_key)
         for f in mcp_files:
             target = os.path.join(stage, "mcp_servers", *f["name"].split("/"))
             os.makedirs(os.path.dirname(target), exist_ok=True)
-            data = overlay_get(f["url"])
-            if hashlib.sha256(data).hexdigest().lower() != f["hash"].lower():
-                raise RuntimeError("MCP payload checksum mismatch: " + f["name"])
+            data = verified_overlay_file(f["url"], f.get("hash"), "MCP payload " + f["name"])
             with open(target, "wb") as out:
                 out.write(data)
 

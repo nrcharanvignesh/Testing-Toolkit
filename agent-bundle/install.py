@@ -1806,7 +1806,10 @@ def _extract_node_from_bundle() -> bool:
     plat = _platform_key()
     plat_info = manifest.get("platforms", {}).get(plat)
     if not plat_info:
-        warn(f"No Node.js binary bundled for platform '{plat}'.")
+        warn(f"No Node.js binary bundled for platform '{plat}'. Install Node.js 20+ for this operating system and architecture, then re-run.")
+        return False
+    if plat_info.get("unsupported_reason"):
+        warn(str(plat_info["unsupported_reason"]))
         return False
 
     parts       = plat_info["parts"]

@@ -58,9 +58,23 @@ describe("Windows installer console contract", () => {
   });
 
   it("requires and atomically stages the complete MCP payload", () => {
-    expect(payload).toContain("overlay manifest is missing the MCP payload");
-    expect(payload).toContain("MCP payload checksum mismatch");
+    expect(payload).toContain("overlay manifest has no MCP payload for");
+    expect(payload).toContain("MCP payload ");
     expect(payload).toContain("Copy-Item -LiteralPath (Join-Path $stage 'mcp_servers')");
+  });
+
+  it("streams every overlay artifact as bytes and verifies it before promotion", () => {
+    expect(payload).toContain("System.Net.Http.HttpClient");
+    expect(payload).toContain("ResponseHeadersRead");
+    expect(payload).toContain("overlay manifest is missing a checksum for");
+    expect(payload).toContain("Get-FileHash -Algorithm SHA256");
+    expect(payload).not.toContain("Invoke-RestMethod -Uri $uri -Headers $headers -UseBasicParsing -OutFile $outFile");
+  });
+
+  it("selects MCP binary payloads for the native Windows architecture", () => {
+    expect(payload).toContain("RuntimeInformation]::OSArchitecture");
+    expect(payload).toContain("$platformKey = 'win32-' + $archKey");
+    expect(payload).toContain("Where-Object { -not $_.platforms -or @($_.platforms) -contains $platformKey }");
   });
 
   it("fails closed when staged source and manifest versions differ", () => {

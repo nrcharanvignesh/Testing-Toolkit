@@ -42,18 +42,7 @@
       ]
     },
     "darwin-x64": {
-      "archive_type": "tar.gz",
-      "archive_name": "node-v20.18.0-darwin-arm64.tar.gz",
-      "node_exe_path": "node-v20.18.0-darwin-arm64/bin/node",
-      "sha256": "92e180624259d082562592bb12548037c6a417069be29e452ec5d158d657b4be",
-      "note": "Falls back to arm64 binary; runs via Rosetta 2 on Intel Macs",
-      "parts": [
-        "node-bins/darwin-arm64/node-darwin-arm64.tar.gz.000",
-        "node-bins/darwin-arm64/node-darwin-arm64.tar.gz.001",
-        "node-bins/darwin-arm64/node-darwin-arm64.tar.gz.002",
-        "node-bins/darwin-arm64/node-darwin-arm64.tar.gz.003",
-        "node-bins/darwin-arm64/node-darwin-arm64.tar.gz.004"
-      ]
+      "unsupported_reason": "No native Intel macOS Node.js payload is bundled. Install Node.js 20+ for x64 and re-run; the installer will use the system runtime. ARM64 binaries are never launched on Intel hardware."
     }
   },
   "node_modules_bundle": {

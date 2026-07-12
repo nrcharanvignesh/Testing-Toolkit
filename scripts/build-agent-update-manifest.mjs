@@ -38,6 +38,7 @@ const SRC_REF = process.env.UPDATE_SRC_REF || "main";
 const ROOT = process.cwd();
 const SRC_DIR = join(ROOT, "agent-bundle", "src");
 const VERSION_FILE = join(SRC_DIR, "agent", "version.py");
+const INSTALLER_FILE = join(ROOT, "agent-bundle", "install.py");
 const REQUIREMENTS_FILE = join(ROOT, "agent-bundle", "requirements.txt");
 const EXTRA_WHEELS_DIR = join(ROOT, "agent-bundle", "extra-wheels");
 const MCP_DIR = join(ROOT, "agent-bundle", "mcp_servers");
@@ -52,6 +53,10 @@ function readVersion() {
   const m = text.match(/AGENT_VERSION\s*=\s*["']([^"']+)["']/);
   if (!m) throw new Error("Could not find AGENT_VERSION in version.py");
   return m[1];
+}
+
+function sha256File(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
 function walk(dir, files = []) {
@@ -79,14 +84,26 @@ function main() {
     return { path: installedRel, url: contentsUrl(repoPath), hash };
   });
 
+  const installer = existsSync(INSTALLER_FILE)
+    ? {
+        url: contentsUrl("agent-bundle/install.py"),
+        hash: sha256File(INSTALLER_FILE),
+      }
+    : null;
+  if (!installer) throw new Error("agent-bundle/install.py is missing");
+
   // The bundle-root requirements.txt, overlaid so newly-added deps are picked
   // up by the offline installer without re-packing the 470 MB bundle.
   const requirements = existsSync(REQUIREMENTS_FILE)
-    ? { url: contentsUrl("agent-bundle/requirements.txt") }
+    ? {
+        url: contentsUrl("agent-bundle/requirements.txt"),
+        hash: sha256File(REQUIREMENTS_FILE),
+      }
     : null;
+  if (!requirements) throw new Error("agent-bundle/requirements.txt is missing");
 
-  // Small, pure-Python wheels added after the bundle was built. The installer
-  // drops these into the extracted wheelhouse so offline pip can find them.
+  // Wheels added after the bundle was built. Every binary is hashed so staging
+  // fails closed before a corrupted or wrong-architecture wheel can be promoted.
   const extraWheels = existsSync(EXTRA_WHEELS_DIR)
     ? readdirSync(EXTRA_WHEELS_DIR)
         .filter((n) => n.endsWith(".whl"))
@@ -94,8 +111,23 @@ function main() {
         .map((name) => ({
           name,
           url: contentsUrl(`agent-bundle/extra-wheels/${name}`),
+          hash: sha256File(join(EXTRA_WHEELS_DIR, name)),
         }))
     : [];
+
+  const nodeBinsFile = join(MCP_DIR, "node-bins.json");
+  if (!existsSync(nodeBinsFile)) {
+    throw new Error("agent-bundle/mcp_servers/node-bins.json is missing");
+  }
+  const nodeBins = JSON.parse(readFileSync(nodeBinsFile, "utf8"));
+  const platformParts = new Map();
+  for (const [platform, details] of Object.entries(nodeBins.platforms ?? {})) {
+    for (const part of details.parts ?? []) {
+      const platforms = platformParts.get(part) ?? [];
+      platforms.push(platform);
+      platformParts.set(part, platforms);
+    }
+  }
 
   const mcpFiles = existsSync(MCP_DIR)
     ? walk(MCP_DIR, [])
@@ -107,6 +139,9 @@ function main() {
             name,
             url: contentsUrl(`agent-bundle/mcp_servers/${name}`),
             hash: createHash("sha256").update(content).digest("hex"),
+            ...(platformParts.has(name)
+              ? { platforms: platformParts.get(name) }
+              : {}),
           };
         })
     : [];
@@ -119,6 +154,7 @@ function main() {
     ref: SRC_REF,
     generatedAt: new Date().toISOString(),
     files: entries,
+    installer,
     requirements,
     extraWheels,
     mcpFiles,

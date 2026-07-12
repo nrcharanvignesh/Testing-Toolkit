@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useAgent } from "@/lib/agent-context";
 import { useAppState } from "@/lib/app-state";
-import { AGENT_UPDATE_REQUIRED_EVENT } from "@/lib/use-app-update";
+import {
+  AGENT_UPDATE_REQUIRED_EVENT,
+  useAppUpdate,
+} from "@/lib/use-app-update";
 import { useWebFreshness } from "@/lib/use-web-freshness";
 import { isAgentOutdated, REQUIRED_AGENT_VERSION } from "@/lib/agent-version";
 import type { UpdateStatus } from "@/lib/agent-client";
@@ -19,8 +22,10 @@ import { DialogHost } from "@/components/dialogs/DialogHost";
 
 export function AppShell() {
   const { status, health } = useAgent();
-  const { navVisible, logVisible, reloadProjects } = useAppState();
+  const { navVisible, logVisible, reloadProjects, pushLog } = useAppState();
+  const { check: checkForAgentUpdate } = useAppUpdate(pushLog);
   const bootstrapped = useRef(false);
+  const launchUpdateChecked = useRef(false);
   // Agent updates are detection-only. When one is found, block the app with
   // AgentUpdateRequired until the user refreshes the agent via the installer.
   const [updateBlocked, setUpdateBlocked] = useState<UpdateStatus | null>(null);
@@ -41,6 +46,15 @@ export function AppShell() {
       reloadProjects();
     }
   }, [status, reloadProjects]);
+
+  // Every web-app launch performs one fresh update-status request as soon as the
+  // local agent connects. React Strict Mode can replay effects in development,
+  // so the ref guarantees one request per mounted launch rather than duplicates.
+  useEffect(() => {
+    if (status !== "connected" || launchUpdateChecked.current) return;
+    launchUpdateChecked.current = true;
+    void checkForAgentUpdate();
+  }, [status, checkForAgentUpdate]);
 
   // (A) Minimum-version handshake — the hard guarantee. The web app knows the
   // lowest agent version it works with (REQUIRED_AGENT_VERSION). The moment a
