@@ -221,7 +221,7 @@ export function NavPanel() {
             title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
             aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
             onClick={toggleTheme}
-            label={theme === "dark" ? "Light" : "Dark"}
+            label="Theme"
           />
           <NavLabelBtn
             title="Check for updates"
