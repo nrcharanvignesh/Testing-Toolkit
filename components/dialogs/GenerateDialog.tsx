@@ -53,7 +53,10 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
   const [iterationPath, setIterationPath] = useState("");
   const [testCategory, setTestCategory] = useState("");
   const [inherit, setInherit] = useState(true);
-  const [testData, setTestData] = useState(true);
+  // Test-data augmentation is always enabled; the toggle was removed from the
+  // UI but the behaviour (pattern-based positive/negative data on data-entry
+  // steps) is kept on for every generation.
+  const testData = true;
 
   // Files attached to a regeneration. Their extracted text is folded into the
   // feedback prompt at regen time (see run()). Persisted at dialog scope so it
@@ -259,19 +262,6 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
                 ? "Loading..."
                 : "AI Generate"}
           </button>
-          <label
-            className="flex items-center gap-1.5 px-1 text-xs text-[var(--tt-text-secondary)]"
-            title="Append pattern-based positive/negative test data to data-entry steps"
-          >
-            <input
-              type="checkbox"
-              className="tt-check"
-              checked={testData}
-              onChange={(e) => setTestData(e.target.checked)}
-              disabled={busy}
-            />
-            Test data
-          </label>
           <button
             className="tt-btn-ghost"
             onClick={storeExcel}

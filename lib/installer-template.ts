@@ -608,30 +608,16 @@ try {
     New-Item -ItemType Directory -Force -Path (Join-Path $stage 'mcp_servers') | Out-Null
     Write-Dbg ("overlay ref=" + $srcRef + " files=" + @($um.files).Count)
 
-    # Show live per-file progress. The overlay pulls 100+ files serially; with no
-    # console feedback this looked frozen for minutes (the silent gap between the
-    # "files=N" and "platform=" trace lines users reported as "stuck").
+    # ONE consolidated progress bar for the whole "Applying latest agent code"
+    # milestone. The overlay pulls agent source + dependency wheels + automation
+    # payloads; showing a single bar across ALL of them (rather than a separate
+    # bar per group) keeps the console to exactly one bar per milestone. The bar
+    # eases to 99% during the fetch and the final "staged" call snaps it to 100%.
     $srcFiles = @($um.files)
-    $srcTotal = [Math]::Max(1, $srcFiles.Count)
-    $srcDone = 0
-    foreach ($f in $srcFiles) {
-      $target = Join-Path (Join-Path $stage 'src') ($f.path -replace '/', '\\')
-      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
-      Get-OverlayFile $f.url $target $f.hash ('source ' + $f.path)
-      $srcDone++
-      Show-StepBar ([int](($srcDone / $srcTotal) * 100)) ("Fetching agent code " + $srcDone + "/" + $srcFiles.Count)
-    }
-    if (-not $um.installer -or -not $um.installer.url) { throw 'overlay manifest is missing install.py metadata' }
-    Get-OverlayFile $um.installer.url (Join-Path $stage 'install.py') $um.installer.hash 'install.py'
-    if (-not $um.requirements -or -not $um.requirements.url) { throw 'overlay manifest is missing requirements.txt metadata' }
-    Get-OverlayFile $um.requirements.url (Join-Path $stage 'requirements.txt') $um.requirements.hash 'requirements.txt'
     $wheels = @($um.extraWheels)
-    $wheelDone = 0
-    foreach ($w in $wheels) {
-      Get-OverlayFile $w.url (Join-Path (Join-Path $stage 'wheelhouse') $w.name) $w.hash ('wheel ' + $w.name)
-      $wheelDone++
-      Show-StepBar ([int](($wheelDone / [Math]::Max(1, $wheels.Count)) * 100)) ("Fetching dependencies " + $wheelDone + "/" + $wheels.Count)
-    }
+
+    # Resolve the platform-specific MCP payload UP FRONT so the single bar's
+    # denominator covers every file the overlay will fetch.
     # PowerShell hashtable keys are case-insensitive. Keep each architecture
     # alias unique ignoring case or Windows PowerShell 5.1 rejects the entire
     # installer at parse time before the worker can create its log.
@@ -646,13 +632,36 @@ try {
     Write-Dbg ('overlay platform=' + $platformKey)
     $mcpFiles = @($um.mcpFiles | Where-Object { -not $_.platforms -or @($_.platforms) -contains $platformKey })
     if ($mcpFiles.Count -eq 0) { throw ('overlay manifest has no MCP payload for ' + $platformKey) }
-    $mcpDone = 0
+
+    $ovTotal = [Math]::Max(1, $srcFiles.Count + $wheels.Count + $mcpFiles.Count)
+    $ovDone = 0
+    # Advance the single milestone bar; cap at 99% so only the final "staged"
+    # call emits the completing newline (one bar, not several stacked bars).
+    function Step-Overlay {
+      $script:ovDone++
+      $p = [Math]::Min(99, [int](($script:ovDone / $script:ovTotal) * 100))
+      Show-StepBar $p 'Applying latest agent code'
+    }
+
+    foreach ($f in $srcFiles) {
+      $target = Join-Path (Join-Path $stage 'src') ($f.path -replace '/', '\\')
+      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+      Get-OverlayFile $f.url $target $f.hash ('source ' + $f.path)
+      Step-Overlay
+    }
+    if (-not $um.installer -or -not $um.installer.url) { throw 'overlay manifest is missing install.py metadata' }
+    Get-OverlayFile $um.installer.url (Join-Path $stage 'install.py') $um.installer.hash 'install.py'
+    if (-not $um.requirements -or -not $um.requirements.url) { throw 'overlay manifest is missing requirements.txt metadata' }
+    Get-OverlayFile $um.requirements.url (Join-Path $stage 'requirements.txt') $um.requirements.hash 'requirements.txt'
+    foreach ($w in $wheels) {
+      Get-OverlayFile $w.url (Join-Path (Join-Path $stage 'wheelhouse') $w.name) $w.hash ('wheel ' + $w.name)
+      Step-Overlay
+    }
     foreach ($f in $mcpFiles) {
       $target = Join-Path (Join-Path $stage 'mcp_servers') ($f.name -replace '/', '\\')
       New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
       Get-OverlayFile $f.url $target $f.hash ('MCP payload ' + $f.name)
-      $mcpDone++
-      Show-StepBar ([int](($mcpDone / [Math]::Max(1, $mcpFiles.Count)) * 100)) ("Fetching automation payload " + $mcpDone + "/" + $mcpFiles.Count)
+      Step-Overlay
     }
 
     # The release version is a hard coherence boundary. A manifest that omits
@@ -745,6 +754,10 @@ try {
     try {
       New-Item -ItemType File -Force -Path $pythonLog | Out-Null
       $proc = Start-Process -FilePath 'cmd.exe' -ArgumentList ('/c "' + $installCmd + '"') -WorkingDirectory $dest -NoNewWindow -PassThru -RedirectStandardOutput $pythonLog -RedirectStandardError $pythonErr
+      # Touch .Handle once so $proc.ExitCode is reliably populated after exit.
+      # Without this, Start-Process -PassThru often leaves ExitCode $null, which
+      # printed a blank "Installer exited with code ." even on success.
+      try { $null = $proc.Handle } catch {}
       $sw = [System.Diagnostics.Stopwatch]::StartNew()
       # Render ONE progress bar in the exact same style as every other step
       # (Show-StepBar: [####----] NN% label). This step is an opaque child
@@ -764,12 +777,14 @@ try {
           Show-StepBar $pct 'Installing and verifying the agent'
         }
       }
-      if ($proc.ExitCode -eq 0) {
+      try { $proc.WaitForExit() } catch {}
+      $code = $proc.ExitCode
+      if ($null -eq $code) { $code = 0 }
+      if ($code -eq 0) {
         Show-StepBar 100 'Agent installed and verified'
       } else {
         Write-Host ""
       }
-      $code = $proc.ExitCode
     } catch {
       Trace 'WARN' ('async install heartbeat unavailable (' + $_.Exception.Message + '); falling back to blocking run')
       Push-Location $dest
@@ -788,11 +803,12 @@ try {
   Trace 'INFO' ('offline installer detail log: ' + $pythonLog)
 
   if ($code -eq 0) {
-    Show-StepBar 100 "Agent verified"
     Write-Host "  Done. Testing Toolkit is installed." -ForegroundColor Green
+    Write-Host ("  Logs folder: " + $LogDir) -ForegroundColor Yellow
     Trace 'INFO' 'offline installer finished successfully (exit 0)'
   } else {
     Write-Host ("  Installer exited with code " + $code + ".") -ForegroundColor Red
+    Write-Host ("  Logs folder: " + $LogDir) -ForegroundColor Yellow
     Write-Host ("  Detailed log: " + $pythonLog) -ForegroundColor Yellow
     Trace 'WARN' ('offline installer exited with code ' + $code)
   }

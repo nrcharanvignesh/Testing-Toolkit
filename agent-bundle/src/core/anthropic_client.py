@@ -41,6 +41,26 @@ _MESSAGES_PATH: Final[str] = "/v1/messages"
 _CHAT_COMPLETIONS_PATH: Final[str] = "/chat/completions"
 _RETRY_STATUS: Final[frozenset[int]] = frozenset({429, 500, 502, 503, 529})
 
+# Newer models (e.g. bedrock.anthropic.claude-opus-4-8) reject an explicit
+# `temperature` field with HTTP 400 "temperature is deprecated for this model".
+# We discover which models reject it at runtime (from the 400) and remember it
+# for the rest of the session so every subsequent request omits temperature.
+_TEMPERATURE_UNSUPPORTED: set[str] = set()
+
+
+def _wants_temperature(model: str) -> bool:
+    """Whether to send an explicit temperature for this model."""
+    return model not in _TEMPERATURE_UNSUPPORTED
+
+
+def _is_temperature_deprecated(detail: str) -> bool:
+    """True when a 400 body indicates temperature is not accepted."""
+    d = (detail or "").lower()
+    return "temperature" in d and (
+        "deprecat" in d or "not supported" in d or "unsupported" in d
+        or "not allowed" in d or "cannot be" in d
+    )
+
 # Appended to the system prompt of the agentic chat so the assistant stays
 # on-topic (testing / QA / project work items). Mirrors the desktop client.
 _GUARDRAIL_SUFFIX: Final[str] = (
@@ -303,9 +323,11 @@ class AnthropicClient:
         body: dict[str, Any] = {
             "model": model,
             "max_tokens": effective_max,
-            "temperature": 1.0 if use_thinking else float(temperature),
             "messages": [{"role": "user", "content": user}],
         }
+        # Omit temperature for models that reject it (see _TEMPERATURE_UNSUPPORTED).
+        if _wants_temperature(model):
+            body["temperature"] = 1.0 if use_thinking else float(temperature)
         if use_thinking:
             body["thinking"] = {
                 "type": "enabled",
@@ -326,7 +348,7 @@ class AnthropicClient:
             f"[DEBUG] LLM request -> {model}: "
             f"system={len(system)} chars, user={len(user)} chars, "
             f"max_tokens={effective_max}, "
-            f"temp={body['temperature']}"
+            f"temp={body.get('temperature', 'omitted')}"
             + (f", thinking={thinking_budget}" if use_thinking else "")
         )
         _t0 = time.perf_counter()
@@ -385,6 +407,21 @@ class AnthropicClient:
                     continue
                 if resp.status_code != 200:
                     detail = self._error_detail(resp)
+                    # Some models deprecate `temperature`. Learn it, drop the
+                    # field, and retry the SAME attempt budget so generation
+                    # succeeds instead of failing the whole run.
+                    if (
+                        resp.status_code == 400
+                        and "temperature" in body
+                        and _is_temperature_deprecated(detail)
+                    ):
+                        _TEMPERATURE_UNSUPPORTED.add(model)
+                        body.pop("temperature", None)
+                        self._log(
+                            f"[WARN] {model} rejects temperature; "
+                            f"retrying without it."
+                        )
+                        continue
                     if resp.status_code == 400 and use_thinking and \
                             "thinking" in detail.lower():
                         raise AnthropicAPIError(
@@ -599,7 +636,7 @@ class AnthropicClient:
         body: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
-            "temperature": float(temperature),
+            **({"temperature": float(temperature)} if _wants_temperature(model) else {}),
             "messages": messages,
             "stream": True,
         }
@@ -711,7 +748,7 @@ class AnthropicClient:
         body: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
-            "temperature": float(temperature),
+            **({"temperature": float(temperature)} if _wants_temperature(model) else {}),
             "messages": messages,
             "stream": True,
         }
@@ -871,7 +908,7 @@ class AnthropicClient:
         body: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
-            "temperature": float(temperature),
+            **({"temperature": float(temperature)} if _wants_temperature(model) else {}),
             "messages": messages,
             "stream": True,
         }
@@ -1001,7 +1038,7 @@ class AnthropicClient:
         body: dict[str, Any] = {
             "model": model,
             "max_tokens": int(max_tokens),
-            "temperature": float(temperature),
+            **({"temperature": float(temperature)} if _wants_temperature(model) else {}),
             "messages": to_openai_messages(
                 system, [{"role": "user", "content": user}]
             ),
@@ -1077,7 +1114,7 @@ class AnthropicClient:
         body: dict[str, Any] = {
             "model": model,
             "max_tokens": int(max_tokens),
-            "temperature": float(temperature),
+            **({"temperature": float(temperature)} if _wants_temperature(model) else {}),
             "messages": to_openai_messages(sys_prompt, messages),
             "stream": True,
         }

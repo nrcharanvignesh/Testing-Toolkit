@@ -95,7 +95,8 @@ export function InstallationSection() {
         )}
         {!checking && !status?.reachable && (
           <p className="text-amber-300/90">
-            Update server unreachable — check your network or VPN, then Recheck.
+            Update server unreachable — check your network or VPN, then Check
+            for updates again.
           </p>
         )}
       </div>
@@ -111,13 +112,6 @@ export function InstallationSection() {
             strokeWidth={2}
           />
           {busy ? "Checking..." : "Check for updates"}
-        </button>
-        <button
-          className="tt-btn-ghost"
-          onClick={() => void refresh()}
-          disabled={busy || checking}
-        >
-          Recheck
         </button>
       </div>
 
