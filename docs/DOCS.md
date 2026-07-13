@@ -265,6 +265,17 @@ It reuses the app's stored credentials and prints, per work item, the matched
 test cases and WHY each was matched (relation name vs. child type), so an
 unmatched item's real link/type names are immediately visible.
 
+**Running linked test cases in E2E.** The E2E Automation dialog lists BOTH
+app-generated test cases and the real test cases linked to the selected work
+items in the tracker (marked with a "linked" badge). Their actual steps are
+pulled server-side — ADO from the Test Case work item's
+`Microsoft.VSTS.TCM.Steps` XML, JIRA from Xray (`/rest/raven/.../test/.../step`)
+or Zephyr / Zephyr Scale (`/testscript`, `/teststep`) with a description-text
+fallback — and executed through the same self-healing Playwright runner as
+generated test cases. The `/e2e/test-cases` and `/e2e/start` endpoints take a
+`wi_ids` scope so the selectable list and the run share one identical index
+space.
+
 ---
 
 ## 4. First launch and source setup
