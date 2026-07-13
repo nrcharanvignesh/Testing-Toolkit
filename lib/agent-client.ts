@@ -355,6 +355,10 @@ export interface E2ETestCase {
   title: string;
   step_count: number;
   category: string;
+  /** "generated" (app-created) or "ado"/"jira" (linked in the tracker). */
+  source?: string;
+  /** Tracker id of a linked test case (empty for generated ones). */
+  tc_id?: string;
 }
 
 /** A runnable environment derived from a stored credential. */
@@ -1509,10 +1513,21 @@ export const agent = {
     return res.credentials ?? [];
   },
 
-  /** List generated test cases available to run for a project. */
-  async e2eTestCases(project: string): Promise<E2ETestCase[]> {
+  /**
+   * List test cases available to run for a project: app-generated ones plus,
+   * when `wiIds` are supplied, the real test cases linked to those work items
+   * in the tracker (ADO Test Cases / JIRA test issues).
+   */
+  async e2eTestCases(
+    project: string,
+    wiIds: string[] = []
+  ): Promise<E2ETestCase[]> {
+    const qs =
+      wiIds.length > 0
+        ? `?wi_ids=${encodeURIComponent(wiIds.join(","))}`
+        : "";
     const res = await agentFetch<{ test_cases: E2ETestCase[] }>(
-      `/e2e/test-cases/${encodeURIComponent(project)}`
+      `/e2e/test-cases/${encodeURIComponent(project)}${qs}`
     );
     return res.test_cases ?? [];
   },
@@ -1538,7 +1553,12 @@ export const agent = {
    * stays on the agent host; only the environment name is sent.
    */
   async runE2E(
-    payload: { project: string; env: string; indices?: number[] },
+    payload: {
+      project: string;
+      env: string;
+      indices?: number[];
+      wiIds?: string[];
+    },
     handlers: JobHandlers = {}
   ): Promise<E2ERunResult> {
     const { job_id } = await agentFetch<{ job_id: string }>("/e2e/start", {
@@ -1547,6 +1567,7 @@ export const agent = {
         project: payload.project,
         env: payload.env,
         indices: payload.indices ?? [],
+        wi_ids: payload.wiIds ?? [],
       }),
     });
     // Surface the job id immediately so the caller can wire a Stop button.

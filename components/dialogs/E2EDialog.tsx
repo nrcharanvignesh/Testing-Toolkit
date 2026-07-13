@@ -88,7 +88,9 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
       try {
         const [e, tc, lr] = await Promise.all([
           agent.e2eEnvironments(currentProject),
-          agent.e2eTestCases(currentProject),
+          // Scope tracker-linked discovery to the work items ticked on the
+          // board so we fetch only the relevant linked test cases.
+          agent.e2eTestCases(currentProject, [...wiScope]),
           agent.e2eLastRun(currentProject),
         ]);
         if (cancelled) return;
@@ -167,7 +169,12 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
     pushLog("INFO", `Starting E2E run against "${selectedEnv}"...`);
     try {
       const res = await agent.runE2E(
-        { project: currentProject, env: selectedEnv, indices },
+        {
+          project: currentProject,
+          env: selectedEnv,
+          indices,
+          wiIds: [...wiScope],
+        },
         {
           onJobId: (id) => { jobIdRef.current = id; },
           onLog: (line) => {
@@ -460,9 +467,9 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
               ) : visibleTestCases.length === 0 ? (
                 <p className="px-3 py-6 text-center text-sm leading-relaxed text-[var(--tt-text-muted)]">
                   The selected work item{wiScope.size === 1 ? "" : "s"} ha
-                  {wiScope.size === 1 ? "s" : "ve"} no generated E2E test cases.
-                  Pick work item(s) that have test cases, or generate test cases
-                  for this selection first.
+                  {wiScope.size === 1 ? "s" : "ve"} no E2E test cases. Pick work
+                  item(s) that already have test cases linked in the tracker, or
+                  generate test cases for this selection first.
                 </p>
               ) : (
                 <ul className="divide-y divide-[var(--tt-outline)]">
@@ -499,6 +506,14 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
                             )}
                             {tc.title}
                           </span>
+                          {tc.source && tc.source !== "generated" && (
+                            <span
+                              className="tt-badge tt-badge-info shrink-0"
+                              title={`Linked ${tc.source.toUpperCase()} test case${tc.tc_id ? ` #${tc.tc_id}` : ""}`}
+                            >
+                              linked
+                            </span>
+                          )}
                           {lastBadgeClass && (
                             <span className={`tt-badge ${lastBadgeClass} shrink-0`}>
                               {lastStatus}

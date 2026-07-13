@@ -85,15 +85,81 @@ def _latest_sidecar_test_cases(project: str) -> list[dict[str, Any]]:
     return aggregated
 
 
+def _parse_wi_ids(wi_ids: str) -> list[str]:
+    """Parse the comma-separated wi_ids query param into a clean list."""
+    return [p.strip() for p in (wi_ids or "").split(",") if p.strip()]
+
+
+async def _fetch_linked_test_cases(
+    project: str, wi_ids: list[str],
+) -> list[dict[str, Any]]:
+    """Discover the REAL, runnable test cases linked to the given work items in
+    the tracker (ADO Test Case work items or JIRA test issues), matching the
+    board's "Generated Tests" count. Returns [] when nothing is scoped or the
+    source is not configured. Best-effort: never raises."""
+    if not wi_ids:
+        return []
+    try:
+        from core.source_resolver import SourceType, resolve
+        from core.settings_store import build_runtime_config
+
+        res = resolve(project)
+        cfg = build_runtime_config()
+        if res.source is SourceType.JIRA:
+            from jira.test_steps import fetch_linked_test_cases as jira_fetch
+
+            return await jira_fetch(
+                res.url, res.user, res.pat, res.project, wi_ids, cfg
+            )
+        # ADO: work item ids are numeric.
+        from ado.test_steps import fetch_linked_test_cases as ado_fetch
+
+        numeric = [int(w) for w in wi_ids if w.isdigit()]
+        cfg.pat = res.pat
+        cfg.organization = res.organization
+        return await ado_fetch(res.organization, res.project, numeric, cfg)
+    except Exception:  # noqa: BLE001 - discovery is best-effort
+        return []
+
+
+async def _all_test_cases(
+    project: str, wi_ids: list[str],
+) -> list[dict[str, Any]]:
+    """The full runnable test-case list for a project: app-generated sidecar
+    test cases FIRST (their indices are preserved), then linked tracker test
+    cases. This single builder is used by BOTH the list and run endpoints so
+    the index space is IDENTICAL -- a selected index always maps to the same
+    test case at run time. Linked test cases are de-duplicated by (source,
+    tc_id)."""
+    generated = _latest_sidecar_test_cases(project)
+    for tc in generated:
+        tc.setdefault("source", "generated")
+    linked = await _fetch_linked_test_cases(project, wi_ids)
+    seen: set[tuple[str, str]] = set()
+    deduped: list[dict[str, Any]] = []
+    for tc in linked:
+        key = (str(tc.get("source", "")), str(tc.get("tc_id", "")))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(tc)
+    return generated + deduped
+
+
 @router.get("/test-cases/{project}")
-def list_test_cases(project: str) -> dict[str, Any]:
+async def list_test_cases(project: str, wi_ids: str = "") -> dict[str, Any]:
     """Return selectable test cases for a project.
 
-    Each entry: index (stable position in the sidecar), wi_id (parent work
-    item), title, and step_count. Steps themselves are not sent — the runner
-    reads them server-side by index at run time.
+    Each entry: index (stable position in the merged list), wi_id (parent work
+    item), title, step_count, category, and source ("generated" for app-created
+    test cases, "ado"/"jira" for test cases linked in the tracker). Steps
+    themselves are not sent — the runner reads them server-side by index.
+
+    ``wi_ids`` (comma-separated) scopes the tracker-linked discovery to the work
+    items currently shown/selected on the board; without it only app-generated
+    test cases are returned.
     """
-    tcs = _latest_sidecar_test_cases(project)
+    tcs = await _all_test_cases(project, _parse_wi_ids(wi_ids))
     out = [
         {
             "index": i,
@@ -101,6 +167,8 @@ def list_test_cases(project: str) -> dict[str, Any]:
             "title": str(tc.get("title", "Untitled")),
             "step_count": len(tc.get("steps") or []),
             "category": str(tc.get("category", "")),
+            "source": str(tc.get("source", "generated")),
+            "tc_id": str(tc.get("tc_id", "")),
         }
         for i, tc in enumerate(tcs)
         if str(tc.get("id", "")).strip() and len(tc.get("steps") or []) > 0
@@ -172,8 +240,11 @@ def last_run(project: str) -> dict[str, Any]:
 class E2EStartRequest(BaseModel):
     project: str
     env: str
-    # Indices into the latest sidecar's test_cases list. Empty = run all.
+    # Indices into the merged test-case list. Empty = run all.
     indices: list[int] = []
+    # Work item ids the list was scoped to; MUST match what /test-cases was
+    # called with so the index space (and thus each index) is identical.
+    wi_ids: list[str] = []
 
 
 def _persist_run(project: str, results: list[Any], started_at: float) -> str:
@@ -238,8 +309,10 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
             job.fail(f"Environment '{req.env}' has no login URL.")
             return
 
-        # 2) Select the test cases by index (default: all).
-        all_tcs = _latest_sidecar_test_cases(req.project)
+        # 2) Select the test cases by index (default: all). Rebuild the SAME
+        # merged list the /test-cases endpoint produced (generated + linked
+        # tracker test cases) so indices line up exactly.
+        all_tcs = await _all_test_cases(req.project, req.wi_ids)
         if not all_tcs:
             job.fail("No generated test cases found for this project.")
             return
