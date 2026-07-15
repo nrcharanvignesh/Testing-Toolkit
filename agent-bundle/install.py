@@ -1563,12 +1563,24 @@ def _install_playwright(launch_python: str, use_pythonpath: bool) -> bool:
         pip_exe = Path(launch_python)
 
     pkg_ok = _pkg_satisfies(str(pip_exe), "playwright>=1.44")
+    # Guard: metadata can be stale; verify the module is actually importable
+    if pkg_ok:
+        try:
+            r = _run(
+                [str(pip_exe), "-c", "import playwright"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if r.returncode != 0:
+                trace("playwright metadata present but module not importable; reinstalling")
+                pkg_ok = False
+        except Exception:
+            pkg_ok = False
     if not pkg_ok:
         info("Installing playwright (E2E automation)...")
         progress("installing_deps", "Installing playwright", 92)
         try:
             r = _run(
-                [str(pip_exe), "-m", "pip", "install",
+                [str(pip_exe), "-m", "pip", "install", "--force-reinstall",
                  *_PIP_QUIET, "playwright>=1.44"],
                 capture_output=True, text=True, timeout=180,
             )
