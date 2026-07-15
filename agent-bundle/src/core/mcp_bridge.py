@@ -230,6 +230,8 @@ class MCPServerManager:
         self._tools: list[dict[str, Any]] = []
         self._tool_names: set[str] = set()
         self._healthy = False
+        self._recording: bool = False
+        self._recorded_calls: list[dict[str, Any]] = []
 
     @property
     def server_id(self) -> str:
@@ -299,6 +301,22 @@ class MCPServerManager:
             await self._cleanup()
             return False
 
+    def start_recording(self) -> None:
+        """Start recording tool calls for replay script generation."""
+        self._recording = True
+        self._recorded_calls = []
+
+    def stop_recording(self) -> list[dict[str, Any]]:
+        """Stop recording and return the captured tool call log."""
+        self._recording = False
+        calls = self._recorded_calls
+        self._recorded_calls = []
+        return calls
+
+    @property
+    def is_recording(self) -> bool:
+        return self._recording
+
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
         """Invoke a tool by name. Returns a JSON-serialisable string result."""
         if not self.is_healthy or name not in self._tool_names:
@@ -311,9 +329,22 @@ class MCPServerManager:
                     parts.append(block.text)
                 elif hasattr(block, "data"):
                     parts.append(str(block.data))
-            return "\n".join(parts) if parts else json.dumps({"result": "ok"})
+            output = "\n".join(parts) if parts else json.dumps({"result": "ok"})
+            if self._recording:
+                self._recorded_calls.append({
+                    "tool": name,
+                    "arguments": arguments,
+                    "result": output,
+                })
+            return output
         except Exception as e:
             log.warning("[WARN] MCP tool '%s' call failed: %s", name, e)
+            if self._recording:
+                self._recorded_calls.append({
+                    "tool": name,
+                    "arguments": arguments,
+                    "error": str(e),
+                })
             return json.dumps({"error": str(e)})
 
     async def stop(self) -> None:
@@ -394,7 +425,7 @@ class MCPBridge:
                 return True
         return False
 
-    def call_tool(self, name: str, arguments: dict[str, Any]) -> str | None:
+    def call_tool(self, name: str, arguments: dict[str, Any], *, timeout: float = 60) -> str | None:
         """Route a tool call to the correct server. Thread-safe.
         Returns None if no healthy server owns this tool name."""
         if not self._loop or not self.is_ready:
@@ -405,9 +436,19 @@ class MCPBridge:
                     mgr.call_tool(name, arguments), self._loop,
                 )
                 try:
-                    return future.result(timeout=120)
+                    return future.result(timeout=timeout)
                 except Exception as e:
                     return json.dumps({"error": str(e)})
+        return None
+
+    async def call_tool_async(self, name: str, arguments: dict[str, Any]) -> str | None:
+        """Async tool call - zero cross-thread overhead when caller is async.
+        Use this from async contexts for fastest Playwright MCP interaction."""
+        if not self.is_ready:
+            return None
+        for mgr in self._servers.values():
+            if mgr.is_healthy and name in mgr.tool_names:
+                return await mgr.call_tool(name, arguments)
         return None
 
     def stop_all(self) -> None:
@@ -425,6 +466,22 @@ class MCPBridge:
     def server_ids(self) -> list[str]:
         """IDs of all currently healthy servers."""
         return [sid for sid, mgr in self._servers.items() if mgr.is_healthy]
+
+    def start_recording(self, server_id: str = "playwright") -> bool:
+        """Start recording tool calls on a specific server. Returns False if
+        the server is not healthy or not found."""
+        mgr = self._servers.get(server_id)
+        if mgr and mgr.is_healthy:
+            mgr.start_recording()
+            return True
+        return False
+
+    def stop_recording(self, server_id: str = "playwright") -> list[dict[str, Any]]:
+        """Stop recording and return the captured tool calls."""
+        mgr = self._servers.get(server_id)
+        if mgr:
+            return mgr.stop_recording()
+        return []
 
 
 # ---------------------------------------------------------------------
@@ -518,7 +575,11 @@ def build_mcp_configs(
                 str(entry_pw),
                 "--headless" if playwright_headless else "--headed",
             ],
-            env={},
+            env={
+                # Speed optimizations: disable animations, reduce timeouts
+                "PLAYWRIGHT_BROWSERS_PATH": "0",
+                "PWDEBUG": "",
+            },
         ))
         log.info(
             "[INFO] Playwright MCP server configured (headless=%s).",

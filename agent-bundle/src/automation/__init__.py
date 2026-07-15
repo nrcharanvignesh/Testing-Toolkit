@@ -40,6 +40,10 @@ def __getattr__(name: str):
         from .script_generator import generate_playwright_script
 
         return generate_playwright_script
+    if name in ("generate_mcp_replay_script", "save_mcp_replay_script"):
+        from . import script_generator
+
+        return getattr(script_generator, name)
     raise AttributeError(f"module 'automation' has no attribute {name!r}")
 
 
@@ -53,8 +57,10 @@ __all__ = [
     "annotate_screenshot",
     "browser_session",
     "detect_browser_profiles",
+    "generate_mcp_replay_script",
     "generate_playwright_script",
     "get_default_profile",
     "run_e2e_tests",
+    "save_mcp_replay_script",
     "write_e2e_report",
 ]

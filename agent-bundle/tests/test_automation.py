@@ -376,18 +376,18 @@ def test_format_snapshot_scrubs_passwords():
 
 
 def test_format_snapshot_truncates_large_trees():
-    """Output must be bounded to 8000 chars max."""
-    from automation.e2e_plan import _format_snapshot
+    """Output must be bounded to _SNAPSHOT_MAX_CHARS."""
+    from automation.e2e_plan import _format_snapshot, _SNAPSHOT_MAX_CHARS
 
-    # Build a tree that would exceed 8000 chars
+    # Build a tree that would exceed the limit
     children = [
         {"role": "listitem", "name": f"Item number {i:04d} with some extra text padding"}
-        for i in range(500)
+        for i in range(800)
     ]
     snapshot = {"role": "list", "name": "Big List", "children": children}
     result = _format_snapshot(snapshot)
-    assert len(result) <= 8000
-    assert result.endswith("...")
+    assert len(result) <= _SNAPSHOT_MAX_CHARS
+    assert "truncated" in result
 
 
 def test_format_snapshot_none_returns_empty():
@@ -463,3 +463,108 @@ async def test_recompile_failed_step_returns_none_without_client():
         model="test-model",
     )
     assert result is None
+
+
+# --------------------------------------------------------------------------
+# MCP replay script generation
+# --------------------------------------------------------------------------
+def test_generate_mcp_replay_script_basic():
+    """Generates a parseable script with self-healing waterfall."""
+    import ast
+    from automation.script_generator import generate_mcp_replay_script
+
+    calls = [
+        {"tool": "browser_navigate", "arguments": {"url": "https://example.com"}, "result": "ok"},
+        {"tool": "browser_click", "arguments": {"selector": "#login-btn", "ariaLabel": "Log in"}, "result": "ok"},
+        {"tool": "browser_type", "arguments": {"selector": "#email", "text": "user@test.com"}, "result": "ok"},
+        {"tool": "browser_snapshot", "arguments": {}, "result": "..."},
+        {"tool": "browser_take_screenshot", "arguments": {}, "result": "ok"},
+    ]
+    script = generate_mcp_replay_script(calls, title="Test Session")
+    assert "async def main" in script
+    assert "example.com" in script
+    assert "#login-btn" in script
+    assert "#email" in script
+    # Self-healing waterfall is embedded
+    assert "_find_element" in script
+    assert "get_by_role" in script
+    assert "get_by_label" in script
+    # Snapshot is informational; should not produce a replay line
+    assert "accessibility snapshot" not in script or "no replay" in script
+    ast.parse(script)
+
+
+def test_generate_mcp_replay_script_empty():
+    """Returns a stub when no browser calls are recorded."""
+    from automation.script_generator import generate_mcp_replay_script
+
+    result = generate_mcp_replay_script([], title="Empty")
+    assert "No browser actions" in result
+
+
+def test_generate_mcp_replay_script_sanitizes_passwords():
+    """Sensitive values are replaced with env var references."""
+    from automation.script_generator import generate_mcp_replay_script
+
+    calls = [
+        {"tool": "browser_fill_form", "arguments": {"values": [
+            {"selector": "#password", "value": "secret123"},
+        ]}, "result": "ok"},
+    ]
+    script = generate_mcp_replay_script(calls)
+    assert "secret123" not in script
+
+
+def test_smart_pruning_keeps_interactive_elements():
+    """Interactive elements survive pruning even deep in the tree."""
+    from automation.e2e_plan import _prune_non_interactive
+
+    tree = {
+        "role": "WebArea",
+        "name": "Page",
+        "children": [
+            {"role": "navigation", "name": "Nav", "children": [
+                {"role": "list", "name": "", "children": [
+                    {"role": "listitem", "name": "", "children": [
+                        {"role": "link", "name": "Home"},
+                    ]},
+                ]},
+            ]},
+            {"role": "main", "name": "", "children": [
+                {"role": "region", "name": "", "children": [
+                    {"role": "paragraph", "name": "Some text"},
+                    {"role": "paragraph", "name": "More text"},
+                ]},
+            ]},
+        ],
+    }
+    pruned = _prune_non_interactive(tree)
+    assert pruned is not None
+    # The link deep in nav should survive
+    import json
+    flat = json.dumps(pruned)
+    assert "link" in flat
+    assert "Home" in flat
+
+
+def test_smart_pruning_drops_deep_non_interactive():
+    """Non-interactive subtrees beyond depth 3 are pruned."""
+    from automation.e2e_plan import _prune_non_interactive
+
+    deep_tree = {
+        "role": "WebArea", "name": "Page", "children": [
+            {"role": "main", "name": "", "children": [
+                {"role": "region", "name": "", "children": [
+                    {"role": "group", "name": "", "children": [
+                        {"role": "paragraph", "name": "Deep text 1"},
+                        {"role": "paragraph", "name": "Deep text 2"},
+                    ]},
+                ]},
+            ]},
+        ],
+    }
+    pruned = _prune_non_interactive(deep_tree)
+    import json
+    flat = json.dumps(pruned) if pruned else ""
+    # Deep paragraphs with no interactive children should be pruned
+    assert "Deep text" not in flat

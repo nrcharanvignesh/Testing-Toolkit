@@ -64,7 +64,13 @@ _SYSTEM: Final[str] = (
 )
 
 
-_SNAPSHOT_MAX_CHARS: Final[int] = 8000
+_SNAPSHOT_MAX_CHARS: Final[int] = 12000
+
+_INTERACTIVE_ROLES: Final[frozenset[str]] = frozenset({
+    "button", "link", "textbox", "checkbox", "radio", "combobox",
+    "menuitem", "tab", "switch", "searchbox", "slider", "spinbutton",
+    "option", "menuitemcheckbox", "menuitemradio", "treeitem",
+})
 
 
 def _scrub_snapshot_node(node: dict[str, Any]) -> dict[str, Any]:
@@ -79,6 +85,39 @@ def _scrub_snapshot_node(node: dict[str, Any]) -> dict[str, Any]:
     if isinstance(children, list):
         scrubbed["children"] = [_scrub_snapshot_node(c) for c in children if isinstance(c, dict)]
     return scrubbed
+
+
+def _is_interactive_subtree(node: dict[str, Any]) -> bool:
+    """True if this node or any descendant has an interactive role."""
+    if str(node.get("role", "")) in _INTERACTIVE_ROLES:
+        return True
+    for child in node.get("children", []):
+        if isinstance(child, dict) and _is_interactive_subtree(child):
+            return True
+    return False
+
+
+def _prune_non_interactive(node: dict[str, Any], depth: int = 0) -> dict[str, Any] | None:
+    """Prune subtrees with no interactive elements beyond depth 3."""
+    role = str(node.get("role", ""))
+    if role in _INTERACTIVE_ROLES:
+        return node
+    children = node.get("children", [])
+    if not isinstance(children, list):
+        return node if depth <= 2 else None
+    if depth > 3 and not _is_interactive_subtree(node):
+        return None
+    pruned_children: list[dict[str, Any]] = []
+    for child in children:
+        if isinstance(child, dict):
+            pruned = _prune_non_interactive(child, depth + 1)
+            if pruned is not None:
+                pruned_children.append(pruned)
+    if not pruned_children and depth > 2 and role not in _INTERACTIVE_ROLES:
+        return None
+    result = dict(node)
+    result["children"] = pruned_children
+    return result
 
 
 def _render_node(node: dict[str, Any], depth: int = 0) -> str:
@@ -102,15 +141,31 @@ def _format_snapshot(snapshot: dict[str, Any] | None) -> str:
     """Format a Playwright accessibility snapshot into a compact role tree.
 
     Security: strips values from textbox nodes whose name contains 'password'.
-    Bounded to 8000 chars to avoid dominating LLM context.
+    Smart pruning: non-interactive subtrees beyond depth 3 are dropped to keep
+    the LLM focused on actionable elements.
+    Bounded to 12000 chars to balance context usage vs. coverage.
     Returns empty string for None input.
     """
     if snapshot is None:
         return ""
     scrubbed = _scrub_snapshot_node(snapshot)
-    rendered = _render_node(scrubbed)
+    # Smart pruning: prioritize interactive elements for large pages
+    pruned = _prune_non_interactive(scrubbed)
+    if pruned is None:
+        pruned = scrubbed
+    rendered = _render_node(pruned)
     if len(rendered) > _SNAPSHOT_MAX_CHARS:
-        rendered = rendered[:_SNAPSHOT_MAX_CHARS - 3] + "..."
+        # Fallback: if still too large after pruning, truncate at a line boundary
+        lines = rendered.split("\n")
+        truncated: list[str] = []
+        char_count = 0
+        for line in lines:
+            if char_count + len(line) + 1 > _SNAPSHOT_MAX_CHARS - 20:
+                truncated.append("... (truncated)")
+                break
+            truncated.append(line)
+            char_count += len(line) + 1
+        rendered = "\n".join(truncated)
     return rendered
 
 

@@ -67,6 +67,7 @@ from .script_generator import generate_playwright_script
 # ---------------------------------------------------------------------------
 
 MAX_STEP_RETRIES: int = 3          # attempts before marking step as failure
+MAX_RECOMPILE_ATTEMPTS: int = 2    # LLM recompile retries on locator failure
 RETRY_BASE_MS: int = 600           # initial retry backoff (doubles each attempt)
 STABILITY_CHECK_MS: int = 50       # gap between two position checks for stability
 ELEMENT_TIMEOUT_MS: int = 12_000   # default per-element wait
@@ -540,22 +541,27 @@ async def _execute_step(
             status = "error"
             actual = f"Error: {err_msg}"
 
-    # -- Feedback loop: recompile failed step via LLM if element not found --
-    if status == "error" and client and model:
-        try:
-            snapshot_raw = await page.accessibility.snapshot()
-            snapshot_str = _format_snapshot(snapshot_raw)
-            corrected = await recompile_failed_step(
-                step=step,
-                error_message=actual[:500],
-                dom_snapshot=snapshot_str,
-                login_url=login_url,
-                username=username,
-                client=client,
-                model=model,
-            )
-            if corrected is not None:
-                # Single retry with corrected step (no further recompile)
+    # -- Feedback loop: recompile failed step via LLM if locator not found --
+    # Only recompile on locator/element failures (not network/timeout/unsupported).
+    _RECOMPILABLE_SIGNALS = ("not found", "not visible", "no element", "could not find",
+                             "locator resolved", "strict mode violation")
+    _is_locator_failure = any(sig in actual.lower() for sig in _RECOMPILABLE_SIGNALS)
+    if status == "error" and _is_locator_failure and client and model:
+        for _recompile_attempt in range(MAX_RECOMPILE_ATTEMPTS):
+            try:
+                snapshot_raw = await page.accessibility.snapshot()
+                snapshot_str = _format_snapshot(snapshot_raw)
+                corrected = await recompile_failed_step(
+                    step=step,
+                    error_message=actual[:500],
+                    dom_snapshot=snapshot_str,
+                    login_url=login_url,
+                    username=username,
+                    client=client,
+                    model=model,
+                )
+                if corrected is None:
+                    break
                 retry_result = await _execute_step(
                     page, corrected, username, password, screenshot_dir,
                     step_num, stop_fn=stop_fn,
@@ -563,8 +569,10 @@ async def _execute_step(
                 if retry_result.status != "error":
                     retry_result.locator_strategy = "recompiled"
                     return retry_result
-        except Exception:
-            pass
+                # Feed the new error back for next recompile attempt
+                actual = retry_result.actual
+            except Exception:
+                break
 
     # Always capture a screenshot with bounding box annotation at every step
     # for full traceability (Senior QA mode). The annotator draws the element
