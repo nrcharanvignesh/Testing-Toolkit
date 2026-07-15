@@ -4,13 +4,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Final
 from urllib.parse import urlparse
 
 LogFn = Callable[[str], None]
-SCHEMA_VERSION: Final[int] = 1
+SCHEMA_VERSION: Final[int] = 2
 _ALLOWED_ACTIONS: Final[frozenset[str]] = frozenset({
     "navigate", "fill", "click", "type", "select", "check", "uncheck",
     "hover", "double_click", "press_key", "scroll", "wait",
@@ -31,11 +32,24 @@ _VALUE_ACTIONS: Final[frozenset[str]] = frozenset({
 _SECRET_TOKENS: Final[frozenset[str]] = frozenset({"{{password}}", "{{username}}"})
 
 _SYSTEM: Final[str] = (
-    "You compile human QA steps into a deterministic Playwright DSL. Return JSON only. "
+    "You compile human QA steps into a deterministic Playwright DSL. Return JSON only.\n"
     "Never emit credentials: use {{username}} and {{password}} placeholders. Do not invent "
     "steps, selectors, or expected outcomes. If a step cannot be represented, return an "
-    "errors array describing it. Prefer role with target role:Exact accessible name, then "
-    "label, placeholder, text, test_id, or css."
+    "errors array describing it.\n\n"
+    "STEP SCHEMA (every step is an object with these fields):\n"
+    "  action  - one of: navigate, fill, click, type, select, check, uncheck, hover, "
+    "double_click, press_key, scroll, wait, wait_for_text, wait_for_url, assert_text, "
+    "assert_url, assert_element, assert_not_present, screenshot, clear\n"
+    "  locator - the LOCATOR TYPE only, one of: role, label, placeholder, text, test_id, css\n"
+    "  target  - the locator VALUE that Playwright receives. "
+    "For role locators use 'roleName:Accessible Name' (e.g. 'button:Log In', 'textbox:Email'). "
+    "For label/placeholder/text use the visible text. For test_id use the data-testid. "
+    "For css use a CSS selector.\n"
+    "  value   - text to fill/type/select, URL for navigate, key for press_key\n"
+    "  expected - assertion text or URL fragment\n\n"
+    "CRITICAL: 'locator' is ALWAYS a single word from the list above. Never put brackets, "
+    "colons, or role names in the locator field. The role name and accessible name go in 'target'.\n"
+    "Prefer locator strategy: role > label > placeholder > text > test_id > css."
 )
 
 
@@ -65,6 +79,45 @@ def _is_safe_url(value: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
+_COMPOUND_LOCATOR_RE = re.compile(
+    r"^([a-zA-Z_]+)"        # locator type prefix
+    r"[:\s]+"               # separator (colon or whitespace)
+    r"(.+)$",               # the rest is the target value
+)
+_BRACKET_NAME_RE = re.compile(
+    r"^(\w+)\[name=['\"](.+?)['\"]\]$",
+)
+
+
+def _normalize_locator(locator: str, target: str) -> tuple[str, str]:
+    """Recover when the LLM jams type+value into the locator field.
+
+    Examples of malformed locator fields this fixes:
+      "role:button[name='Log In']" -> locator="role", target="button:Log In"
+      "role:button"                -> locator="role", target="button" (if target empty)
+      "label:Email Address"        -> locator="label", target="Email Address"
+    """
+    if locator.lower() in _ALLOWED_LOCATORS:
+        return locator, target
+    m = _COMPOUND_LOCATOR_RE.match(locator)
+    if not m:
+        return locator, target
+    loc_type, loc_value = m.group(1), m.group(2).strip()
+    if loc_type.lower() not in _ALLOWED_LOCATORS:
+        return locator, target
+    # Extract accessible name from bracket syntax: button[name='X'] -> button:X
+    bm = _BRACKET_NAME_RE.match(loc_value)
+    if bm:
+        role_name, accessible_name = bm.group(1), bm.group(2)
+        resolved_target = f"{role_name}:{accessible_name}"
+    else:
+        resolved_target = loc_value
+    # Only override target if it was empty or identical to the compound value
+    if not target or target.lower() == locator:
+        target = resolved_target
+    return loc_type, target
+
+
 def _validate_step(raw: Any, index: int) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise PlanValidationError(f"Step {index} must be an object")
@@ -74,7 +127,9 @@ def _validate_step(raw: Any, index: int) -> dict[str, Any]:
     target = str(raw.get("target", "")).strip()
     value = str(raw.get("value", "")).strip()
     expected = str(raw.get("expected", "")).strip()
-    locator = str(raw.get("locator", "role")).strip().lower() or "role"
+    raw_locator = str(raw.get("locator", "role")).strip() or "role"
+    locator, target = _normalize_locator(raw_locator, target)
+    locator = locator.lower()
     if locator not in _ALLOWED_LOCATORS:
         raise PlanValidationError(f"Step {index} has unsupported locator '{locator}'")
     if action in _TARGET_ACTIONS and not target:

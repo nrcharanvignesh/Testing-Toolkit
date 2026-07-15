@@ -227,6 +227,53 @@ def test_validate_steps_normalizes_known_actions():
     assert steps[1]["value"] == "{{username}}"
 
 
+def test_normalize_locator_recovers_compound_locators():
+    """LLM sometimes jams type+value into the locator field; normalization must recover."""
+    from automation.e2e_plan import _normalize_locator
+
+    # role:button[name='Log In'] -> locator=role, target=button:Log In
+    loc, tgt = _normalize_locator("role:button[name='Log In']", "")
+    assert loc == "role"
+    assert tgt == "button:Log In"
+
+    # role:button (no target provided) -> locator=role, target=button
+    loc, tgt = _normalize_locator("role:button", "")
+    assert loc == "role"
+    assert tgt == "button"
+
+    # label:Email Address -> locator=label, target=Email Address
+    loc, tgt = _normalize_locator("label:Email Address", "")
+    assert loc == "label"
+    assert tgt == "Email Address"
+
+    # Already valid: pass through unchanged
+    loc, tgt = _normalize_locator("role", "button:Log In")
+    assert loc == "role"
+    assert tgt == "button:Log In"
+
+    # Unknown prefix: leave unchanged for rejection by validator
+    loc, tgt = _normalize_locator("xpath://div", "")
+    assert loc == "xpath://div"
+
+    # target already set and different from compound: keep original target
+    loc, tgt = _normalize_locator("role:textbox", "Email")
+    assert loc == "role"
+    assert tgt == "Email"
+
+
+def test_validate_steps_normalizes_compound_locators():
+    """End-to-end: a step with a compound locator should pass validation after normalization."""
+    from automation.e2e_plan import validate_steps
+
+    steps = validate_steps([
+        {"action": "navigate", "value": "https://example.test"},
+        {"action": "click", "target": "", "locator": "role:button[name='Submit']"},
+        {"action": "assert_text", "value": "Done"},
+    ])
+    assert steps[1]["locator"] == "role"
+    assert steps[1]["target"] == "button:Submit"
+
+
 @pytest.mark.asyncio
 async def test_compile_test_case_caches_validated_plan(tmp_path):
     from types import SimpleNamespace
