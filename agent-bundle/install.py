@@ -1562,29 +1562,50 @@ def _install_playwright(launch_python: str, use_pythonpath: bool) -> bool:
         # --target install: use the launch_python directly.
         pip_exe = Path(launch_python)
 
-    if _pkg_satisfies(str(pip_exe), "playwright>=1.44"):
-        ok("playwright>=1.44 already installed -- skipping.")
-        return True
+    pkg_ok = _pkg_satisfies(str(pip_exe), "playwright>=1.44")
+    if not pkg_ok:
+        info("Installing playwright (E2E automation)...")
+        progress("installing_deps", "Installing playwright", 92)
+        try:
+            r = _run(
+                [str(pip_exe), "-m", "pip", "install",
+                 *_PIP_QUIET, "playwright>=1.44"],
+                capture_output=True, text=True, timeout=180,
+            )
+            if r.returncode != 0:
+                error("Playwright install from PyPI failed.")
+                error("Ensure network/proxy access to PyPI is available.")
+                return False
+            ok("playwright installed.")
+        except Exception as exc:  # noqa: BLE001
+            error(f"Playwright install raised an exception: {exc}")
+            return False
+    else:
+        ok("playwright>=1.44 already installed.")
 
-    info("Installing playwright (E2E automation)...")
-    progress("installing_deps", "Installing playwright", 92)
-
+    # Always verify the Chromium browser binary exists (the pip package alone
+    # is not enough -- the browser must be downloaded separately).
+    browser_ok = False
     try:
         r = _run(
-            [str(pip_exe), "-m", "pip", "install",
-             *_PIP_QUIET, "playwright>=1.44"],
-            capture_output=True, text=True, timeout=180,
+            [str(pip_exe), "-m", "playwright", "install", "--dry-run", "chromium"],
+            capture_output=True, text=True, timeout=30,
         )
-        if r.returncode != 0:
-            error("Playwright install from PyPI failed.")
-            error("Ensure network/proxy access to PyPI is available.")
-            return False
-        ok("playwright installed.")
-    except Exception as exc:  # noqa: BLE001
-        error(f"Playwright install raised an exception: {exc}")
-        return False
+        # dry-run lists install location; if the dir exists, the binary is ready
+        if r.returncode == 0 and r.stdout:
+            import re as _re
+            m = _re.search(r"Install location:\s+(.+)", r.stdout)
+            if m and Path(m.group(1).strip()).exists():
+                browser_ok = True
+    except Exception:
+        pass
 
-    # Install the Chromium browser binary.
+    if browser_ok:
+        ok("Playwright Chromium browser already present.")
+        return True
+
+    info("Downloading Playwright Chromium browser...")
+    progress("installing_deps", "Downloading Chromium browser", 93)
     try:
         r = _run(
             [str(pip_exe), "-m", "playwright", "install", "chromium"],
