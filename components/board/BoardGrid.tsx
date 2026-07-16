@@ -15,6 +15,12 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  Inbox,
+  Play,
+  CheckCircle2,
+  XCircle,
+  Archive,
+  CircleDot,
 } from "lucide-react";
 import { useAppState } from "@/lib/app-state";
 import { usePreferences, getPreferences, setSizePref } from "@/lib/preferences";
@@ -245,6 +251,16 @@ export function BoardGrid() {
           </div>
         </div>
 
+        {/* KPI tiles — dynamically discovered from board columns */}
+        {columns.length > 0 && (
+          <KpiTiles
+            columns={columns}
+            rows={rows}
+            activeColumn={fColumn}
+            onSelect={(col) => setFColumn(col === fColumn ? ALL : col)}
+          />
+        )}
+
         {/* Filter row 1 */}
         <div className="flex items-center gap-2">
           <input
@@ -271,8 +287,6 @@ export function BoardGrid() {
             className="tt-btn-ghost shrink-0 !px-3 !py-1.5 text-xs"
             onClick={() => {
               const laneNames = groups.map(([lane]) => lane);
-              // If every visible lane is already collapsed, expand all; else
-              // collapse all.
               const allCollapsed =
                 laneNames.length > 0 && laneNames.every((l) => laneCollapsed(l));
               setAllLanesCollapsed(laneNames, !allCollapsed);
@@ -280,7 +294,9 @@ export function BoardGrid() {
             disabled={!groups.length}
             title="Collapse or expand all row groups"
           >
-            Collapse all
+            {groups.length > 0 && groups.every(([lane]) => laneCollapsed(lane))
+              ? "Expand all"
+              : "Collapse all"}
           </button>
         </div>
 
@@ -758,6 +774,103 @@ function LaneGroup({
         );
       })}
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// KPI Tiles — dynamically mapped from board columns
+// ---------------------------------------------------------------------------
+type KpiDef = {
+  name: string;
+  icon: typeof Inbox;
+  color: string;
+  bg: string;
+};
+
+const KPI_ICON_MAP: Record<string, { icon: typeof Inbox; color: string; bg: string }> = {
+  backlog:  { icon: Inbox,        color: "var(--tt-text-secondary)", bg: "var(--tt-surface-container)" },
+  new:      { icon: Inbox,        color: "var(--tt-info)",           bg: "color-mix(in srgb, var(--tt-info) 12%, transparent)" },
+  active:   { icon: Play,         color: "var(--tt-primary)",        bg: "color-mix(in srgb, var(--tt-primary) 12%, transparent)" },
+  resolved: { icon: CheckCircle2, color: "var(--tt-success)",        bg: "color-mix(in srgb, var(--tt-success) 12%, transparent)" },
+  passed:   { icon: CheckCircle2, color: "var(--tt-success)",        bg: "color-mix(in srgb, var(--tt-success) 12%, transparent)" },
+  done:     { icon: CheckCircle2, color: "var(--tt-success)",        bg: "color-mix(in srgb, var(--tt-success) 12%, transparent)" },
+  failed:   { icon: XCircle,      color: "var(--tt-danger)",         bg: "color-mix(in srgb, var(--tt-danger) 12%, transparent)" },
+  closed:   { icon: Archive,      color: "var(--tt-text-muted)",     bg: "color-mix(in srgb, var(--tt-text-muted) 12%, transparent)" },
+  removed:  { icon: XCircle,      color: "var(--tt-danger)",         bg: "color-mix(in srgb, var(--tt-danger) 12%, transparent)" },
+};
+
+function resolveKpiIcon(columnName: string): { icon: typeof Inbox; color: string; bg: string } {
+  const k = columnName.toLowerCase().replace(/[^a-z]/g, "");
+  for (const [key, val] of Object.entries(KPI_ICON_MAP)) {
+    if (k.includes(key)) return val;
+  }
+  return { icon: CircleDot, color: "var(--tt-text-secondary)", bg: "var(--tt-surface-container)" };
+}
+
+function KpiTiles({
+  columns,
+  rows,
+  activeColumn,
+  onSelect,
+}: {
+  columns: { name: string }[];
+  rows: WorkItemRow[];
+  activeColumn: string;
+  onSelect: (col: string) => void;
+}) {
+  const tiles = useMemo(() => {
+    const countMap = new Map<string, number>();
+    const known = new Set(columns.map((c) => c.name));
+    for (const r of rows) {
+      const col = r.board_column && known.has(r.board_column) ? r.board_column : NO_COLUMN;
+      countMap.set(col, (countMap.get(col) ?? 0) + 1);
+    }
+    // Deduplicate column names (split columns can repeat)
+    const seen = new Set<string>();
+    const result: KpiDef[] = [];
+    for (const c of columns) {
+      if (seen.has(c.name)) continue;
+      seen.add(c.name);
+      const { icon, color, bg } = resolveKpiIcon(c.name);
+      result.push({ name: c.name, icon, color, bg });
+    }
+    return result.map((t) => ({ ...t, count: countMap.get(t.name) ?? 0 }));
+  }, [columns, rows]);
+
+  if (!tiles.length) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {tiles.map((t) => {
+        const Icon = t.icon;
+        const isActive = activeColumn === t.name;
+        return (
+          <button
+            key={t.name}
+            type="button"
+            onClick={() => onSelect(t.name)}
+            className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all hover:shadow-sm"
+            style={{
+              borderColor: isActive ? t.color : "var(--tt-outline)",
+              background: isActive ? t.bg : "var(--tt-surface-base)",
+              boxShadow: isActive ? `0 0 0 1px ${t.color}` : undefined,
+            }}
+            title={`${t.name}: ${t.count} work item(s) — click to filter`}
+          >
+            <Icon className="h-3.5 w-3.5" style={{ color: t.color }} />
+            <span style={{ color: isActive ? t.color : "var(--tt-text-primary)" }}>
+              {t.name}
+            </span>
+            <span
+              className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+              style={{ background: t.bg, color: t.color }}
+            >
+              {t.count}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

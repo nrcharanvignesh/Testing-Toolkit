@@ -306,10 +306,16 @@ def _run_context_job(
             })
             job.log("[INFO] Project context skipped: KB has no indexable content.")
             return
+        if job.stopped:
+            job.fail("Project context mapping stopped")
+            return
         ps.extract_project_context(
             project, final_index, client, model,
             on_log=_log, on_progress=_progress, force=force,
         )
+        if job.stopped:
+            job.fail("Project context mapping stopped after extraction")
+            return
         context = ps.read_context_summary(project)
         if context is None:
             raise RuntimeError("project context summary is unavailable")
@@ -565,7 +571,24 @@ async def clear_kb(project: str, keep_documents: bool = False) -> dict:
             job.log("[WARN] KB force-clear requested — stopping this job.")
             stopped.append(job.id)
 
+    # Wait for stopped jobs to reach a terminal state so they cannot re-write
+    # files after the wipe below. Timeout after 5s to avoid hanging forever.
+    import time as _time
+    deadline = _time.monotonic() + 5.0
+    for jid in stopped:
+        while _time.monotonic() < deadline:
+            j = JOBS.get(jid)
+            if j is None or j.state in ("done", "error"):
+                break
+            await asyncio.sleep(0.1)
+
     result = await asyncio.to_thread(ps.clear_kb, project, keep_documents=keep_documents)
+
+    # Double-wipe: if a context job was mid-LLM-call and wrote its summary back
+    # between request_stop and the wipe above, clear it again now.
+    if stopped:
+        await asyncio.to_thread(ps.clear_context_summary, project)
+
     result["stopped_jobs"] = stopped
     return result
 
