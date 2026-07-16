@@ -89,3 +89,159 @@ def test_cfg_returns_default_when_env_empty() -> None:
     with patch.dict(os.environ, {"TEST_CFG_VAR_ABSENT": ""}, clear=False):
         result = _cfg("TEST_CFG_VAR_ABSENT_NEVER_SET", "my_default")
         assert result == "my_default"
+
+
+# --- _resolve_config_dir ---
+
+
+def test_resolve_config_dir_default() -> None:
+    from core.app_config import _resolve_config_dir
+    from pathlib import Path
+
+    with patch.dict(os.environ, {"TT_CONFIG_DIR": ""}, clear=False):
+        result = _resolve_config_dir()
+        assert result == Path.home() / ".testing_toolkit"
+
+
+def test_resolve_config_dir_override(tmp_path) -> None:
+    from core.app_config import _resolve_config_dir
+
+    override = str(tmp_path / "custom_config")
+    with patch.dict(os.environ, {"TT_CONFIG_DIR": override}, clear=False):
+        result = _resolve_config_dir()
+        assert result == tmp_path / "custom_config"
+
+
+# --- _resolve_int_env ---
+
+
+def test_resolve_int_env_returns_default_when_empty() -> None:
+    from core.app_config import _resolve_int_env
+
+    with patch.dict(os.environ, {"TT_TEST_INT": ""}, clear=False):
+        assert _resolve_int_env("TT_TEST_INT", 42) == 42
+
+
+def test_resolve_int_env_parses_valid_int() -> None:
+    from core.app_config import _resolve_int_env
+
+    with patch.dict(os.environ, {"TT_TEST_INT": "8"}, clear=False):
+        assert _resolve_int_env("TT_TEST_INT", 42) == 8
+
+
+def test_resolve_int_env_clamps_negative_to_zero() -> None:
+    from core.app_config import _resolve_int_env
+
+    with patch.dict(os.environ, {"TT_TEST_INT": "-5"}, clear=False):
+        assert _resolve_int_env("TT_TEST_INT", 42) == 0
+
+
+def test_resolve_int_env_returns_default_on_invalid() -> None:
+    from core.app_config import _resolve_int_env
+
+    with patch.dict(os.environ, {"TT_TEST_INT": "not_a_number"}, clear=False):
+        assert _resolve_int_env("TT_TEST_INT", 42) == 42
+
+
+# --- resolve_index_workers ---
+
+
+def test_resolve_index_workers_caps_at_n_items() -> None:
+    from core.app_config import resolve_index_workers
+
+    assert resolve_index_workers(2) <= 2
+
+
+def test_resolve_index_workers_returns_one_for_zero_items() -> None:
+    from core.app_config import resolve_index_workers
+
+    assert resolve_index_workers(0) == 1
+    assert resolve_index_workers(-1) == 1
+
+
+def test_resolve_index_workers_at_least_one() -> None:
+    from core.app_config import resolve_index_workers
+
+    assert resolve_index_workers(1000) >= 1
+
+
+# --- display_project_name ---
+
+
+def test_display_project_name_strips_prefix() -> None:
+    from core.app_config import display_project_name
+
+    assert display_project_name("InteractionsHub_Abbott", "InteractionsHub_") == "Abbott"
+
+
+def test_display_project_name_case_insensitive() -> None:
+    from core.app_config import display_project_name
+
+    assert display_project_name("INTERACTIONSHUB_Abbott", "InteractionsHub_") == "Abbott"
+
+
+def test_display_project_name_no_match() -> None:
+    from core.app_config import display_project_name
+
+    assert display_project_name("OtherProject", "InteractionsHub_") == "OtherProject"
+
+
+def test_display_project_name_empty_after_strip() -> None:
+    from core.app_config import display_project_name
+
+    assert display_project_name("PREFIX", "PREFIX") == "PREFIX"
+
+
+def test_display_project_name_empty_prefix() -> None:
+    from core.app_config import display_project_name
+
+    assert display_project_name("MyProject", "") == "MyProject"
+
+
+# --- _base_dir / asset_path ---
+
+
+def test_base_dir_from_source() -> None:
+    from core.app_config import _base_dir
+    from pathlib import Path
+
+    result = _base_dir()
+    assert isinstance(result, Path)
+    assert result.exists()
+
+
+def test_base_dir_from_pyinstaller() -> None:
+    import sys
+    from core.app_config import _base_dir
+    from pathlib import Path
+
+    with patch.object(sys, "_MEIPASS", "/fake/meipass", create=True):
+        result = _base_dir()
+        assert result == Path("/fake/meipass")
+
+
+def test_asset_path_under_assets_dir() -> None:
+    from core.app_config import asset_path
+
+    result = asset_path("icon.png")
+    assert "assets" in str(result)
+    assert str(result).endswith("icon.png")
+
+
+# --- Constants ---
+
+
+def test_default_project_prefix_is_string() -> None:
+    from core.app_config import DEFAULT_PROJECT_PREFIX
+
+    assert isinstance(DEFAULT_PROJECT_PREFIX, str)
+    assert len(DEFAULT_PROJECT_PREFIX) > 0
+
+
+def test_path_constants_are_paths() -> None:
+    from core.app_config import PROJECTS_DIR, SETTINGS_PATH, LOGS_DIR
+    from pathlib import Path
+
+    assert isinstance(PROJECTS_DIR, Path)
+    assert isinstance(SETTINGS_PATH, Path)
+    assert isinstance(LOGS_DIR, Path)

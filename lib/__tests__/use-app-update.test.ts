@@ -24,11 +24,12 @@ vi.mock("@/lib/agent-client", async (importOriginal) => {
 // Minimal React mock - the test environment is node, no jsdom/RTHL.
 // We capture useState/useCallback/useRef calls to exercise the hook logic
 // without a renderer.
-let stateSlots: Array<{ value: unknown; setter: (v: unknown) => void }> = [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let stateSlots: Array<{ value: any; setter: (v: any) => void }> = [];
 let stateIndex = 0;
 
 vi.mock("react", () => ({
-  useState: <T>(initial: T) => {
+  useState: (initial: unknown) => {
     if (stateIndex >= stateSlots.length) {
       const slot = { value: initial, setter: (v: unknown) => { slot.value = v; } };
       stateSlots.push(slot);
@@ -36,8 +37,8 @@ vi.mock("react", () => ({
     const slot = stateSlots[stateIndex++];
     return [slot.value, slot.setter];
   },
-  useCallback: <T>(fn: T, _deps: unknown[]) => fn,
-  useRef: <T>(initial: T) => ({ current: initial }),
+  useCallback: (fn: unknown, _deps: unknown[]) => fn,
+  useRef: (initial: unknown) => ({ current: initial }),
 }));
 
 // Import the mocked agent after vi.mock declarations
