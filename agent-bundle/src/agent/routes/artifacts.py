@@ -22,6 +22,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 
+from core.trace import trace
+
 router = APIRouter()
 
 
@@ -46,6 +48,7 @@ def _describe(path: Path, kind: str) -> dict[str, Any]:
 # "/{project}" route, otherwise FastAPI matches GET /artifacts/download as
 # list_artifacts(project="download").
 @router.get("/download")
+@trace
 async def download_artifact(path: str = Query(...)) -> FileResponse:
     target = Path(path).resolve()
     root = _workspace_root()
@@ -59,6 +62,7 @@ async def download_artifact(path: str = Query(...)) -> FileResponse:
 
 
 @router.delete("/delete")
+@trace
 async def delete_artifact(path: str = Query(...)) -> dict[str, Any]:
     """Delete a single generated artifact (desktop 'Delete' button).
 
@@ -76,6 +80,7 @@ async def delete_artifact(path: str = Query(...)) -> dict[str, Any]:
 
 
 @router.get("/{project}")
+@trace
 async def list_artifacts(project: str) -> list[dict[str, Any]]:
     from core.app_config import OUTPUTS_DIR
     from core.project_store import ProjectPaths, _safe_name

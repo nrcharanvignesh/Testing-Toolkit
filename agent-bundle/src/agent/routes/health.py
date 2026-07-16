@@ -10,6 +10,7 @@ from fastapi import APIRouter
 
 from agent.model_loader import models_loaded
 from agent.version import AGENT_VERSION
+from core.trace import trace
 
 router = APIRouter()
 
@@ -76,6 +77,7 @@ def _app_data_mb() -> int | None:
 
 
 @router.get("/health")
+@trace
 async def health() -> dict:
     try:
         user = os.getlogin()
@@ -117,6 +119,7 @@ async def health() -> dict:
 
 
 @router.get("/capabilities")
+@trace
 async def capabilities_route() -> dict:
     """Standalone capabilities map (same content as health.capabilities)."""
     try:
@@ -128,6 +131,7 @@ async def capabilities_route() -> dict:
 
 
 @router.get("/doctor")
+@trace
 async def doctor_route() -> dict:
     """Run agent self-diagnostics and return a pass/warn/fail report with
     remediation for anything degraded. Never raises."""
@@ -146,6 +150,7 @@ async def doctor_route() -> dict:
 
 
 @router.post("/open-log-folder")
+@trace
 async def open_log_folder() -> dict:
     """Best-effort: open the log directory in the OS file explorer."""
     import subprocess
@@ -172,6 +177,7 @@ async def open_log_folder() -> dict:
 
 
 @router.get("/version")
+@trace
 async def version() -> dict:
     import sys
     return {
@@ -181,6 +187,7 @@ async def version() -> dict:
 
 
 @router.get("/metrics")
+@trace
 async def metrics() -> dict:
     """Live system resource usage for the status bar.
 

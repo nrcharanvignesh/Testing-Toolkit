@@ -161,6 +161,7 @@ _MAX_ATTACH_TEXT = 60_000                       # chars kept per file
 
 
 @router.post("/extract")
+@trace
 async def extract_attachments(
     files: list[UploadFile] = File(...),
 ) -> dict[str, Any]:
@@ -615,6 +616,7 @@ async def _run_push(job: Job, req: PushRequest) -> None:
 
 
 @router.post("/push")
+@trace
 async def push_test_cases(req: PushRequest) -> dict[str, str]:
     from core.source_resolver import resolve
 
@@ -642,6 +644,7 @@ class PushXlsxRequest(BaseModel):
 
 
 @router.post("/push-xlsx")
+@trace
 async def push_test_cases_from_xlsx(req: PushXlsxRequest) -> dict[str, str]:
     """Re-read a reviewer-edited .xlsx back into a payload and push it to ADO.
 
@@ -688,6 +691,7 @@ class LoadXlsxRequest(BaseModel):
 
 
 @router.post("/load-xlsx")
+@trace
 async def load_test_cases_from_xlsx(req: LoadXlsxRequest) -> dict[str, Any]:
     """Read an existing reviewer .xlsx artifact back into a payload.
 
@@ -756,6 +760,7 @@ async def load_test_cases_from_xlsx(req: LoadXlsxRequest) -> dict[str, Any]:
 # Reviewer Excel download
 # ---------------------------------------------------------------------
 @router.get("/excel/{job_id}")
+@trace
 async def download_excel(job_id: str) -> FileResponse:
     job = JOBS.get(job_id)
     if job is None:

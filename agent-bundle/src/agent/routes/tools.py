@@ -21,6 +21,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from agent.jobs import JOBS, Job
+from core.trace import trace
 
 router = APIRouter()
 
@@ -102,6 +103,7 @@ async def _run_package(
 
 
 @router.get("/log")
+@trace
 async def recent_log(max_bytes: int = 8_000_000) -> dict[str, Any]:
     """Return the tail of the rotating log file plus its on-disk path.
 
@@ -134,6 +136,7 @@ async def recent_log(max_bytes: int = 8_000_000) -> dict[str, Any]:
 
 
 @router.post("/package")
+@trace
 async def package_pdfs(req: PackageRequest) -> dict[str, str]:
     if not req.wi_ids:
         raise HTTPException(400, "No work items selected")

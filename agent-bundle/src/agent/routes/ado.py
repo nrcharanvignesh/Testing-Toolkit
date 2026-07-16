@@ -16,6 +16,8 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
+from core.trace import trace
+
 router = APIRouter()
 
 # Hosts we are willing to proxy authenticated blobs from. ADO attachment and
@@ -47,6 +49,7 @@ class VerifyPatResponse(BaseModel):
 
 
 @router.get("/verify")
+@trace
 async def verify_pat() -> VerifyPatResponse:
     """Verify the stored PAT works against the configured organization."""
     from core.settings_store import get_setting, load_pat_value, KEY_ORG
@@ -66,6 +69,7 @@ async def verify_pat() -> VerifyPatResponse:
 
 
 @router.get("/projects")
+@trace
 async def list_projects() -> list[str]:
     """List ADO projects for the configured organization."""
     from ado.api import list_projects as _list_projects
@@ -78,6 +82,7 @@ async def list_projects() -> list[str]:
 
 
 @router.get("/boards/{project}")
+@trace
 async def list_boards(project: str) -> list[dict[str, Any]]:
     """List boards (across all teams) for a given project."""
     from ado.boards import list_boards_for_project_async
@@ -108,6 +113,7 @@ class WorkItemsRequest(BaseModel):
 
 
 @router.post("/workitems")
+@trace
 async def list_work_items(req: WorkItemsRequest) -> dict[str, Any]:
     """Fetch work items for a specific board, grouped by board column (lane)."""
     from ado.boards import Board, load_board_view_async
@@ -169,6 +175,7 @@ def _serialize_row(r) -> dict[str, Any]:
 
 
 @router.post("/workitems/stream")
+@trace
 async def list_work_items_stream(req: WorkItemsRequest) -> StreamingResponse:
     """Progressive board load over SSE. Emits `columns` first (skeleton), then
     incremental `batch` events as rows arrive, then a final `done` event. The
@@ -245,6 +252,7 @@ async def list_work_items_stream(req: WorkItemsRequest) -> StreamingResponse:
 
 
 @router.get("/workitem/{project}/{wi_id}")
+@trace
 async def work_item_detail(project: str, wi_id: int) -> dict[str, Any]:
     """Fetch full detail for a single work item."""
     from ado.boards import fetch_work_item_detail_async
@@ -294,6 +302,7 @@ class TagRequest(BaseModel):
 
 
 @router.post("/tag")
+@trace
 async def tag_work_item_route(req: TagRequest) -> dict[str, Any]:
     """Add a tag to an ADO work item (idempotent, case-insensitive dedupe)."""
     from ado.boards import tag_work_item
@@ -316,6 +325,7 @@ async def tag_work_item_route(req: TagRequest) -> dict[str, Any]:
 
 
 @router.get("/blob")
+@trace
 async def ado_blob(
     project: str = Query(...),
     url: str = Query(...),

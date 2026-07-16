@@ -10,11 +10,13 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from agent import updater
+from core.trace import trace
 
 router = APIRouter()
 
 
 @router.get("/status")
+@trace
 async def update_status() -> dict:
     """Return current vs. available version without mutating the installation."""
     return updater.check_for_update()

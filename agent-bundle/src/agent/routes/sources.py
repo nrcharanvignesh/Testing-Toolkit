@@ -91,6 +91,7 @@ async def verify_all() -> VerifyAllResponse:
 
 
 @router.get("/projects")
+@trace
 async def list_projects() -> list[str]:
     """Merged project list. Suffixed by source only when both are configured."""
     from core.settings_store import is_configured, is_jira_configured
@@ -125,6 +126,7 @@ async def list_projects() -> list[str]:
 
 
 @router.get("/boards/{project}")
+@trace
 async def list_boards(project: str) -> list[dict[str, Any]]:
     """Dispatch board listing to the resolved source."""
     bare, _ = strip_source_suffix(project)
@@ -182,6 +184,7 @@ async def list_work_items(req: WorkItemsRequest) -> dict[str, Any]:
 
 
 @router.post("/workitems/stream")
+@trace
 async def list_work_items_stream(req: WorkItemsRequest):
     """Progressive board load (SSE). ADO-only: JIRA has no streaming loader, so
     JIRA projects get a 400 and the client falls back to POST /workitems."""
@@ -207,6 +210,7 @@ async def list_work_items_stream(req: WorkItemsRequest):
 
 
 @router.get("/workitem/{project}/{wi_id}")
+@trace
 async def work_item_detail(project: str, wi_id: str) -> dict[str, Any]:
     """Dispatch single work-item detail to the resolved source. ADO ids are
     integers; JIRA keys are strings (e.g. PROJ-123)."""
@@ -231,6 +235,7 @@ class TagRequest(BaseModel):
 
 
 @router.post("/tag")
+@trace
 async def tag_work_item(req: TagRequest) -> dict[str, Any]:
     """Tag a work item. ADO-only (JIRA labeling not wired). JIRA projects
     return 400 so the UI can hide the action for that source."""

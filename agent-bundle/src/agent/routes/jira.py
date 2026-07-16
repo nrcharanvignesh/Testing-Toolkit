@@ -15,6 +15,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from core.trace import trace
+
 router = APIRouter()
 
 
@@ -42,6 +44,7 @@ class VerifyResponse(BaseModel):
 
 
 @router.get("/verify")
+@trace
 async def verify_jira() -> VerifyResponse:
     """Verify stored JIRA credentials via /rest/api/2/myself."""
     from core.settings_store import (
@@ -63,6 +66,7 @@ async def verify_jira() -> VerifyResponse:
 
 
 @router.get("/projects")
+@trace
 async def list_projects() -> list[str]:
     """List JIRA project keys."""
     from jira.api import list_projects as _list_projects
@@ -75,6 +79,7 @@ async def list_projects() -> list[str]:
 
 
 @router.get("/boards/{project}")
+@trace
 async def list_boards(project: str) -> list[dict[str, Any]]:
     """List JIRA agile boards for a project, shaped like ADO boards."""
     from core.source_types import strip_source_suffix
@@ -125,6 +130,7 @@ def _issue_row(iss) -> dict[str, Any]:
 
 
 @router.post("/workitems")
+@trace
 async def list_work_items(req: WorkItemsRequest) -> dict[str, Any]:
     """Fetch JIRA issues for a project, grouped by status (lane)."""
     from core.source_types import strip_source_suffix
@@ -153,6 +159,7 @@ async def list_work_items(req: WorkItemsRequest) -> dict[str, Any]:
 
 
 @router.get("/workitem/{project}/{issue_key}")
+@trace
 async def work_item_detail(project: str, issue_key: str) -> dict[str, Any]:
     """Fetch full detail for a single JIRA issue, shaped like an ADO WI."""
     from core.source_types import strip_source_suffix

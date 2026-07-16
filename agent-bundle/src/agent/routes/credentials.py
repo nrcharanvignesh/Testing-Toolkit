@@ -106,6 +106,7 @@ def upsert_credential(project: str, body: CredIn) -> dict[str, Any]:
 
 
 @router.delete("/{project}/{env}")
+@trace
 def delete_credential(project: str, env: str) -> dict[str, Any]:
     """Remove a single credential by environment name."""
     creds = _VAULT.load(project)
@@ -119,6 +120,7 @@ def delete_credential(project: str, env: str) -> dict[str, Any]:
 
 
 @router.post("/{project}/clear")
+@trace
 def clear_credentials(project: str) -> dict[str, Any]:
     """Remove all credentials for a project."""
     _VAULT.clear(project)

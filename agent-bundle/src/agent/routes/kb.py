@@ -105,6 +105,7 @@ class RerankRequest(BaseModel):
 
 
 @router.post("/rerank")
+@trace
 async def rerank(req: RerankRequest) -> dict:
     """Rerank candidates using the local cross-encoder model."""
     from agent.model_loader import get_cached_reranker
@@ -358,6 +359,7 @@ def _start_context_job(
 
 
 @router.post("/index")
+@trace
 async def index_project(req: IndexRequest) -> dict:
     """Start a background KB indexing run and return its job id. Poll
     /jobs/{job_id} for live per-file progress and logs, exactly like the
@@ -426,6 +428,7 @@ def recover_interrupted_kb_jobs() -> int:
 
 
 @router.get("/index/active/{project}")
+@trace
 async def active_index_job(project: str) -> dict:
     """Return the id of an in-flight KB index job for ``project`` (if any) so a
     reopened browser can reattach to indexing that is still running in the agent
@@ -437,6 +440,7 @@ async def active_index_job(project: str) -> dict:
 
 
 @router.post("/upload/{project}")
+@trace
 async def upload_document(
     project: str,
     file: UploadFile = File(...),
@@ -483,6 +487,7 @@ async def upload_document(
 
 
 @router.get("/status/{project}")
+@trace
 async def kb_status(project: str) -> dict:
     """Return KB index status for a project."""
     project_dir = PROJECTS_DIR / project
@@ -517,6 +522,7 @@ async def kb_status(project: str) -> dict:
 
 
 @router.delete("/document/{project}")
+@trace
 async def delete_document(project: str, name: str) -> dict:
     """Delete a single document from the project's kb/ folder and invalidate
     the stored index so the next rebuild reflects the change. Mirrors the
@@ -539,6 +545,7 @@ async def delete_document(project: str, name: str) -> dict:
 
 
 @router.post("/clear/{project}")
+@trace
 async def clear_kb(project: str, keep_documents: bool = False) -> dict:
     """Force-clear a project's knowledge base at ANY point, regardless of
     progress. Requests a stop on any in-flight KB indexing and project-context
@@ -583,12 +590,14 @@ def _template_payload(project: str, phase: str) -> dict:
 
 
 @router.get("/template/{project}/{phase}")
+@trace
 async def template_status(project: str, phase: str) -> dict:
     """Return the stored template status for a phase (implementation/sit/uat)."""
     return _template_payload(project, phase)
 
 
 @router.post("/template/{project}/{phase}")
+@trace
 async def upload_template(
     project: str,
     phase: str,
@@ -653,6 +662,7 @@ async def upload_template(
 
 
 @router.delete("/template/{project}/{phase}")
+@trace
 async def delete_template(project: str, phase: str) -> dict:
     """Remove the stored template (and its spec) for a phase."""
     import core.project_store as ps
@@ -674,6 +684,7 @@ async def delete_template(project: str, phase: str) -> dict:
 
 
 @router.get("/template/{project}/{phase}/download")
+@trace
 async def download_template(project: str, phase: str):
     """Download the stored template workbook for a phase (web equivalent of
     the desktop dialog's "Open" button)."""
@@ -736,6 +747,7 @@ def _context_payload(project: str) -> dict:
 
 
 @router.get("/context/active/{project}")
+@trace
 async def active_context_job(project: str) -> dict:
     """Return live context progress so the UI can track it independently."""
     from agent.jobs import JOBS
@@ -748,6 +760,7 @@ async def active_context_job(project: str) -> dict:
 
 
 @router.get("/context/{project}")
+@trace
 async def get_context(project: str) -> dict:
     """Return the auto-extracted project context summary (actors, entities,
     workflows, screens, ...). Web equivalent of the desktop dialog's
@@ -760,6 +773,7 @@ class ContextSettingRequest(BaseModel):
 
 
 @router.put("/context/{project}/setting")
+@trace
 async def set_context_setting(project: str, req: ContextSettingRequest) -> dict:
     """Enable or disable injecting the stored summary into generation."""
     import core.project_store as ps
@@ -779,6 +793,7 @@ class ContextEditRequest(BaseModel):
 
 
 @router.put("/context/{project}")
+@trace
 async def edit_context(project: str, req: ContextEditRequest) -> dict:
     """Save a user-edited project context summary. The edited text is injected
     verbatim into generation (overriding the auto-rendered category sections).
@@ -797,6 +812,7 @@ async def edit_context(project: str, req: ContextEditRequest) -> dict:
 
 
 @router.delete("/context/{project}")
+@trace
 async def clear_context(project: str) -> dict:
     """Delete the stored project context summary for this project."""
     import core.project_store as ps
@@ -806,6 +822,7 @@ async def clear_context(project: str) -> dict:
 
 
 @router.post("/context/{project}/regenerate")
+@trace
 async def regenerate_context(project: str) -> dict:
     """Re-extract project context from the current KB index using the LLM and
     persist it. Mirrors the desktop dialog's "Regenerate" button."""

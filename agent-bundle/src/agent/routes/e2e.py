@@ -148,6 +148,7 @@ async def _all_test_cases(
 
 
 @router.get("/test-cases/{project}")
+@trace
 async def list_test_cases(project: str, wi_ids: str = "") -> dict[str, Any]:
     """Return selectable test cases for a project.
 
@@ -181,6 +182,7 @@ async def list_test_cases(project: str, wi_ids: str = "") -> dict[str, Any]:
 # Environments (masked credentials usable as run targets)
 # ---------------------------------------------------------------------
 @router.get("/environments/{project}")
+@trace
 def list_environments(project: str) -> dict[str, Any]:
     """Return environments (credential envs) that can be run against.
 
@@ -206,6 +208,7 @@ def list_environments(project: str) -> dict[str, Any]:
 # Last run summary + re-run-failed support
 # ---------------------------------------------------------------------
 @router.get("/last-run/{project}")
+@trace
 def last_run(project: str) -> dict[str, Any]:
     """Return a summary of the most recent execution run, or null."""
     from automation.execution_store import load_latest_run
@@ -490,6 +493,7 @@ async def start_e2e(req: E2EStartRequest) -> dict[str, str]:
 
 
 @router.post("/stop/{job_id}")
+@trace
 def stop_e2e(job_id: str) -> dict[str, Any]:
     """Signal a running E2E job to stop after the current test case."""
     job = JOBS.get(job_id)

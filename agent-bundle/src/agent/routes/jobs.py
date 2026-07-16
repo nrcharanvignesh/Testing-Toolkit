@@ -9,11 +9,13 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from agent.jobs import JOBS
+from core.trace import trace
 
 router = APIRouter()
 
 
 @router.get("/{job_id}")
+@trace
 async def get_job(job_id: str, log_offset: int = 0) -> dict:
     job = JOBS.get(job_id)
     if job is None:
@@ -22,6 +24,7 @@ async def get_job(job_id: str, log_offset: int = 0) -> dict:
 
 
 @router.post("/{job_id}/stop")
+@trace
 async def stop_job(job_id: str) -> dict:
     job = JOBS.get(job_id)
     if job is None:
