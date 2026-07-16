@@ -360,11 +360,18 @@ _JIRA_FALLBACK_PATH: Final[Path] = _jira_fallback_path()
 
 
 def load_jira_pat() -> str:
-    """Return the stored JIRA PAT, or an empty string."""
-    val = _keyring_get(_JIRA_SERVICE, _JIRA_USERNAME)
-    if val:
-        return val.strip()
-    return (_file_get(_JIRA_FALLBACK_PATH) or "").strip()
+    """Return the stored JIRA PAT, or an empty string.
+
+    Self-heals: replicates to whichever backend is missing so both
+    survive reinstalls and credential-manager resets.
+    """
+    kr = (_keyring_get(_JIRA_SERVICE, _JIRA_USERNAME) or "").strip()
+    fi = (_file_get(_JIRA_FALLBACK_PATH) or "").strip()
+    if kr and not fi:
+        _file_set(_JIRA_FALLBACK_PATH, kr)
+    elif fi and not kr:
+        _keyring_set(_JIRA_SERVICE, _JIRA_USERNAME, fi)
+    return kr or fi
 
 
 def save_jira_pat(pat: str) -> bool:

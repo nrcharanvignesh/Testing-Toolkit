@@ -209,11 +209,18 @@ def _file_delete() -> bool:
 
 
 def load_pat() -> str | None:
-    """Return stored PAT or None if absent."""
-    val = _try_keyring_get()
-    if val:
-        return val
-    return _file_get()
+    """Return stored PAT or None if absent.
+
+    Self-heals: if only one backend has the value, replicate to the other
+    so both survive the next reinstall or credential-manager reset.
+    """
+    kr = _try_keyring_get()
+    fi = _file_get()
+    if kr and not fi:
+        _file_set(kr)
+    elif fi and not kr:
+        _try_keyring_set(fi)
+    return kr or fi
 
 
 def save_pat(token: str) -> bool:
