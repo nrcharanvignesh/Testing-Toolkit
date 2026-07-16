@@ -7,7 +7,7 @@ import { useMetrics } from "@/lib/use-metrics";
 import { REQUIRED_AGENT_VERSION } from "@/lib/agent-version";
 
 /** Format a megabyte value as GB when large enough, else MB. */
-function fmtMem(mb: number | null | undefined): string {
+export function fmtMem(mb: number | null | undefined): string {
   // Guard every non-finite value (null, undefined, NaN, Infinity) so a missing
   // metric renders "--" instead of a stray "undefined MB" in the status bar.
   if (mb == null || !Number.isFinite(mb)) return "--";
@@ -98,7 +98,7 @@ function useOnline(): boolean {
   return online;
 }
 
-const KB_COLOR: Record<KbState, string> = {
+export const KB_COLOR: Record<KbState, string> = {
   none: "var(--tt-danger)",
   indexing: "var(--tt-warn)",
   context: "var(--tt-info)",

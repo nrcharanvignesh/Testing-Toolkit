@@ -709,7 +709,7 @@ function TemplatesSection({
   );
 }
 
-const PROMPT_SCOPES: { value: string; label: string }[] = [
+export const PROMPT_SCOPES: { value: string; label: string }[] = [
   { value: "", label: "General (default)" },
   { value: "implementation", label: "Implementation phase" },
   { value: "sit", label: "SIT phase" },
