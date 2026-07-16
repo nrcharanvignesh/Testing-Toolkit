@@ -17,6 +17,7 @@ _MAX_WINDOW_CHARS: Final[int] = 36000
 _WINDOW_OVERLAP_CHARS: Final[int] = 2000
 _MAX_TOKENS: Final[int] = 8192
 _MAX_CONCURRENCY: Final[int] = 3
+_MAX_WINDOW_CONCURRENCY: Final[int] = 3
 CATEGORIES: Final[tuple[str, ...]] = (
     "actors",
     "entities",
@@ -374,10 +375,15 @@ async def build_context_incremental_async(
         for attempt in range(1, 4):
             try:
                 async with semaphore:
-                    window_maps = [
-                        await _extract_window(client, model, source, window)
-                        for window in _windows(text)
-                    ]
+                    window_sem = asyncio.Semaphore(_MAX_WINDOW_CONCURRENCY)
+
+                    async def _throttled(w: str) -> ProjectContext:
+                        async with window_sem:
+                            return await _extract_window(client, model, source, w)
+
+                    window_maps: list[ProjectContext] = list(await asyncio.gather(
+                        *[_throttled(w) for w in _windows(text)]
+                    ))
                 mapped = merge_context_maps(window_maps, signature)
                 mapped.mapped_documents = 1
                 mapped.total_documents = 1

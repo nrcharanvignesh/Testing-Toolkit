@@ -5,6 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
 
+from core.trace import trace
+
 router = APIRouter()
 
 
@@ -27,6 +29,7 @@ class CompleteResponse(BaseModel):
 
 
 @router.post("/complete", response_model=CompleteResponse)
+@trace
 async def complete(req: CompleteRequest) -> CompleteResponse:
     """Run a bounded internal completion for connectivity diagnostics."""
     from core.model_router import Task, route

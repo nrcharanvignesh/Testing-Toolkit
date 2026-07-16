@@ -21,6 +21,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from core.source_types import SourceType, append_source_suffix, strip_source_suffix
+from core.trace import trace
 
 router = APIRouter()
 
@@ -48,6 +49,7 @@ class VerifyAllResponse(BaseModel):
 
 
 @router.get("/verify", response_model=VerifyAllResponse)
+@trace
 async def verify_all() -> VerifyAllResponse:
     """Verify every configured source. Reports per-source status so the UI can
     show which backends are reachable."""
@@ -144,6 +146,7 @@ class WorkItemsRequest(BaseModel):
 
 
 @router.post("/workitems")
+@trace
 async def list_work_items(req: WorkItemsRequest) -> dict[str, Any]:
     """Dispatch board-view loading to the resolved source."""
     bare, _ = strip_source_suffix(req.project)

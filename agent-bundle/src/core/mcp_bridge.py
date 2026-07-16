@@ -403,11 +403,19 @@ class MCPBridge:
         self._thread.start()
 
     async def _start_all(self, configs: list[MCPServerConfig]) -> None:
-        for cfg in configs:
+        async def _start_one(cfg: MCPServerConfig) -> tuple[str, MCPServerManager | None]:
             mgr = MCPServerManager(cfg)
-            ok = await mgr.start()
-            if ok:
-                self._servers[cfg.server_id] = mgr
+            try:
+                ok = await mgr.start()
+            except Exception as exc:
+                log.warning("MCP server %s failed to start: %s", cfg.server_id, exc)
+                return (cfg.server_id, None)
+            return (cfg.server_id, mgr if ok else None)
+
+        results = await asyncio.gather(*[_start_one(c) for c in configs])
+        for server_id, mgr in results:
+            if mgr is not None:
+                self._servers[server_id] = mgr
 
     def get_tool_definitions(self) -> list[dict[str, Any]]:
         """Return all tools from all healthy servers in Claude format."""

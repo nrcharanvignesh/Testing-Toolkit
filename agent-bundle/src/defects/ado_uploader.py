@@ -285,10 +285,21 @@ async def upload_defects_async(
             timeout=httpx.Timeout(cfg.http_timeout_sec),
             verify=cfg.build_ssl(),
         ) as prefetch_client:
-            for pid in unique_parents:
-                await _fetch_parent_fields(
-                    prefetch_client, org, project, pid, parent_cache
-                )
+            _prefetch_sem = asyncio.Semaphore(6)
+
+            async def _bounded_fetch(_pid: int) -> None:
+                async with _prefetch_sem:
+                    try:
+                        await _fetch_parent_fields(
+                            prefetch_client, org, project, _pid,
+                            parent_cache,
+                        )
+                    except Exception:
+                        parent_cache.setdefault(_pid, {})
+
+            await asyncio.gather(
+                *(_bounded_fetch(pid) for pid in unique_parents)
+            )
 
     results: list[DefectCreateResult] = []
     sem = asyncio.Semaphore(_CONCURRENCY)

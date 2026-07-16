@@ -5,6 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
 
+from core.trace import trace
+
 router = APIRouter()
 
 
@@ -44,6 +46,7 @@ class SaveSettingsRequest(BaseModel):
 
 
 @router.get("", response_model=SettingsResponse)
+@trace
 async def get_settings() -> SettingsResponse:
     from core.settings_store import (
         get_setting,
@@ -71,6 +74,7 @@ async def get_settings() -> SettingsResponse:
 
 
 @router.post("")
+@trace
 async def save_settings(req: SaveSettingsRequest) -> dict:
     from core.settings_store import (
         save_pat_value,

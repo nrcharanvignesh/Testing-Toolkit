@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from agent.jobs import JOBS, Job
+from core.trace import trace
 
 router = APIRouter()
 
@@ -60,6 +61,7 @@ def _defect_to_dict(d: Any) -> dict[str, Any]:
 # Parse uploaded documents
 # ---------------------------------------------------------------------
 @router.post("/parse")
+@trace
 async def parse_documents(
     files: list[UploadFile] = File(...),
     use_llm: bool = Form(False),
@@ -189,6 +191,7 @@ async def _run_upload(
 
 
 @router.post("/upload")
+@trace
 async def upload_defects(req: UploadRequest) -> dict[str, str]:
     pat, org = _require_pat_org()
     kept = [_to_namespace(d) for d in req.defects if not d.skip and d.title.strip()]

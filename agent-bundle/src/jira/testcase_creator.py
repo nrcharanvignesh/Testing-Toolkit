@@ -319,7 +319,6 @@ async def create_test_cases(
     batch = JiraBatchResult()
     stories = payload.get("stories") or []
     total = sum(len(s.get("test_cases") or []) for s in stories)
-    done = 0
 
     if on_log:
         on_log(
@@ -333,17 +332,26 @@ async def create_test_cases(
         mode = "Xray" if use_xray else "standard (description table)"
         on_log(f"[INFO] Test case format: {mode}")
 
+    sem = asyncio.Semaphore(max(1, cfg.concurrency))
+    progress = {"n": 0}
+
     async with _client(url, user, pat, cfg) as client:
+        # Build flat task list preserving order
+        tasks: list[tuple[str, dict[str, Any]]] = []
         for story in stories:
             parent_key = str(story.get("parent_key", "")).strip()
             parent_title = str(story.get("parent_title", "") or "").strip()
             if on_log and parent_title:
                 on_log(f"[INFO] Parent {parent_key}: {parent_title}")
-
             for tc in story.get("test_cases") or []:
-                if on_progress:
-                    on_progress("create", done, total)
+                tasks.append((parent_key, tc))
 
+        async def _run_one(
+            parent_key: str, tc: dict[str, Any],
+        ) -> JiraCreateResult:
+            async with sem:
+                if on_progress:
+                    on_progress("create", progress["n"], total)
                 if use_xray:
                     r = await _create_one_xray(
                         client, project_key, parent_key, tc, on_log,
@@ -352,13 +360,18 @@ async def create_test_cases(
                     r = await _create_one_standard(
                         client, project_key, parent_key, tc, on_log,
                     )
+                progress["n"] += 1
+                return r
 
-                batch.results.append(r)
-                if r.ok:
-                    batch.n_ok += 1
-                else:
-                    batch.n_failed += 1
-                done += 1
+        results = await asyncio.gather(
+            *(_run_one(pk, tc) for pk, tc in tasks)
+        )
+        for r in results:
+            batch.results.append(r)
+            if r.ok:
+                batch.n_ok += 1
+            else:
+                batch.n_failed += 1
 
     if on_progress:
         on_progress("create", total, total)

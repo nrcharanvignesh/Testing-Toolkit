@@ -775,12 +775,27 @@ async def create_test_cases_async(
                 pid = int(story.get("parent_work_item_id") or 0)
                 if pid:
                     unique_parents.add(pid)
-            for pid in unique_parents:
-                pinfo = await _get_parent(client, org, pid)
-                if pinfo and "fields" in pinfo:
-                    parent_cache[pid] = pinfo["fields"]
-                else:
-                    parent_cache[pid] = {}
+            _prefetch_sem = asyncio.Semaphore(8)
+
+            async def _bounded_parent(
+                _pid: int,
+            ) -> tuple[int, dict[str, Any]]:
+                async with _prefetch_sem:
+                    try:
+                        pinfo = await _get_parent(client, org, _pid)
+                    except Exception:
+                        return (_pid, {})
+                    if pinfo and "fields" in pinfo:
+                        return (_pid, pinfo["fields"])
+                    return (_pid, {})
+
+            _results: list[tuple[int, dict[str, Any]]] = (
+                await asyncio.gather(
+                    *(_bounded_parent(pid) for pid in unique_parents)
+                )
+            )
+            for _pid, _fields in _results:
+                parent_cache[_pid] = _fields
 
         # Build flat task list preserving order
         tasks: list[tuple[int, dict[str, Any], str]] = []
