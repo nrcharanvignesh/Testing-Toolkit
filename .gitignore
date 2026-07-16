@@ -74,6 +74,7 @@ package-lock.json
 .repowise-workspace/
 .repowise-workspace.yaml
 .claude/
+!.claude/agents/
 .mcp.json
 .vscode/
 .augment-session.json

@@ -64,15 +64,16 @@ def test_capabilities(client):
 
 
 def test_updates_are_detection_only(client):
-    """A live agent may expose version status, never mutation endpoints.
-
-    This prevents a regression to the former background/in-place patch flow,
-    which could replace code and restart while users were actively working.
-    """
+    """A live agent exposes version status and a controlled patch-apply endpoint
+    (for same-minor patch bumps only). The old background/in-place auto-update
+    flow (config, progress) must never resurface."""
     paths = client.get("/openapi.json").json()["paths"]
     assert "/update/status" in paths
     assert set(paths["/update/status"]) == {"get"}
-    assert "/update/apply" not in paths
+    # Patch self-apply is intentional (same-minor, SHA-verified, user-triggered).
+    assert "/update/apply" in paths
+    assert set(paths["/update/apply"]) == {"post"}
+    # Legacy auto-update endpoints must NOT exist.
     assert "/update/config" not in paths
     assert "/update/progress" not in paths
 
