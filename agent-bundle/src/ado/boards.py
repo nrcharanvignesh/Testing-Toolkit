@@ -26,11 +26,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import re
 import ssl as _ssl
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as _dc_replace
 from pathlib import Path
 from typing import Any, Callable, Final
+
+_log = logging.getLogger(__name__)
 
 import httpx
 
@@ -342,7 +345,8 @@ async def get_team_area_paths(
     try:
         async with _client(cfg) as client:
             data = await _get_json(client, url, cfg)
-    except Exception:
+    except Exception as e:
+        _log.debug("get_team_area_paths failed for team %r: %s", cfg, e)
         return []
     out: list[str] = []
     for v in data.get("values", []) or []:
@@ -573,8 +577,8 @@ async def _fetch_relations_per_item(
             try:
                 data = await _get_json(client, url, cfg)
                 out[wid] = data.get("relations") or []
-            except RuntimeError:
-                pass
+            except RuntimeError as e:
+                _log.debug("_fetch_relations_per_item WI %d failed: %s", wid, e)
 
     await asyncio.gather(*(_one(w) for w in ids))
     return out
@@ -610,8 +614,9 @@ async def _fetch_relations(
                 rels = wi.get("relations") or []
                 if wid:
                     out[wid] = rels
-        except RuntimeError:
-            pass
+        except RuntimeError as e:
+            _log.debug("_fetch_relations batch %d-%d failed: %s",
+                       batch_ids[0], batch_ids[-1], e)
         # Only fall back to per-item when the batch endpoint genuinely
         # omitted the relations field (not merely returned empty arrays)
         if not batch_returned_field:
@@ -650,8 +655,9 @@ async def _fetch_work_item_types(
                 )
                 if wid:
                     types[wid] = wtype
-        except RuntimeError:
-            pass
+        except RuntimeError as e:
+            _log.debug("_fetch_work_item_types batch %d-%d failed: %s",
+                       batch_ids[0], batch_ids[-1], e)
     return types
 
 
@@ -810,85 +816,13 @@ def group_rows_by_column(
     return out
 
 
-_NO_ITERATION_LABEL: Final[str] = "(no iteration)"
-
-
-@dataclass(slots=True)
-class KanbanModel:
-    """A column-by-iteration board model. `columns` is the ordered set of
-    swim-lane column names (the board's columns, plus a trailing
-    '(no board column)' bucket when needed). `lanes` is the ordered list
-    of (iteration_label, {column_name: rows}) horizontal bands."""
-    columns: list[str] = field(default_factory=list)
-    lanes: list[tuple[str, dict[str, list[WorkItemRow]]]] = field(
-        default_factory=list
-    )
-
-    @property
-    def total(self) -> int:
-        return sum(len(rows) for _label, cells in self.lanes
-                   for rows in cells.values())
-
-
-def build_kanban_model(
-    rows: list[WorkItemRow], columns: list[BoardColumn],
-) -> KanbanModel:
-    """Arrange rows into a Kanban grid: board columns across, iterations
-    (sprints) as horizontal bands. Iterations are ordered by iteration
-    path; items without an iteration go to a trailing band. Within a cell
-    rows are ordered by work item id."""
-    col_order = [c.name for c in columns]
-    known = frozenset(col_order)
-    need_extra = any(
-        (not r.board_column) or (r.board_column not in known) for r in rows
-    )
-    columns_out = list(col_order)
-    if need_extra:
-        columns_out.append(_NO_COLUMN_LABEL)
-
-    # Single-pass: group rows by iteration, then by column within each group
-    grouped: dict[str, list[WorkItemRow]] = {}
-    for r in rows:
-        key = r.iteration_path or _NO_ITERATION_LABEL
-        grouped.setdefault(key, []).append(r)
-
-    # Order iterations: by path, with the empty iteration last.
-    iter_keys = sorted(
-        grouped.keys(),
-        key=lambda k: (k == _NO_ITERATION_LABEL, k.lower()),
-    )
-
-    lanes: list[tuple[str, dict[str, list[WorkItemRow]]]] = []
-    for it in iter_keys:
-        cells: dict[str, list[WorkItemRow]] = {c: [] for c in columns_out}
-        for r in sorted(grouped[it], key=lambda x: x.wi_id):
-            col = (r.board_column if r.board_column in known
-                   else _NO_COLUMN_LABEL)
-            cells[col].append(r)
-        label = (
-            it if it == _NO_ITERATION_LABEL
-            else it.replace("/", "\\").split("\\")[-1].strip() or it
-        )
-        lanes.append((label, cells))
-    return KanbanModel(columns=columns_out, lanes=lanes)
-
-
 # ---------------------------------------------------------------------
 # Work item detail
 # ---------------------------------------------------------------------
 def _detail_cfg(org: str, project: str, cfg: RuntimeConfig) -> RuntimeConfig:
     """Clone cfg with org/project set so the reused ado_extract fetchers
     target the right project."""
-    clone = RuntimeConfig.from_env_defaults()
-    clone.pat = cfg.pat
-    clone.organization = org
-    clone.project = project
-    clone.tls_mode = cfg.tls_mode
-    clone.tls_ca_bundle = cfg.tls_ca_bundle
-    clone.http_timeout_sec = cfg.http_timeout_sec
-    clone.retry_count = cfg.retry_count
-    clone.retry_backoff_sec = cfg.retry_backoff_sec
-    return clone
+    return _dc_replace(cfg, organization=org, project=project)
 
 
 _INLINE_DATA_URI_RE: Final[re.Pattern[str]] = re.compile(
@@ -1014,8 +948,9 @@ async def _hydrate_inline_images(
             async with sem:
                 await download_attachment(client, dcfg, url, dest)
             detail.inline_images[url] = str(dest)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e:  # noqa: BLE001
+            _log.debug("_hydrate_inline_images WI %d url[%d] failed: %s",
+                       detail.wi_id, i, e)
 
     await asyncio.gather(*(_download_one(i, url) for i, url in enumerate(unique)))
 
@@ -1034,8 +969,9 @@ async def fetch_work_item_detail_async(
         if media_dir is not None:
             try:
                 await _hydrate_inline_images(client, dcfg, detail, media_dir)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as e:  # noqa: BLE001
+                _log.debug("fetch_work_item_detail_async WI %d inline images failed: %s",
+                           wi_id, e)
     return detail
 
 
@@ -1199,6 +1135,8 @@ async def fetch_details_async(
 # ---------------------------------------------------------------------
 def load_boards_for_project(org: str, project: str, cfg: RuntimeConfig,
                             on_log: LogFn | None = None) -> list[Board]:
+    """Sync convenience wrapper. Must not be called from within a running event
+    loop (asyncio.run() starts a fresh loop; use the async variant instead)."""
     return asyncio.run(
         list_boards_for_project_async(org, project, cfg, on_log)
     )
@@ -1206,6 +1144,8 @@ def load_boards_for_project(org: str, project: str, cfg: RuntimeConfig,
 
 def load_board_view(org: str, project: str, board: Board, cfg: RuntimeConfig,
                     on_log: LogFn | None = None) -> BoardView:
+    """Sync convenience wrapper. Must not be called from within a running event
+    loop (asyncio.run() starts a fresh loop; use the async variant instead)."""
     return asyncio.run(
         load_board_view_async(org, project, board, cfg, on_log=on_log)
     )
@@ -1213,4 +1153,6 @@ def load_board_view(org: str, project: str, board: Board, cfg: RuntimeConfig,
 
 def fetch_work_item_detail(org: str, project: str, wi_id: int,
                            cfg: RuntimeConfig) -> WorkItemDetail:
+    """Sync convenience wrapper. Must not be called from within a running event
+    loop (asyncio.run() starts a fresh loop; use the async variant instead)."""
     return asyncio.run(fetch_work_item_detail_async(org, project, wi_id, cfg))

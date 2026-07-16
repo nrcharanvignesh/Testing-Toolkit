@@ -317,17 +317,3 @@ async def upload_defects_async(
     return BulkDefectResult(results=list(results), n_ok=n_ok, n_failed=n_failed)
 
 
-def upload_defects(
-    defects: list[Any],
-    org: str,
-    project: str,
-    pat: str,
-    cfg: RuntimeConfig,
-    on_log: LogFn | None = None,
-    on_progress: ProgressFn | None = None,
-) -> BulkDefectResult:
-    """Sync wrapper."""
-    return asyncio.run(upload_defects_async(
-        defects, org, project, pat, cfg,
-        on_log=on_log, on_progress=on_progress,
-    ))

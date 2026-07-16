@@ -193,45 +193,6 @@ async def list_boards(
     return boards
 
 
-async def list_sprints(
-    url: str, user: str, pat: str, board_id: int, cfg: RuntimeConfig,
-) -> list[dict[str, Any]]:
-    """GET /rest/agile/1.0/board/{boardId}/sprint
-
-    Returns raw sprint dicts: {id, name, state, startDate, endDate, ...}
-    """
-    sprints: list[dict[str, Any]] = []
-    start_at = 0
-    max_results = 50
-    try:
-        async with _client(url, user, pat, cfg) as client:
-            while True:
-                endpoint = (
-                    f"/rest/agile/1.0/board/{board_id}/sprint"
-                    f"?startAt={start_at}&maxResults={max_results}"
-                )
-                r = await request_with_retry(client, "GET", endpoint)
-                if r.status_code != 200:
-                    break
-                data: dict[str, Any] = r.json()
-                for s in data.get("values", []) or []:
-                    sprints.append({
-                        "id": int(s.get("id", 0) or 0),
-                        "name": str(s.get("name", "")).strip(),
-                        "state": str(s.get("state", "")).lower(),
-                        "startDate": s.get("startDate", ""),
-                        "endDate": s.get("endDate", ""),
-                        "goal": str(s.get("goal", "") or ""),
-                    })
-                is_last = data.get("isLast", True)
-                if is_last:
-                    break
-                start_at += max_results
-    except Exception:
-        pass
-    return sprints
-
-
 async def search_issues(
     url: str,
     user: str,
@@ -414,25 +375,3 @@ def build_jira_work_item_dump(details: list[dict[str, Any]]) -> str:
     return "\n\n".join(blocks)
 
 
-async def tag_issue(
-    url: str, user: str, pat: str, issue_key: str, label: str,
-    cfg: RuntimeConfig,
-) -> bool:
-    """PUT /rest/api/2/issue/{key} to add a label. Returns True on success."""
-    endpoint = f"/rest/api/2/issue/{_jql_escape(issue_key)}"
-    body = {
-        "update": {
-            "labels": [{"add": label}],
-        },
-    }
-    try:
-        async with _client(url, user, pat, cfg) as client:
-            r = await request_with_retry(
-                client, "PUT", endpoint,
-                json=body,
-                headers={"Content-Type": "application/json"},
-            )
-            # JIRA returns 204 No Content on successful update
-            return r.status_code in (200, 204)
-    except Exception:
-        return False

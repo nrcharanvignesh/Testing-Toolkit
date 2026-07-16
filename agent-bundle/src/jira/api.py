@@ -99,21 +99,3 @@ async def list_projects(
         raise RuntimeError(f"{type(e).__name__}: {e!r}") from e
 
 
-async def list_projects_streaming(
-    url: str,
-    user: str,
-    pat: str,
-    cfg: RuntimeConfig,
-    on_batch: Callable[[list[str]], None] | None = None,
-) -> list[str]:
-    """Same as list_projects but emits batches for progressive UI.
-
-    JIRA /rest/api/2/project returns all projects in one response (no
-    server-side pagination), so we emit a single batch. The callback
-    signature stays consistent with the ADO streaming pattern for UI
-    reuse.
-    """
-    keys = await list_projects(url, user, pat, cfg)
-    if on_batch and keys:
-        on_batch(keys)
-    return keys

@@ -335,37 +335,6 @@ def get_text_embedder_strict(model_name: str | None = None) -> "TextEmbedder":
     )
 
 
-def record_model_runtime(role: str, model_name: str, model_obj: Any) -> None:
-    """Record the runtime backend for a loaded model (role = 'embedder' |
-    'reranker'). In API mode there is no local ONNX object to probe, so the
-    entry records the API model with no accelerator. Never raises."""
-    try:
-        providers: list[str] = []
-        active: str | None = None
-        # Local ONNX objects (fallback path) expose get_providers(); probe if
-        # present so a bundled-model deployment still reports truthfully.
-        probe = getattr(model_obj, "model", None)
-        getter = getattr(probe, "get_providers", None) if probe else None
-        if callable(getter):
-            try:
-                providers = [str(p) for p in getter() or []]
-            except Exception:
-                providers = []
-        accelerated = bool(
-            providers and any(p != "CPUExecutionProvider" for p in providers)
-        )
-        if accelerated:
-            active = providers[0]
-        _RUNTIME[role] = {
-            "model": model_name,
-            "providers": providers,
-            "accelerated": accelerated,
-            "active_provider": active,
-        }
-    except Exception:
-        pass
-
-
 def model_runtime_info() -> dict[str, dict[str, Any]]:
     """Snapshot of what the loaded models are actually running on. Empty until
     at least one model has been recorded this process (API mode stays empty)."""

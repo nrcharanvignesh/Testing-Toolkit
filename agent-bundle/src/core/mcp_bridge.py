@@ -355,8 +355,8 @@ class MCPServerManager:
         if self._exit_stack:
             try:
                 await self._exit_stack.aclose()
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("MCP server '%s' exit_stack cleanup failed: %s", self._config.server_id, e)
             self._exit_stack = None
             self._session = None
 
@@ -396,8 +396,8 @@ class MCPBridge:
                 self._ready.set()
             try:
                 self._loop.run_forever()
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("MCP bridge event loop run_forever exited with error: %s", e)
 
         self._thread = threading.Thread(target=_run, daemon=True, name="mcp-bridge")
         self._thread.start()

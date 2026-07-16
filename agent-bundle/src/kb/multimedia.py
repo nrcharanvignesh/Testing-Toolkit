@@ -35,12 +35,10 @@ from __future__ import annotations
 
 import base64
 import gc
-import json
 import os
 import subprocess
 import sys
 import tempfile
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable, Final
@@ -85,13 +83,8 @@ MULTIMEDIA_EXTENSIONS: Final[frozenset[str]] = (
 )
 
 # Timeouts (seconds) - generous for U-series CPUs
-_IMAGE_TIMEOUT: Final[int] = 60
-_AUDIO_SEGMENT_TIMEOUT: Final[int] = 120
 _VIDEO_AUDIO_EXTRACT_TIMEOUT: Final[int] = 300
 _KEYFRAME_TIMEOUT: Final[int] = 180
-
-# Audio segmentation for progress + memory control
-_AUDIO_SEGMENT_SECONDS: Final[int] = 30
 
 # Video keyframe cap (OCR at most this many frames)
 _MAX_KEYFRAMES: Final[int] = 20

@@ -21,7 +21,6 @@ import json
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
 
@@ -97,10 +96,6 @@ class PackageResult:
 def _safe(s: str) -> str:
     bad = '<>:"/\\|?*'
     return "".join("_" if c in bad else c for c in s).strip(". ") or "x"
-
-
-def _now() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _is_temp(p: Path) -> bool:

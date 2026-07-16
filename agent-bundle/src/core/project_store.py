@@ -19,9 +19,12 @@ required.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
+
+_log = logging.getLogger(__name__)
 
 from core.app_config import PROJECTS_DIR
 from ado.testcase_creator import SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT
@@ -109,8 +112,8 @@ def _load_prompt_md() -> str | None:
             ).strip()
             if text:
                 return text
-    except Exception:
-        pass
+    except Exception as e:
+        _log.debug("_load_prompt_md read failed: %s", e)
     return None
 
 
@@ -248,8 +251,8 @@ def index_project_resumable(
         if on_log is not None:
             try:
                 on_log(f"[WARN] Hybrid index build skipped: {e!r}")
-            except Exception:
-                pass
+            except Exception as cb_e:
+                _log.debug("on_log callback failed (hybrid build warn): %s", cb_e)
     # Extract a deep project-understanding summary from the KB when an LLM is
     # available and the KB changed. Injected into generation via
     # rlm.generate_test_cases_rlm(project_full=...). Best-effort: never blocks
@@ -264,8 +267,8 @@ def index_project_resumable(
             if on_log:
                 try:
                     on_log(f"[WARN] Context extraction skipped: {exc!r}")
-                except Exception:
-                    pass
+                except Exception as cb_e:
+                    _log.debug("on_log callback failed (context extraction warn): %s", cb_e)
     elif not getattr(index, "chunks", None):
         # KB is now empty (every document was deleted). Remove any stale
         # context summary so we don't keep describing deleted content -- the
@@ -364,8 +367,8 @@ def _resolve_dense_flags(enable_dense: bool) -> tuple[bool, bool, bool]:
             try:
                 from kb.embeddings import embedding_backend_available
                 want_dense = bool(embedding_backend_available())
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug("embedding_backend_available check failed: %s", e)
     return enable_dense, enforced, want_dense
 
 
@@ -386,13 +389,14 @@ def _hybrid_is_current(
                 from core.app_config import EMBED_DIM, EMBED_MODEL
                 want_model = f"api:{EMBED_MODEL}"
                 want_dim = int(EMBED_DIM)
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug("EMBED_DIM/EMBED_MODEL config read failed: %s", e)
         return hybrid_index_is_current(
             p.hybrid_dir, n_chunks, built_at,
             want_dense=want_dense, want_model=want_model, want_dim=want_dim,
         )
-    except Exception:
+    except Exception as e:
+        _log.debug("_hybrid_is_current check failed: %s", e)
         return False
 
 
@@ -408,14 +412,15 @@ def _resolve_embedder(
                 backend = getattr(embedder, "name", "local")
                 on_log(f"[SUCCESS] Dense indexing enforced: embedder "
                        f"({backend}) ready; adding vectors alongside BM25.")
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug("on_log callback failed (enforced embedder ready): %s", e)
         return embedder
     if enable_dense:
         try:
             from kb.embeddings import get_text_embedder
             embedder = get_text_embedder()
-        except Exception:
+        except Exception as e:
+            _log.debug("get_text_embedder failed: %s", e)
             embedder = None
         if on_log:
             try:
@@ -438,8 +443,8 @@ def _resolve_embedder(
                     else:
                         on_log(f"[INFO] Dense inactive: {reason} Using "
                                "lexical (BM25) retrieval.")
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug("on_log callback failed (embedder status): %s", e)
         return embedder
     return None
 
@@ -471,8 +476,8 @@ def _build_hybrid_from_index(
         if on_log:
             try:
                 on_log("[INFO] Hybrid index already current; reused.")
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug("on_log callback failed (hybrid current): %s", e)
         return
 
     embedder = _resolve_embedder(enable_dense, enforced, on_log)
@@ -526,7 +531,8 @@ def kb_file_count(full_name: str) -> int:
     try:
         p = ProjectPaths.for_name(full_name)
         return len(_scan_sources(p.kb_dir))
-    except Exception:
+    except Exception as e:
+        _log.debug("kb_file_count failed for %r: %s", full_name, e)
         return 0
 
 

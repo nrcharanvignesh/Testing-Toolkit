@@ -9,8 +9,6 @@ environment details, and any uncaught exceptions.
 
 Crash capture is deliberately broad so a failure in a leadership demo is
 always recorded:
-  * sys.excepthook       - uncaught exceptions on the main thread
-  * threading.excepthook - uncaught exceptions on worker threads
   * Qt message handler    - Qt's own warnings / criticals / fatals
   * faulthandler          - native crashes (segfaults) -> separate trace file
 
@@ -22,12 +20,9 @@ Log location (first writable wins):
 Public API:
     init_logging() -> Path | None   # call once at startup; returns log path
     get_logger(name) -> Logger
-    log_line(text)                  # mirror an in-app [TAG] line to the file
     log_path() -> Path | None       # current log file path (or None)
     log_dir() -> Path | None        # directory holding the log
     tail_log(max_bytes) -> str      # recent log text (for in-app display)
-    install_excepthook()            # main-thread uncaught exceptions
-    install_threading_excepthook()  # worker-thread uncaught exceptions
     install_qt_message_handler()    # Qt's own message stream (call post-QApp)
 """
 
@@ -38,7 +33,6 @@ import logging
 import os
 import re
 import sys
-import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -243,34 +237,6 @@ class stream_agent_logs:
             pass
 
 
-# Map in-app [TAG] prefixes to log levels.
-_TAG_LEVELS = {
-    "[ERROR]": logging.ERROR,
-    "[WARN]": logging.WARNING,
-    "[WARNING]": logging.WARNING,
-    "[SUCCESS]": logging.INFO,
-    "[INFO]": logging.INFO,
-    "[DEBUG]": logging.DEBUG,
-}
-
-
-def log_line(text: str, source: str = "ui") -> None:
-    """Mirror a single in-app log line (already carrying a [TAG]
-    prefix) into the rotating file at the matching level. Never
-    raises."""
-    try:
-        logger = get_logger(source)
-        level = logging.INFO
-        stripped = text.lstrip()
-        for tag, lvl in _TAG_LEVELS.items():
-            if stripped.startswith(tag):
-                level = lvl
-                break
-        logger.log(level, redact_secrets(text))
-    except Exception:
-        pass
-
-
 def log_path() -> Path | None:
     return _log_path
 
@@ -301,52 +267,6 @@ def tail_log(max_bytes: int = 20000) -> str:
         return text
     except Exception as e:  # noqa: BLE001
         return f"(could not read log: {e!r})"
-
-
-def install_excepthook() -> None:
-    """Route uncaught exceptions to the log before the default
-    handler runs, so crashes are captured in shared log files."""
-    prev = sys.excepthook
-
-    def _hook(exc_type, exc_value, exc_tb) -> None:
-        try:
-            get_logger("crash").critical(
-                "Uncaught exception (main thread)",
-                exc_info=(exc_type, exc_value, exc_tb),
-            )
-        except Exception:
-            pass
-        if prev is not None:
-            prev(exc_type, exc_value, exc_tb)
-
-    sys.excepthook = _hook
-
-
-def install_threading_excepthook() -> None:
-    """Capture uncaught exceptions raised on non-main (worker) threads.
-    Python 3.8+ provides threading.excepthook; we chain to the previous
-    one. Best-effort and never fatal."""
-    prev = getattr(threading, "excepthook", None)
-
-    def _hook(args: Any) -> None:
-        try:
-            get_logger("crash").critical(
-                "Uncaught exception (thread %s)",
-                getattr(getattr(args, "thread", None), "name", "?"),
-                exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
-            )
-        except Exception:
-            pass
-        if prev is not None and prev is not _hook:
-            try:
-                prev(args)
-            except Exception:
-                pass
-
-    try:
-        threading.excepthook = _hook
-    except Exception:
-        pass
 
 
 def install_qt_message_handler() -> None:

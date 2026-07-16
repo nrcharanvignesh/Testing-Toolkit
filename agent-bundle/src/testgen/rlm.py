@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import threading
 import time
@@ -61,6 +62,7 @@ from kb.store import KbChunk, KbIndex, approx_tokens
 
 LogFn = Callable[[str], None]
 ProgressFn = Callable[[int, int], None]
+_logger = logging.getLogger(__name__)
 
 _MAP_CONCURRENCY: Final[int] = 12
 _GEN_CONCURRENCY: Final[int] = 6
@@ -533,7 +535,8 @@ async def _build_kb_context(
     if (retriever is not None and big_kb and kb_index.chunks):
         try:
             available = retriever.is_available()
-        except Exception:
+        except Exception as e:
+            _logger.debug("retriever.is_available failed: %s", e)
             available = False
         if available:
             try:
@@ -561,7 +564,8 @@ async def _build_kb_context(
                         caps = {}
                         try:
                             caps = retriever.capabilities()
-                        except Exception:
+                        except Exception as e:
+                            _logger.debug("retriever.capabilities failed: %s", e)
                             caps = {}
                         dense = "dense+lexical" if caps.get("dense") \
                             else "lexical"
@@ -846,8 +850,8 @@ def _log(on_log: LogFn | None, msg: str) -> None:
     if on_log:
         try:
             on_log(msg)
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.debug("on_log callback failed: %s", e)
 
 
 async def generate_test_cases_rlm_async(
@@ -921,8 +925,8 @@ async def generate_test_cases_rlm_async(
                 _proj_ctx = ctx_obj.to_prompt_section()
                 if _proj_ctx:
                     _log(on_log, "[INFO] Project context summary injected into prompt")
-        except Exception:
-            pass  # graceful: context summary is optional
+        except Exception as e:
+            _logger.debug("read_context_summary failed: %s", e)  # graceful: context summary is optional
 
     dumps = [d for d in (per_item_dumps or []) if d and d.strip()]
     if not dumps:
@@ -1038,40 +1042,3 @@ async def generate_test_cases_rlm_async(
     return res
 
 
-def generate_test_cases_rlm(
-    client: AnthropicClient,
-    primary_model: str,
-    fast_model: str,
-    system_prompt: str,
-    kb_index: KbIndex,
-    work_item_dump: str,
-    per_item_dumps: list[str] | None = None,
-    on_log: LogFn | None = None,
-    on_progress: ProgressFn | None = None,
-    stop_event: threading.Event | None = None,
-    max_repair: int = _DEFAULT_MAX_REPAIR,
-    cache: GenCache | None = None,
-    retriever: Any | None = None,
-    enable_decompose: bool = True,
-    enable_verify: bool = True,
-    project_full: str = "",
-) -> RlmResult:
-    """Sync wrapper (the UI runs this on a worker thread)."""
-    import gc
-    try:
-        result = asyncio.run(generate_test_cases_rlm_async(
-            client=client, primary_model=primary_model,
-            fast_model=fast_model, system_prompt=system_prompt,
-            kb_index=kb_index, work_item_dump=work_item_dump,
-            per_item_dumps=per_item_dumps, on_log=on_log,
-            on_progress=on_progress,
-            stop_event=stop_event, max_repair=max_repair, cache=cache,
-            retriever=retriever,
-            enable_decompose=enable_decompose, enable_verify=enable_verify,
-            project_full=project_full,
-        ))
-        gc.collect()
-        return result
-    except AnthropicError:
-        gc.collect()
-        raise

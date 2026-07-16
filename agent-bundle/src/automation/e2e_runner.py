@@ -57,6 +57,7 @@ except ImportError:
 
 from .artifact_collector import ArtifactCollector
 from .e2e_plan import _format_snapshot, recompile_failed_step
+from .healing_guardrails import HealingDecision, record_healing, should_heal
 from .playwright_bridge import BrowserProfile, browser_session
 from .screenshot_annotator import annotate_screenshot
 from .script_generator import generate_playwright_script
@@ -542,37 +543,46 @@ async def _execute_step(
             actual = f"Error: {err_msg}"
 
     # -- Feedback loop: recompile failed step via LLM if locator not found --
-    # Only recompile on locator/element failures (not network/timeout/unsupported).
-    _RECOMPILABLE_SIGNALS = ("not found", "not visible", "no element", "could not find",
-                             "locator resolved", "strict mode violation")
-    _is_locator_failure = any(sig in actual.lower() for sig in _RECOMPILABLE_SIGNALS)
-    if status == "error" and _is_locator_failure and client and model:
-        for _recompile_attempt in range(MAX_RECOMPILE_ATTEMPTS):
-            try:
-                snapshot_raw = await page.accessibility.snapshot()
-                snapshot_str = _format_snapshot(snapshot_raw)
-                corrected = await recompile_failed_step(
-                    step=step,
-                    error_message=actual[:500],
-                    dom_snapshot=snapshot_str,
-                    login_url=login_url,
-                    username=username,
-                    client=client,
-                    model=model,
-                )
-                if corrected is None:
+    # Guardrails gate: decide whether healing is allowed before attempting recompile.
+    if status in ("error", "fail") and client and model:
+        heal_decision = should_heal(step, actual, attempt=MAX_STEP_RETRIES)
+        if heal_decision == HealingDecision.REPORT_APP_BUG:
+            status = "fail"
+            actual = f"[APP BUG] {actual}"
+        elif heal_decision in (HealingDecision.HEAL_LOCATOR, HealingDecision.HEAL_WAIT):
+            original_step = dict(step)
+            for _recompile_attempt in range(MAX_RECOMPILE_ATTEMPTS):
+                try:
+                    snapshot_raw = await page.accessibility.snapshot()
+                    snapshot_str = _format_snapshot(snapshot_raw)
+                    corrected = await recompile_failed_step(
+                        step=step,
+                        error_message=actual[:500],
+                        dom_snapshot=snapshot_str,
+                        login_url=login_url,
+                        username=username,
+                        client=client,
+                        model=model,
+                    )
+                    if corrected is None:
+                        record_healing(step, original_step, None, False)
+                        break
+                    retry_result = await _execute_step(
+                        page, corrected, username, password, screenshot_dir,
+                        step_num, stop_fn=stop_fn,
+                    )
+                    if retry_result.status != "error":
+                        retry_result.locator_strategy = "recompiled"
+                        record_healing(step, original_step, corrected, True)
+                        return retry_result
+                    # Feed the new error back for next recompile attempt
+                    actual = retry_result.actual
+                    record_healing(step, original_step, corrected, False)
+                except Exception:
+                    record_healing(step, original_step, None, False)
                     break
-                retry_result = await _execute_step(
-                    page, corrected, username, password, screenshot_dir,
-                    step_num, stop_fn=stop_fn,
-                )
-                if retry_result.status != "error":
-                    retry_result.locator_strategy = "recompiled"
-                    return retry_result
-                # Feed the new error back for next recompile attempt
-                actual = retry_result.actual
-            except Exception:
-                break
+        elif heal_decision == HealingDecision.REPORT_TEST_DEBT:
+            actual = f"[TEST DEBT] Persistent failure: {actual}"
 
     # Always capture a screenshot with bounding box annotation at every step
     # for full traceability (Senior QA mode). The annotator draws the element

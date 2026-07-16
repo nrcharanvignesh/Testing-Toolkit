@@ -300,8 +300,6 @@ def generate_playwright_script(
 # MCP replay script generation (with self-healing locator waterfall)
 # ---------------------------------------------------------------------------
 
-_SENSITIVE_ARGS = frozenset({"password", "passwd", "pwd", "secret", "token"})
-
 # The self-healing helper embedded verbatim in every generated replay script.
 # It mirrors the e2e_runner waterfall: CSS -> role -> label -> text -> iframe.
 _SELF_HEAL_HELPER = '''

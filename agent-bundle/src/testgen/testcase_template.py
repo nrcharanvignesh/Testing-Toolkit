@@ -28,7 +28,6 @@ Public API:
     analyze_template(xlsx_path, llm_mapping=None) -> TemplateSpec
     save_spec(spec, spec_path) ; load_spec(spec_path) -> TemplateSpec | None
     analyze_and_save(xlsx_path, spec_path, llm_mapping=None) -> TemplateSpec
-    render_to_template(payload, template_xlsx, spec, out_path) -> int
     FIELDS  (the mappable test-case field keys)
 """
 
@@ -43,8 +42,6 @@ from typing import Any, Final
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
-
-from ado.testcase_creator import clean_title
 
 # Mappable test-case fields (a template column maps to one of these).
 FIELDS: Final[tuple[str, ...]] = (
@@ -291,110 +288,3 @@ def analyze_and_save(
     return spec
 
 
-# ---------------------------------------------------------------------
-# Rendering (every run, deterministic)
-# ---------------------------------------------------------------------
-def _join_steps(steps: list[dict[str, Any]], key: str) -> str:
-    lines: list[str] = []
-    for i, st in enumerate(steps, start=1):
-        val = str(st.get(key, "") or "").strip()
-        lines.append(f"{i}. {val}" if val else f"{i}.")
-    return "\n".join(lines)
-
-
-def payload_to_rows(payload: dict[str, Any], row_mode: str) -> list[dict[str, Any]]:
-    """Flatten the JSON payload into per-template rows. In 'step' mode one
-    row per step (TC-level fields repeat on each step row of that TC); in
-    'tc' mode one row per test case (steps joined into multi-line cells)."""
-    rows: list[dict[str, Any]] = []
-    tc_counter = 0
-    stories = payload.get("stories") or []
-    for story in stories:
-        sid = story.get("parent_work_item_id")
-        stitle = str(story.get("parent_title") or "").strip()
-        tcs = story.get("test_cases") or []
-        for tc_idx, tc in enumerate(tcs, start=1):
-            tc_counter += 1
-            title = clean_title(str(tc.get("title") or "").strip())
-            category = str(tc.get("category") or "").strip()
-            priority = str(tc.get("priority") or "").strip()
-            tags = "; ".join(str(t) for t in (tc.get("tags") or []) if t)
-            pre = str(tc.get("preconditions") or "").strip()
-            steps = tc.get("steps") or [{"action": "", "expected": ""}]
-            base = {
-                "test_case_id": tc_counter,
-                "story_id": sid,
-                "story_title": stitle,
-                "tc_index": tc_idx,
-                "tc_title": title,
-                "category": category,
-                "priority": priority,
-                "tags": tags,
-                "preconditions": pre,
-                "comments": "",
-            }
-            if row_mode == "tc":
-                row = dict(base)
-                row["step_index"] = ""
-                row["action"] = _join_steps(steps, "action")
-                row["expected"] = _join_steps(steps, "expected")
-                rows.append(row)
-            else:
-                for step_idx, st in enumerate(steps, start=1):
-                    row = dict(base)
-                    row["step_index"] = step_idx
-                    row["action"] = str(st.get("action", "") or "")
-                    row["expected"] = str(st.get("expected", "") or "")
-                    # Repeat TC-level identity only on the first step row
-                    # for readability; identifiers stay on every row so the
-                    # sheet is sortable/traceable.
-                    if step_idx != 1:
-                        for k in ("tc_title", "category", "priority",
-                                  "tags", "preconditions"):
-                            row[k] = ""
-                    rows.append(row)
-    return rows
-
-
-def render_to_template(
-    payload: dict[str, Any],
-    template_xlsx: Path | str,
-    spec: TemplateSpec,
-    out_path: Path | str,
-) -> int:
-    """Fill a copy of the template with the payload, preserving the
-    template's formatting. Returns the number of data rows written.
-
-    The template is used STRICTLY for layout (headers, column widths,
-    styles, sheet structure). ALL existing data below the header row is
-    cleared — the template's value is its design, not its content."""
-    template_xlsx = Path(template_xlsx)
-    out_path = Path(out_path)
-    wb = load_workbook(filename=str(template_xlsx))  # keep styles
-    try:
-        ws = wb[spec.sheet_name] if spec.sheet_name in wb.sheetnames \
-            else wb[wb.sheetnames[0]]
-        rows = payload_to_rows(payload, spec.row_mode)
-        first_data_row = spec.header_row + 1
-        max_col = ws.max_column or 1
-
-        # Clear ALL data below the header row. The template is strictly
-        # for layout design — no stray sample data should persist.
-        existing_last = ws.max_row or first_data_row
-        for r in range(first_data_row, existing_last + 1):
-            for c in range(1, max_col + 1):
-                ws.cell(row=r, column=c).value = None
-
-        # Write the generated rows (columns in stable order for determinism).
-        for offset, row in enumerate(rows):
-            excel_row = first_data_row + offset
-            for fld, col in sorted(spec.columns.items(), key=lambda kv: kv[1]):
-                ws.cell(row=excel_row, column=col, value=row.get(fld, ""))
-
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        wb.save(str(out_path))
-        return len(rows)
-    finally:
-        wb.close()
-        del wb
-        gc.collect()

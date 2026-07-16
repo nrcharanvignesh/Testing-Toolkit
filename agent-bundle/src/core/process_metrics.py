@@ -205,25 +205,3 @@ def _refresh_disk_async() -> None:
     import threading
     t = threading.Thread(target=_scan, daemon=True)
     t.start()
-
-
-def get_process_metrics() -> dict[str, str]:
-    """Return formatted metrics for this process only."""
-    cpu = _get_cpu_percent()
-    ram = _get_memory_mb()
-
-    now = time.monotonic()
-    if now - _DISK_LAST_CHECK > _DISK_INTERVAL:
-        # Non-blocking: kicks off a background thread, returns stale value
-        _refresh_disk_async()
-    disk = _CACHED_DISK
-    gpu = _get_gpu_info()
-
-    result: dict[str, str] = {
-        "cpu": f"{cpu:.0f}%",
-        "ram": f"{ram:.0f} MB",
-        "disk": f"{disk:.0f} MB" if disk > 0 else "--",
-    }
-    if gpu:
-        result["gpu"] = gpu
-    return result

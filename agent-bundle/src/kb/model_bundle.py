@@ -117,36 +117,6 @@ def bundled_models_dir() -> Optional[str]:
     return None
 
 
-def bundled_whisper_model_dir(name: str = "faster-whisper-base") -> Optional[str]:
-    """Absolute path to a bundled CTranslate2 whisper model directory, or None.
-
-    Audio/video transcription must work FULLY OFFLINE, so the faster-whisper
-    model ships inside the bundle next to the fastembed models, as a plain
-    CTranslate2 folder (NOT Hugging Face cache layout):
-
-        <models>/faster-whisper-base/
-            config.json
-            model.bin
-            tokenizer.json
-            vocabulary.txt
-
-    We reuse the same candidate roots as the fastembed cache (TT_MODELS_DIR,
-    the install/source layouts, _MEIPASS). A directory only counts when it
-    holds ``model.bin`` (the CTranslate2 weights). When this returns a path,
-    multimedia.py passes it straight to ``WhisperModel(path,
-    local_files_only=True)`` so there is no network call. When it returns None,
-    transcription falls back to faster-whisper's default download path (online).
-    """
-    for root in _candidate_dirs():
-        try:
-            cand = root / name
-            if (cand / "model.bin").is_file():
-                return str(cand)
-        except OSError:
-            continue
-    return None
-
-
 def has_model(repo_cache_name: str) -> bool:
     """True if a specific "models--<org>--<name>" folder is present and has a
     non-empty snapshot. Used for diagnostics, not required for loading.

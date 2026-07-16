@@ -626,24 +626,3 @@ def extract_legacy_text(path: Path | str) -> str:
     return ""
 
 
-def legacy_capabilities() -> dict[str, bool]:
-    """Check which optional legacy document backends are available."""
-    caps: dict[str, bool] = {
-        "olefile": False,
-        "antiword": False,
-    }
-    try:
-        __import__("olefile")
-        caps["olefile"] = True
-    except ImportError:
-        pass
-    try:
-        result = subprocess.run(
-            ["antiword", "--version"],
-            capture_output=True, timeout=5,
-            **_SUBPROCESS_KWARGS,
-        )
-        caps["antiword"] = True
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        pass
-    return caps

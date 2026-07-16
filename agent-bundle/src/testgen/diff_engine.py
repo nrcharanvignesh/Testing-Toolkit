@@ -4,7 +4,6 @@ Compares old vs new generated test case payloads and produces structured diffs.
 """
 from __future__ import annotations
 
-import copy
 from dataclasses import dataclass, field
 
 
@@ -104,74 +103,5 @@ def diff_payloads(old_payload: dict, new_payload: dict) -> PayloadDiff:
             result.modified += 1
         else:
             result.unchanged += 1
-
-    return result
-
-
-def merge_selective(
-    old_payload: dict, new_payload: dict, accept_ids: set[str]
-) -> dict:
-    """Merge only accepted changes from new_payload into old_payload.
-
-    - accepted added TCs are inserted into the matching story
-    - accepted modified TCs replace the old version
-    - accepted removed TCs are dropped
-    - non-accepted TCs keep old state
-    """
-    result = copy.deepcopy(old_payload)
-    new_map = _extract_tc_map(new_payload)
-    old_map = _extract_tc_map(old_payload)
-
-    accept = frozenset(accept_ids)
-
-    # Build story lookup for new TCs (to know which story an added TC belongs to)
-    new_story_for_tc: dict[str, int] = {}
-    for idx, story in enumerate(new_payload.get("stories", [])):
-        for tc in story.get("test_cases", []):
-            tc_id = tc.get("id", "")
-            if tc_id:
-                new_story_for_tc[tc_id] = idx
-
-    # Remove accepted removals, replace accepted modifications
-    for story in result.get("stories", []):
-        tcs = story.get("test_cases", [])
-        kept: list[dict] = []
-        for tc in tcs:
-            tc_id = tc.get("id", "")
-            if tc_id in accept:
-                if tc_id in new_map:
-                    # modified or unchanged - take new version
-                    kept.append(copy.deepcopy(new_map[tc_id]))
-                # else: accepted removal - drop it
-            else:
-                kept.append(tc)
-        story["test_cases"] = kept
-
-    # Add accepted additions
-    added_ids = frozenset(new_map) - frozenset(old_map)
-    for tc_id in sorted(added_ids & accept):
-        # Find matching story in result by work_item_id
-        story_idx = new_story_for_tc.get(tc_id)
-        if story_idx is None:
-            continue
-        new_stories = new_payload.get("stories", [])
-        if story_idx >= len(new_stories):
-            continue
-        target_wid = new_stories[story_idx].get("work_item_id")
-
-        # Find or create matching story in result
-        placed = False
-        for story in result.get("stories", []):
-            if story.get("work_item_id") == target_wid:
-                story.setdefault("test_cases", []).append(copy.deepcopy(new_map[tc_id]))
-                placed = True
-                break
-        if not placed:
-            # Append to first story as fallback
-            stories = result.get("stories", [])
-            if stories:
-                stories[0].setdefault("test_cases", []).append(
-                    copy.deepcopy(new_map[tc_id])
-                )
 
     return result

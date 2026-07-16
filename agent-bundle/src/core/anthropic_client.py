@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import ssl as _ssl
+import threading
 import time
 from collections.abc import Generator
 from dataclasses import dataclass, field
@@ -46,6 +48,9 @@ _RETRY_STATUS: Final[frozenset[int]] = frozenset({429, 500, 502, 503, 529})
 # We discover which models reject it at runtime (from the 400) and remember it
 # for the rest of the session so every subsequent request omits temperature.
 _TEMPERATURE_UNSUPPORTED: set[str] = set()
+_TEMP_LOCK = threading.Lock()
+
+_log = logging.getLogger(__name__)
 
 
 def _wants_temperature(model: str) -> bool:
@@ -200,25 +205,6 @@ def provider_of(model_id: str) -> str:
     return "Other"
 
 
-def group_models_by_provider(
-    models: list[ModelInfo],
-) -> list[tuple[str, list[ModelInfo]]]:
-    """Group models by provider and sort: Anthropic first, then other
-    providers alphabetically, 'Other' last; models sorted by id within
-    each provider."""
-    groups: dict[str, list[ModelInfo]] = {}
-    for m in models:
-        groups.setdefault(provider_of(m.id), []).append(m)
-    for items in groups.values():
-        items.sort(key=lambda m: m.id.lower())
-
-    def _pkey(p: str) -> tuple[int, str]:
-        rank = 0 if p == "Anthropic" else (2 if p == "Other" else 1)
-        return (rank, p.lower())
-
-    return [(p, groups[p]) for p in sorted(groups, key=_pkey)]
-
-
 # ---------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------
@@ -264,24 +250,24 @@ class AnthropicClient:
         if self.on_log:
             try:
                 self.on_log(msg)
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug("on_log callback failed: %s", e)
 
     @staticmethod
     def _report_nw_success() -> None:
         try:
             from core.network_status import report_success
             report_success()
-        except Exception:
-            pass
+        except Exception as e:
+            _log.debug("report_success failed: %s", e)
 
     @staticmethod
     def _report_nw_failure() -> None:
         try:
             from core.network_status import report_failure
             report_failure()
-        except Exception:
-            pass
+        except Exception as e:
+            _log.debug("report_failure failed: %s", e)
 
     async def complete_async(
         self,
@@ -415,7 +401,8 @@ class AnthropicClient:
                         and "temperature" in body
                         and _is_temperature_deprecated(detail)
                     ):
-                        _TEMPERATURE_UNSUPPORTED.add(model)
+                        with _TEMP_LOCK:
+                            _TEMPERATURE_UNSUPPORTED.add(model)
                         body.pop("temperature", None)
                         self._log(
                             f"[WARN] {model} rejects temperature; "
@@ -549,8 +536,8 @@ class AnthropicClient:
             msg = err.get("message") or data.get("message") or ""
             if msg:
                 return str(msg)[:400]
-        except Exception:
-            pass
+        except Exception as e:
+            _log.debug("error_detail JSON parse failed: %s", e)
         return (resp.text or "")[:400].replace("\n", " ")
 
     def _retry_after(self, resp: httpx.Response, attempt: int) -> float:
@@ -627,7 +614,8 @@ class AnthropicClient:
                 try:
                     from core.guardrails import check_input_guardrail
                     refusal = check_input_guardrail(last_text)
-                except Exception:
+                except Exception as e:
+                    _log.debug("guardrail check failed: %s", e)
                     refusal = None
                 if refusal is not None:
                     yield refusal
@@ -682,7 +670,8 @@ class AnthropicClient:
                             data.get("error", {}).get("message", "")
                             or resp.text[:400]
                         )
-                    except Exception:
+                    except Exception as e:
+                        _log.debug("stream_message error-detail JSON parse failed: %s", e)
                         detail = resp.text[:400]
                     raise AnthropicAPIError(
                         f"HTTP {resp.status_code}: {detail}"
@@ -698,7 +687,8 @@ class AnthropicClient:
                             break
                         try:
                             event = json.loads(payload)
-                        except Exception:
+                        except Exception as e:
+                            _log.debug("stream_message SSE JSON parse failed: %s", e)
                             continue
                         etype = event.get("type", "")
                         if etype == "content_block_delta":
@@ -790,7 +780,8 @@ class AnthropicClient:
                             data.get("error", {}).get("message", "")
                             or resp.text[:400]
                         )
-                    except Exception:
+                    except Exception as e:
+                        _log.debug("stream_message_with_tools error-detail JSON parse failed: %s", e)
                         detail = resp.text[:400]
                     raise AnthropicAPIError(
                         f"HTTP {resp.status_code}: {detail}"
@@ -807,7 +798,8 @@ class AnthropicClient:
                         break
                     try:
                         event = json.loads(payload)
-                    except Exception:
+                    except Exception as e:
+                        _log.debug("stream_message_with_tools SSE JSON parse failed: %s", e)
                         continue
                     etype = event.get("type", "")
 
@@ -962,7 +954,8 @@ class AnthropicClient:
                         break
                     try:
                         event = json.loads(payload)
-                    except Exception:
+                    except Exception as e:
+                        _log.debug("stream_message_with_tools_async SSE JSON parse failed: %s", e)
                         continue
                     etype = event.get("type", "")
 
@@ -1163,7 +1156,8 @@ class AnthropicClient:
                         break
                     try:
                         event = json.loads(payload)
-                    except Exception:
+                    except Exception as e:
+                        _log.debug("_stream_tools_async_openai SSE JSON parse failed: %s", e)
                         continue
                     choices = event.get("choices") or []
                     if not choices:
@@ -1201,8 +1195,8 @@ class AnthropicClient:
                 if on_progress is not None:
                     try:
                         on_progress(done, total)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        _log.debug("on_progress callback failed: %s", e)
                 return i, m, ok
 
         gathered = await asyncio.gather(

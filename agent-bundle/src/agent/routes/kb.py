@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import asyncio
 import threading
 from pathlib import Path
@@ -15,6 +16,7 @@ from core.app_config import PROJECTS_DIR
 from agent.jobs import Job
 
 router = APIRouter()
+_log = logging.getLogger(__name__)
 
 _MAX_KB_UPLOAD_BYTES = 250 * 1024 * 1024
 _MAX_TEMPLATE_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -176,7 +178,8 @@ def _run_kb_index(job: "Job", project: str, force: bool = False) -> None:
         from core.settings_store import build_llm_client
         ctx_client = build_llm_client()
         ctx_model = route(Task.CONTEXTUALIZE_CHUNK)
-    except Exception:
+    except Exception as e:
+        _log.debug("build_llm_client failed: %s", e)
         ctx_client = None
         ctx_model = ""
 
@@ -220,7 +223,8 @@ def _run_kb_index(job: "Job", project: str, force: bool = False) -> None:
             from kb.retrieval import hybrid_has_dense
 
             has_dense = bool(hybrid_has_dense(ps.ensure_project(project).hybrid_dir))
-        except Exception:
+        except Exception as e:
+            _log.debug("hybrid_has_dense check failed: %s", e)
             has_dense = False
         job.finish({
             "n_documents": docs,
@@ -274,7 +278,8 @@ def _run_context_job(
         # run once more; unchanged document maps are cache hits.
         try:
             initial = ps.get_index(project)
-        except Exception:
+        except Exception as e:
+            _log.debug("get_index failed: %s", e)
             initial = None
         if initial is not None and getattr(initial, "chunks", None):
             ps.extract_project_context(
@@ -495,7 +500,8 @@ async def kb_status(project: str) -> dict:
             chunks = getattr(idx, "chunks", None) or []
             n_chunks = len(chunks)
             n_documents = len({getattr(c, "source", "") for c in chunks} or docs)
-        except Exception:
+        except Exception as e:
+            _log.debug("kb status index read failed: %s", e)
             n_documents = len(docs)
 
     return {
@@ -567,7 +573,8 @@ def _template_payload(project: str, phase: str) -> dict:
     if spec is not None:
         try:
             describe = spec.describe()
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            _log.debug("spec.describe failed: %s", e)
             describe = "spec unavailable"
     return {"has": True, "name": Path(str(tpl)).name, "describe": describe}
 
@@ -621,7 +628,8 @@ async def upload_template(
                 llm_header_row, llm_mapping = analyze_template_with_llm(
                     client, route(Task.TEMPLATE_ANALYSIS), str(tmp_path)
                 )
-        except Exception:  # noqa: BLE001 - LLM analysis is best-effort.
+        except Exception as e:  # noqa: BLE001 - LLM analysis is best-effort.
+            _log.debug("analyze_template_with_llm failed: %s", e)
             llm_mapping = None
             llm_header_row = None
 
@@ -811,7 +819,8 @@ async def regenerate_context(project: str) -> dict:
 
         client = build_llm_client()
         primary = route(Task.MAP_EXTRACT)
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        _log.debug("build_llm_client (regenerate_context) failed: %s", e)
         client = None
         primary = ""
     if client is None:

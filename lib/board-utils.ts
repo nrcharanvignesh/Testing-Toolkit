@@ -97,25 +97,6 @@ export const COLOR_WARN = "#f59e0b";
 export const COLOR_INFO = "#3b82f6";
 export const COLOR_MUTED = "#94a3b8";
 
-/** board_grid.py _state_color */
-export function stateColor(state: string): string {
-  const s = (state || "").toLowerCase();
-  if (
-    ["done", "closed", "accept", "passed", "complete", "resolved"].some((k) =>
-      s.includes(k)
-    )
-  )
-    return COLOR_SUCCESS;
-  if (s.includes("block")) return COLOR_DANGER;
-  if (["qa", "review", "test", "verify"].some((k) => s.includes(k)))
-    return COLOR_WARN;
-  if (["active", "progress", "development", "dev", "doing"].some((k) =>
-    s.includes(k)
-  ))
-    return COLOR_INFO;
-  return COLOR_MUTED;
-}
-
 /** board_grid.py _type_color */
 export function typeColor(wiType: string): string | null {
   const t = (wiType || "").toLowerCase();

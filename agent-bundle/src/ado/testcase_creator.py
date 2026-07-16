@@ -66,6 +66,7 @@ from __future__ import annotations
 import asyncio
 import gc
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -76,6 +77,8 @@ import httpx
 
 from ado.api import build_auth_header
 from core.runtime_config import RuntimeConfig
+
+_log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------
 # Constants
@@ -196,8 +199,8 @@ def normalize_payload(data: Any) -> Any:
                         tc.pop("priority", None)
                     else:
                         tc["priority"] = np
-    except Exception:
-        pass
+    except Exception as e:
+        _log.debug("normalize_payload failed: %s", e)
     return data
 
 # Field reference names used by PwC Digital's customized ADO process
@@ -700,8 +703,8 @@ async def _create_one(
                         f"expects. Steps XML that was sent:"
                     )
                     on_log(f"[WARN]   {(tc.get('steps') and steps_xml) or '(empty)'}")
-        except Exception:
-            pass  # verification is best-effort; never blocks the run
+        except Exception as e:
+            _log.debug("steps verification failed: %s", e)  # best-effort; never blocks the run
 
         if on_log:
             on_log(
@@ -796,19 +799,6 @@ async def create_test_cases_async(
         on_progress("create", total, total)
     gc.collect()
     return batch
-
-
-def create_test_cases(
-    payload: dict[str, Any],
-    org: str,
-    project: str,
-    pat: str,
-    **kwargs: Any,
-) -> CreateBatchResult:
-    """Sync wrapper for the async creator."""
-    return asyncio.run(create_test_cases_async(
-        payload=payload, org=org, project=project, pat=pat, **kwargs,
-    ))
 
 
 # ---------------------------------------------------------------------
