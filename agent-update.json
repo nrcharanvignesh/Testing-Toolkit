@@ -1,5 +1,5 @@
 {
-  "version": "2.21.0",
+  "version": "2.22.0",
   "ref": "main",
   "generatedAt": "2026-07-16T12:00:00.000Z",
   "files": [
@@ -171,7 +171,7 @@
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "e7d79024e9492fbedc82124e52e855af61df6eb8d1a53b3324676a2377b6b43d"
+      "hash": "cddb6f41b130d98330705d593dcd3bbb93c4ed94cfd1fd6c55ebb994f128e1d6"
     },
     {
       "path": "automation/__init__.py",
@@ -341,7 +341,7 @@
     {
       "path": "core/project_store.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/project_store.py?ref=main",
-      "hash": "1de57f7e70af2097688a39b2749a7dc6b32ddbcb8f84456726eb2e14755fee29"
+      "hash": "76e951052bc3710aebd44f6023e4e2d9a93564cedd2bf5beadc1dadeb014de03"
     },
     {
       "path": "core/protocols.py",
@@ -451,7 +451,7 @@
     {
       "path": "kb/context_summary.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/context_summary.py?ref=main",
-      "hash": "d38f01ca1f6a78374c6648df104e8d988bae543ac56866516392e83ee35616fd"
+      "hash": "a5893dcb5181ae40da1735c46d09a53cbeeff8910b20c88f402583ad5bd08093"
     },
     {
       "path": "kb/contextual.py",
