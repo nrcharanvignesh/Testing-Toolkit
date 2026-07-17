@@ -147,10 +147,19 @@ def is_encrypted(data: bytes) -> bool:
 
 
 def write_encrypted(path: Path | str, data: bytes) -> None:
-    """Encrypt and write bytes to a file."""
+    """Encrypt and write bytes to a file (atomic: temp+rename)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(encrypt_bytes(data))
+    tmp = path.with_suffix(f".tmp.{os.getpid()}")
+    try:
+        tmp.write_bytes(encrypt_bytes(data))
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 def read_decrypted(path: Path | str) -> bytes | None:

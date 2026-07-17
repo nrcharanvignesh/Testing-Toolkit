@@ -325,14 +325,17 @@ app = FastAPI(
     lifespan=_lifespan,
 )
 
-# Allow the Vercel frontend (any origin) to call localhost.
-#
-# NOTE: with allow_credentials=True the spec forbids a literal "*" origin, so we
-# echo the caller's Origin back via allow_origin_regex=".*". Without this, the
-# browser drops the response and the app can never connect.
+# Allow the Vercel frontend and localhost dev server to call the agent.
+# PNA (below) is the real trust boundary; CORS here restricts to known patterns.
+_CORS_ORIGIN_REGEX = (
+    r"^https://.*\.vercel\.app$"
+    r"|^https://.*\.testing-toolkit\.dev$"
+    r"|^http://localhost(:\d+)?$"
+    r"|^http://127\.0\.0\.1(:\d+)?$"
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=".*",
+    allow_origin_regex=_CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -377,8 +380,29 @@ class PrivateNetworkAccessMiddleware(BaseHTTPMiddleware):
         return response
 
 
+_MAX_BODY_BYTES: int = 50 * 1024 * 1024  # 50 MB
+
+
+class BodySizeLimitMiddleware(BaseHTTPMiddleware):
+    """Reject requests with Content-Length exceeding the cap.
+
+    Prevents accidental or malicious oversized payloads from exhausting RAM.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        cl = request.headers.get("content-length")
+        if cl and cl.isdigit() and int(cl) > _MAX_BODY_BYTES:
+            return Response(
+                status_code=413,
+                content="Request body too large (50 MB limit)",
+                media_type="text/plain",
+            )
+        return await call_next(request)
+
+
 # Added AFTER CORS so it wraps it (outermost) and can answer the PNA preflight.
 app.add_middleware(PrivateNetworkAccessMiddleware)
+app.add_middleware(BodySizeLimitMiddleware)
 
 from agent.middleware_trace import TraceRequestMiddleware
 app.add_middleware(TraceRequestMiddleware)

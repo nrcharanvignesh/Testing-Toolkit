@@ -499,22 +499,61 @@ export type AgentStatus = "connected" | "offline" | "connecting";
 // ---------------------------------------------------------------------------
 // Low-level fetch helpers
 // ---------------------------------------------------------------------------
+const AGENT_FETCH_TIMEOUT_MS = 30_000;
+const AGENT_FETCH_RETRIES = 1;
+const RETRYABLE_STATUSES = new Set([408, 429, 502, 503, 504]);
+
 async function agentFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const t0 = performance.now();
-  const res = await fetch(`${AGENT_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
-  });
-  const elapsed = performance.now() - t0;
-  trackEvent("system_event", "agentFetch", path, { durationMs: elapsed, metadata: { status: res.status } });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(humanizeError(res.status, body));
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= AGENT_FETCH_RETRIES; attempt++) {
+    if (attempt > 0) await sleep(1000 * attempt);
+    const t0 = performance.now();
+    const controller = new AbortController();
+    const extSignal = options?.signal;
+    if (extSignal?.aborted) throw new Error("Cancelled");
+    const timer = setTimeout(() => controller.abort(), AGENT_FETCH_TIMEOUT_MS);
+    const combinedSignal = extSignal
+      ? AbortSignal.any([controller.signal, extSignal])
+      : controller.signal;
+    try {
+      const res = await fetch(`${AGENT_URL}${path}`, {
+        ...options,
+        signal: combinedSignal,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+        },
+      });
+      clearTimeout(timer);
+      const elapsed = performance.now() - t0;
+      trackEvent("system_event", "agentFetch", path, { durationMs: elapsed, metadata: { status: res.status } });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        if (RETRYABLE_STATUSES.has(res.status) && attempt < AGENT_FETCH_RETRIES) {
+          lastError = new Error(humanizeError(res.status, body));
+          continue;
+        }
+        throw new Error(humanizeError(res.status, body));
+      }
+      return res.json();
+    } catch (err) {
+      clearTimeout(timer);
+      if (extSignal?.aborted) throw new Error("Cancelled");
+      const isTimeout = err instanceof DOMException && err.name === "AbortError";
+      const isNetwork = err instanceof TypeError;
+      if ((isTimeout || isNetwork) && attempt < AGENT_FETCH_RETRIES) {
+        lastError = isTimeout
+          ? new Error(`Agent timeout: ${path} did not respond within ${AGENT_FETCH_TIMEOUT_MS / 1000}s`)
+          : (err as Error);
+        continue;
+      }
+      if (isTimeout) {
+        throw new Error(`Agent timeout: ${path} did not respond within ${AGENT_FETCH_TIMEOUT_MS / 1000}s`);
+      }
+      throw err;
+    }
   }
-  return res.json();
+  throw lastError ?? new Error("Agent request failed");
 }
 
 function humanizeError(status: number, body: string): string {
@@ -540,13 +579,20 @@ export function agentLogLevel(
   return tag as "DEBUG" | "INFO" | "SUCCESS" | "WARN" | "ERROR";
 }
 
-/** Poll a background job until it reaches a terminal state. */
+/** Poll a background job until it reaches a terminal state.
+ *  Hard-caps at 30 minutes to prevent infinite loops on orphaned jobs. */
+const MAX_POLL_DURATION_MS = 30 * 60 * 1000;
+
 async function pollJob(jobId: string, h: JobHandlers = {}): Promise<JobSnapshot> {
   trackEvent("system_event", "agentClient", "poll_job", { metadata: { jobId } });
   let offset = 0;
   const interval = h.intervalMs ?? 700;
+  const deadline = Date.now() + MAX_POLL_DURATION_MS;
   for (;;) {
     if (h.signal?.aborted) throw new Error("Cancelled");
+    if (Date.now() > deadline) {
+      throw new Error(`Job ${jobId} timed out after 30 minutes of polling`);
+    }
     const snap = await agentFetch<JobSnapshot>(
       `/jobs/${jobId}?log_offset=${offset}`
     );
@@ -1206,49 +1252,83 @@ export const agent = {
       onError?: (message: string) => void;
       onDone?: (stopReason: string) => void;
     },
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    stallMs = 90_000
   ): Promise<void> {
     trackEvent("system_event", "agentClient", "stream_start", { metadata: { path: "/chat/stream" } });
-    const res = await fetch(`${AGENT_URL}/chat/stream`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        project: req.project,
-        messages: req.messages,
-        use_kb: req.use_kb ?? true,
-        use_tools: req.use_tools ?? true,
-        attachment_text: req.attachment_text ?? "",
-        images: req.images ?? [],
-      }),
-      signal,
-    });
+    // Inactivity watchdog: if no SSE event arrives for stallMs, abort so the
+    // UI surfaces a stall error instead of hanging the chat forever. 90s
+    // accommodates tool execution pauses during agentic responses.
+    const ctrl = new AbortController();
+    const onAbort = () => ctrl.abort();
+    if (signal) {
+      if (signal.aborted) ctrl.abort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
+    let stallTimer: ReturnType<typeof setTimeout> | undefined;
+    const armStall = () => {
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = setTimeout(onAbort, stallMs);
+    };
+
+    let res: Response;
+    try {
+      armStall();
+      res = await fetch(`${AGENT_URL}/chat/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project: req.project,
+          messages: req.messages,
+          use_kb: req.use_kb ?? true,
+          use_tools: req.use_tools ?? true,
+          attachment_text: req.attachment_text ?? "",
+          images: req.images ?? [],
+        }),
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      if (stallTimer) clearTimeout(stallTimer);
+      signal?.removeEventListener("abort", onAbort);
+      throw ctrl.signal.aborted
+        ? new Error("Chat stream stalled: no response from agent within timeout")
+        : (e as Error);
+    }
     if (!res.ok || !res.body) {
+      if (stallTimer) clearTimeout(stallTimer);
+      signal?.removeEventListener("abort", onAbort);
       const body = await res.text().catch(() => "");
       throw new Error(humanizeError(res.status, body));
     }
 
-    await readSSE(res.body, (payload) => {
-      let evt: {
-        type: string;
-        text?: string;
-        name?: string;
-        phase?: "start" | "done";
-        message?: string;
-        stop_reason?: string;
-      };
-      try {
-        evt = JSON.parse(payload);
-      } catch {
-        return;
-      }
-      if (evt.type === "text" && evt.text) handlers.onText?.(evt.text);
-      else if (evt.type === "tool" && evt.name)
-        handlers.onTool?.(evt.name, evt.phase ?? "start");
-      else if (evt.type === "error")
-        handlers.onError?.(evt.message ?? "Unknown error");
-      else if (evt.type === "done")
-        handlers.onDone?.(evt.stop_reason ?? "");
-    });
+    try {
+      await readSSE(res.body, (payload) => {
+        armStall();
+        let evt: {
+          type: string;
+          text?: string;
+          name?: string;
+          phase?: "start" | "done";
+          message?: string;
+          stop_reason?: string;
+        };
+        try {
+          evt = JSON.parse(payload);
+        } catch {
+          return;
+        }
+        if (evt.type === "text" && evt.text) handlers.onText?.(evt.text);
+        else if (evt.type === "tool" && evt.name)
+          handlers.onTool?.(evt.name, evt.phase ?? "start");
+        else if (evt.type === "error")
+          handlers.onError?.(evt.message ?? "Unknown error");
+        else if (evt.type === "done")
+          handlers.onDone?.(evt.stop_reason ?? "");
+      });
+    } finally {
+      if (stallTimer) clearTimeout(stallTimer);
+      signal?.removeEventListener("abort", onAbort);
+    }
   },
 
   /**

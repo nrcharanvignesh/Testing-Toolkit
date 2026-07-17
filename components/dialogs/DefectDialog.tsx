@@ -105,6 +105,10 @@ export function DefectDialog({ onClose }: { onClose: () => void }) {
 
   const upload = async () => {
     if (!currentProject || keptCount === 0) return;
+    const ok = window.confirm(
+      `This will create ${keptCount} Bug work item(s) in Azure DevOps.\n\nContinue?`
+    );
+    if (!ok) return;
     setUploading(true);
     setProgress(null);
     setStatus(`Uploading ${keptCount} bug(s)...`);

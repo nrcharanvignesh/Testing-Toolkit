@@ -23,7 +23,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from agent.jobs import JOBS, Job
+from agent.jobs import JOBS, Job, spawn_job_task
 from core.trace import trace
 
 router = APIRouter()
@@ -499,7 +499,7 @@ async def start_generate(req: StartRequest) -> dict[str, str]:
         raise HTTPException(400, "No work items selected")
     job = JOBS.create("generate")
     job.log("[INFO] Starting test case generation...")
-    asyncio.create_task(_run_generate(job, req))
+    spawn_job_task(_run_generate(job, req), job)
     return {"job_id": job.id}
 
 
@@ -627,7 +627,7 @@ async def push_test_cases(req: PushRequest) -> dict[str, str]:
     job = JOBS.create("push")
     dest = "JIRA" if rs.source.value == "jira" else "Azure DevOps"
     job.log(f"[INFO] Creating test cases in {dest}...")
-    asyncio.create_task(_run_push(job, req))
+    spawn_job_task(_run_push(job, req), job)
     return {"job_id": job.id}
 
 
@@ -679,7 +679,7 @@ async def push_test_cases_from_xlsx(req: PushXlsxRequest) -> dict[str, str]:
     )
     job = JOBS.create("push")
     job.log(f"[INFO] Creating test cases from {path.name}...")
-    asyncio.create_task(_run_push(job, push_req))
+    spawn_job_task(_run_push(job, push_req), job)
     return {"job_id": job.id}
 
 

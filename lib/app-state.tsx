@@ -228,6 +228,9 @@ export function AppStateProvider({
   const indexingRef = useRef(false);
   const rerunIndexRef = useRef(false);
 
+  // Cancel in-flight board load when user switches boards mid-stream.
+  const boardAbortRef = useRef<AbortController | null>(null);
+
   // Ensures the saved last project/board is restored at most once per session.
   const restoredRef = useRef(false);
 
@@ -335,6 +338,11 @@ export function AppStateProvider({
 
   const loadBoardView = useCallback(
     async (project: string, board: Board) => {
+      // Cancel any in-flight board load before starting a new one.
+      boardAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      boardAbortRef.current = ctrl;
+
       setBoardLoading(true);
       setBoardView(null);
       setSelected(new Set());
@@ -345,6 +353,7 @@ export function AppStateProvider({
         let view: BoardView;
         try {
           view = await agent.boardViewStream(project, board, (rows) => {
+            if (ctrl.signal.aborted) return;
             // Render partial rows immediately; columns are finalized on done.
             const seen = new Set<string>();
             const cols = [];
@@ -356,19 +365,22 @@ export function AppStateProvider({
               }
             }
             setBoardView({ columns: cols, rows: [...rows] });
-          });
-        } catch {
+          }, ctrl.signal);
+        } catch (e) {
+          if (ctrl.signal.aborted) return;
           view = await agent.boardView(project, board);
         }
+        if (ctrl.signal.aborted) return;
         setBoardView(view);
         pushLog(
           "SUCCESS",
           `${view.rows.length} work item(s) in ${view.columns.length} column(s).`
         );
       } catch (e) {
+        if (ctrl.signal.aborted) return;
         pushLog("ERROR", `Load board failed: ${(e as Error).message}`);
       } finally {
-        setBoardLoading(false);
+        if (!ctrl.signal.aborted) setBoardLoading(false);
       }
     },
     [pushLog]

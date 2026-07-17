@@ -463,8 +463,15 @@ class MCPBridge:
         """Stop all servers and join the background thread."""
         if not self._loop:
             return
-        for mgr in list(self._servers.values()):
+        futures = [
             asyncio.run_coroutine_threadsafe(mgr.stop(), self._loop)
+            for mgr in list(self._servers.values())
+        ]
+        for fut in futures:
+            try:
+                fut.result(timeout=5)
+            except Exception:
+                pass
         self._loop.call_soon_threadsafe(self._loop.stop)
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=5)

@@ -21,7 +21,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from agent.jobs import JOBS, Job
+from agent.jobs import JOBS, Job, spawn_job_task
 from core.trace import trace
 
 router = APIRouter()
@@ -199,7 +199,7 @@ async def upload_defects(req: UploadRequest) -> dict[str, str]:
         raise HTTPException(400, "No defects to upload (all skipped or empty)")
     job = JOBS.create("defects_upload")
     job.log(f"[INFO] Uploading {len(kept)} defect(s) to Azure DevOps...")
-    asyncio.create_task(_run_upload(job, req.project, kept, pat, org))
+    spawn_job_task(_run_upload(job, req.project, kept, pat, org), job)
     return {"job_id": job.id}
 
 

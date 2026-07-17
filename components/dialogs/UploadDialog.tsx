@@ -38,6 +38,11 @@ export function UploadDialog({ onClose }: { onClose: () => void }) {
 
   const upload = async () => {
     if (!currentProject || !selected) return;
+    const fileName = files.find((f) => f.path === selected)?.name ?? selected;
+    const ok = window.confirm(
+      `This will create Test Case work items in Azure DevOps from:\n\n${fileName}\n\nContinue?`
+    );
+    if (!ok) return;
     setBusy(true);
     setStatus("Creating Test Cases in ADO...");
     pushLog("INFO", `Uploading reviewed test cases to ADO...`);

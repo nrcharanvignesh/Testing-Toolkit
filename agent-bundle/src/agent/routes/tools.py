@@ -20,7 +20,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from agent.jobs import JOBS, Job
+from agent.jobs import JOBS, Job, spawn_job_task
 from core.trace import trace
 
 router = APIRouter()
@@ -143,5 +143,5 @@ async def package_pdfs(req: PackageRequest) -> dict[str, str]:
     pat, org = _require_pat_org()
     job = JOBS.create("package")
     job.log("[INFO] Starting PDF packaging...")
-    asyncio.create_task(_run_package(job, req, pat, org))
+    spawn_job_task(_run_package(job, req, pat, org), job)
     return {"job_id": job.id}

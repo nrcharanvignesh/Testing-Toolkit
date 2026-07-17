@@ -25,7 +25,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from agent.jobs import JOBS, Job
+from agent.jobs import JOBS, Job, spawn_job_task
 from automation.credential_vault import CredentialVault
 from core.app_config import OUTPUTS_DIR
 from core.trace import trace
@@ -488,7 +488,7 @@ async def start_e2e(req: E2EStartRequest) -> dict[str, str]:
         raise HTTPException(400, "No environment specified")
     job = JOBS.create("e2e", project=req.project)
     job.log("[INFO] Starting E2E automation...")
-    asyncio.create_task(_run_e2e(job, req))
+    spawn_job_task(_run_e2e(job, req), job)
     return {"job_id": job.id}
 
 

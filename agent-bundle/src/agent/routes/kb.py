@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from core.app_config import PROJECTS_DIR
 from core.trace import trace
-from agent.jobs import Job
+from agent.jobs import Job, spawn_job_task
 
 router = APIRouter()
 _log = logging.getLogger(__name__)
@@ -291,10 +291,15 @@ def _run_context_job(
                 on_log=_log, on_progress=_progress, force=False,
             )
 
+        # Wait for the index job to finish, capped at 30 minutes.
+        _wait_deadline = time.time() + 30 * 60
         while JOBS.find_active("kb_index", project) is not None:
             if job.stopped:
                 job.fail("Project context mapping stopped")
                 return
+            if time.time() > _wait_deadline:
+                job.log("[WARN] Timed out waiting for KB index (30 min cap).")
+                break
             time.sleep(0.25)
 
         final_index = ps.get_index(project)
@@ -393,8 +398,8 @@ async def index_project(req: IndexRequest) -> dict:
         recovery={"project": req.project, "force": req.force},
     )
     job.log("[INFO] Starting KB indexing...")
-    asyncio.create_task(
-        asyncio.to_thread(_run_kb_index, job, req.project, req.force)
+    spawn_job_task(
+        asyncio.to_thread(_run_kb_index, job, req.project, req.force), job
     )
     return {"job_id": job.id}
 

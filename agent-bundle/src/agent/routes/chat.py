@@ -32,6 +32,7 @@ router = APIRouter()
 
 _MAX_TOOL_ROUNDS: int = 10
 _KB_TOP_K: int = 6
+_STREAM_STALL_SECONDS: float = 180.0
 
 
 class ChatMessage(BaseModel):
@@ -257,10 +258,16 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
                 # buffering until the whole round completes. call_soon_threadsafe
                 # keeps it correct whether the client streams the response on
                 # the loop or in a worker thread.
-                queue: asyncio.Queue[Any] = asyncio.Queue()
+                queue: asyncio.Queue[Any] = asyncio.Queue(maxsize=512)
 
-                def _on_delta(chunk: str, _queue=queue) -> None:
-                    loop.call_soon_threadsafe(_queue.put_nowait, chunk)
+                def _safe_put(chunk: str, _queue=queue) -> None:
+                    try:
+                        _queue.put_nowait(chunk)
+                    except asyncio.QueueFull:
+                        pass
+
+                def _on_delta(chunk: str) -> None:
+                    loop.call_soon_threadsafe(_safe_put, chunk)
 
                 async def _run(_queue=queue, _on_delta_cb=_on_delta):
                     try:
@@ -277,7 +284,17 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
                 task = asyncio.ensure_future(_run())
                 # Forward text chunks as they arrive.
                 while True:
-                    item = await queue.get()
+                    try:
+                        item = await asyncio.wait_for(
+                            queue.get(), timeout=_STREAM_STALL_SECONDS
+                        )
+                    except asyncio.TimeoutError:
+                        task.cancel()
+                        yield await _sse(
+                            {"type": "error",
+                             "message": "LLM stream stalled (no data for 3 min)"}
+                        )
+                        return
                     if item is _DONE:
                         break
                     yield await _sse({"type": "text", "text": item})

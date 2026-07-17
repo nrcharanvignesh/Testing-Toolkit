@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import platform
 import time
@@ -138,7 +139,7 @@ async def doctor_route() -> dict:
     try:
         from core.diagnostics import run_doctor
 
-        return run_doctor()
+        return await asyncio.to_thread(run_doctor)
     except Exception as e:  # noqa: BLE001
         return {
             "status": "warn",
@@ -274,8 +275,9 @@ async def metrics() -> dict:
         pass
 
     # The app's own data footprint: total size of its workspace directory.
+    # Offloaded to a thread because os.walk can block for hundreds of ms.
     try:
-        data["app_data_mb"] = _app_data_mb()
+        data["app_data_mb"] = await asyncio.to_thread(_app_data_mb)
     except Exception:
         pass
 

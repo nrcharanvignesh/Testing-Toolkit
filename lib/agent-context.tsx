@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   useCallback,
   type ReactNode,
@@ -25,8 +26,13 @@ const AgentContext = createContext<AgentContextValue>({
 export function AgentProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AgentStatus>("connecting");
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const inFlightRef = useRef(false);
+  const statusRef = useRef(status);
+  statusRef.current = status;
 
   const check = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     try {
       const h = await agent.health();
       setHealth(h);
@@ -34,17 +40,27 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     } catch {
       setHealth(null);
       setStatus("offline");
+    } finally {
+      inFlightRef.current = false;
     }
   }, []);
 
   useEffect(() => {
     check();
-    // Poll every 3 seconds while offline, every 30 seconds when connected
-    const interval = setInterval(() => {
-      check();
-    }, status === "connected" ? 30000 : 3000);
-    return () => clearInterval(interval);
-  }, [check, status]);
+    // Single stable interval; timing adapts via statusRef without
+    // recreating the interval on every status change.
+    let elapsed = 0;
+    const tick = 3000;
+    const id = setInterval(() => {
+      elapsed += tick;
+      const needed = statusRef.current === "connected" ? 30000 : 3000;
+      if (elapsed >= needed) {
+        elapsed = 0;
+        check();
+      }
+    }, tick);
+    return () => clearInterval(id);
+  }, [check]);
 
   return (
     <AgentContext.Provider value={{ status, health, retry: check }}>

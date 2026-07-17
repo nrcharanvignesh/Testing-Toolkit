@@ -215,9 +215,10 @@ def apply_patch() -> dict[str, Any]:
     src_dir = Path(sys.modules["agent"].__file__ or "").resolve().parent.parent
     headers = _auth_headers()
     headers["Accept"] = "application/vnd.github.raw"
-    applied: list[str] = []
     errors: list[str] = []
 
+    # Phase 1: download + verify ALL files before writing anything.
+    staged: list[tuple[Path, bytes]] = []
     for entry in files:
         rel_path = str(entry.get("path", ""))
         url = str(entry.get("url", ""))
@@ -240,16 +241,32 @@ def apply_patch() -> dict[str, Any]:
             if actual_hash != expected_hash:
                 errors.append(f"{rel_path}: hash mismatch")
                 continue
-            target.write_bytes(content)
-            applied.append(rel_path)
+            staged.append((target, content))
         except Exception as e:
             errors.append(f"{rel_path}: {type(e).__name__}")
 
-    if errors and not applied:
+    if not staged:
         return {"ok": False, "error": f"all files failed: {errors}"}
 
+    # Phase 2: apply with rollback on failure.
+    backups: list[tuple[Path, bytes]] = []
+    applied: list[str] = []
+    try:
+        for target, content in staged:
+            backups.append((target, target.read_bytes()))
+            target.write_bytes(content)
+            applied.append(str(target.relative_to(src_dir)))
+    except Exception as e:
+        # Rollback already-written files.
+        for bk_path, bk_data in backups:
+            try:
+                bk_path.write_bytes(bk_data)
+            except Exception:
+                pass
+        return {"ok": False, "error": f"patch aborted, rolled back: {e}"}
+
     _invalidate_update_cache()
-    log.info("[INFO] Patch %s applied: %d file(s), %d error(s)",
+    log.info("[INFO] Patch %s applied: %d file(s), %d skipped",
              latest, len(applied), len(errors))
     return {
         "ok": True,

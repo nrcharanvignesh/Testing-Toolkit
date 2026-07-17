@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from core.trace import trace
+
+_COMPLETE_TIMEOUT_SECONDS: float = 120.0
 
 router = APIRouter()
 
@@ -44,15 +48,20 @@ async def complete(req: CompleteRequest) -> CompleteResponse:
         )
     model = route(Task.CHAT_STREAMING)
     try:
-        result = await client.complete_async(
-            model=model,
-            system=req.system,
-            user=req.user,
-            max_tokens=req.max_tokens,
-            temperature=req.temperature,
-            thinking_budget=req.thinking_budget,
-            stop_sequences=req.stop_sequences,
+        result = await asyncio.wait_for(
+            client.complete_async(
+                model=model,
+                system=req.system,
+                user=req.user,
+                max_tokens=req.max_tokens,
+                temperature=req.temperature,
+                thinking_budget=req.thinking_budget,
+                stop_sequences=req.stop_sequences,
+            ),
+            timeout=_COMPLETE_TIMEOUT_SECONDS,
         )
+    except asyncio.TimeoutError:
+        raise HTTPException(504, "LLM completion timed out (120s cap)")
     except Exception as e:
         raise HTTPException(502, f"LLM API error: {e!r}")
 

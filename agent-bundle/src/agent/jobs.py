@@ -2,20 +2,26 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import threading
 import time
 import uuid
+from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
 from core.app_config import WORKSPACE
 
+_log = logging.getLogger(__name__)
+
 _MAX_JOBS: Final[int] = 100
 _TTL_SECONDS: Final[float] = 24 * 3600.0
 _MAX_LOG_LINES: Final[int] = 200_000
+_JOB_EXPIRY_SECONDS: Final[float] = 45 * 60.0
 _STATE_DIR: Final[Path] = WORKSPACE / "jobs"
 _STATE_PATH: Final[Path] = _STATE_DIR / "registry.json"
 
@@ -225,6 +231,22 @@ class JobManager:
         job.error = ""
         job._changed()
 
+    def expire_stale(self) -> int:
+        """Force-fail jobs stuck in 'running' with no activity update."""
+        now = time.time()
+        expired = 0
+        with self._lock:
+            for job in list(self._jobs.values()):
+                if job.state == "running" and now - job.updated_at > _JOB_EXPIRY_SECONDS:
+                    job.state = "error"
+                    job.error = "Job expired: no activity for 45 minutes"
+                    job.logs.append("[ERROR] Job forcibly expired (no activity timeout).")
+                    job.updated_at = now
+                    expired += 1
+            if expired:
+                self._persist()
+        return expired
+
     def _gc(self) -> None:
         now = time.time()
         for job_id in list(self._jobs):
@@ -242,4 +264,32 @@ class JobManager:
                 self._jobs.pop(job.id, None)
 
 
+def _start_expiry_sweeper(manager: "JobManager") -> None:
+    """Background thread that periodically expires orphaned jobs."""
+    def _sweep() -> None:
+        while True:
+            time.sleep(300)
+            try:
+                manager.expire_stale()
+            except Exception:
+                pass
+    t = threading.Thread(target=_sweep, daemon=True, name="job-expiry-sweeper")
+    t.start()
+
+
 JOBS: Final[JobManager] = JobManager()
+_start_expiry_sweeper(JOBS)
+
+
+def spawn_job_task(coro: Coroutine[Any, Any, None], job: "Job") -> asyncio.Task[None]:
+    """Create an asyncio task for a job, with an exception handler that
+    fails the job on unhandled crash instead of silently dropping it."""
+    async def _guarded() -> None:
+        try:
+            await coro
+        except Exception as exc:  # noqa: BLE001
+            if job.state == "running":
+                job.fail(f"Unexpected crash: {type(exc).__name__}: {exc}")
+                job.log(f"[ERROR] {job.error}")
+            _log.exception("Job %s (%s) crashed", job.id, job.kind)
+    return asyncio.create_task(_guarded())

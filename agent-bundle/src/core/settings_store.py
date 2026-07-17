@@ -13,6 +13,7 @@ import json
 import os
 import stat
 import sys
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -232,43 +233,46 @@ def _migrate_legacy_settings() -> None:
 
 _settings_cache: dict[str, str] | None = None
 _settings_cache_mtime: float = 0.0
+_settings_lock = threading.Lock()
 
 
 def _load_all() -> dict[str, str]:
     global _settings_cache, _settings_cache_mtime
-    if not SETTINGS_PATH.exists():
-        _migrate_legacy_settings()
-    if not SETTINGS_PATH.exists():
+    with _settings_lock:
+        if not SETTINGS_PATH.exists():
+            _migrate_legacy_settings()
+        if not SETTINGS_PATH.exists():
+            return {}
+        try:
+            mtime = SETTINGS_PATH.stat().st_mtime
+            if _settings_cache is not None and mtime == _settings_cache_mtime:
+                return _settings_cache
+            data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                result = {str(k): str(v) for k, v in data.items()}
+                _settings_cache = result
+                _settings_cache_mtime = mtime
+                return result
+        except Exception:
+            pass
         return {}
-    try:
-        mtime = SETTINGS_PATH.stat().st_mtime
-        if _settings_cache is not None and mtime == _settings_cache_mtime:
-            return _settings_cache
-        data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            result = {str(k): str(v) for k, v in data.items()}
-            _settings_cache = result
-            _settings_cache_mtime = mtime
-            return result
-    except Exception:
-        pass
-    return {}
 
 
 def _write_all(data: dict[str, str]) -> bool:
     global _settings_cache, _settings_cache_mtime
-    try:
-        SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        tmp = SETTINGS_PATH.with_suffix(f".tmp.{os.getpid()}")
-        tmp.write_text(
-            json.dumps(data, indent=2, ensure_ascii=True), encoding="utf-8"
-        )
-        os.replace(tmp, SETTINGS_PATH)
-        _settings_cache = data
-        _settings_cache_mtime = SETTINGS_PATH.stat().st_mtime
-        return True
-    except Exception:
-        return False
+    with _settings_lock:
+        try:
+            SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            tmp = SETTINGS_PATH.with_suffix(f".tmp.{os.getpid()}")
+            tmp.write_text(
+                json.dumps(data, indent=2, ensure_ascii=True), encoding="utf-8"
+            )
+            os.replace(tmp, SETTINGS_PATH)
+            _settings_cache = data
+            _settings_cache_mtime = SETTINGS_PATH.stat().st_mtime
+            return True
+        except Exception:
+            return False
 
 
 def get_setting(key: str, default: str | None = None) -> str:
