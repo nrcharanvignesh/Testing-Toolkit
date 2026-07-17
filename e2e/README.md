@@ -59,6 +59,7 @@ AGENT_URL=http://127.0.0.1:7842 npm run test:e2e
 | `02-dialogs.spec.ts` | Source Settings, Help menu, About, log panel | no |
 | `03-read-flows.spec.ts` | List projects → boards → work items → detail pane | yes (read) |
 | `04-generate.spec.ts` | Select item → AI Generate → assert no ADO push | yes (LLM) |
+| `06-action-bar.spec.ts` | Action bar buttons, export, selection actions | no |
 
 Specs that need a configured agent **auto-skip** when one is not present, so the
 onboarding + dialog specs always run anywhere.

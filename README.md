@@ -1,12 +1,12 @@
 # Testing Toolkit
 
-> **Web v3.0.0 — Agent v2.8.2**
+> **Web v3.0.0 — Agent v2.25.0**
 
-A browser-based QA platform that turns **Azure DevOps** work items into
-LLM-generated test cases, requirement PDF packets, E2E automation scripts, and
-bulk defect uploads. Secrets never enter the browser; requirement context leaves
-the machine only in authenticated requests from the local agent to the approved
-GenAI gateway.
+A browser-based QA platform that turns **Azure DevOps** and **JIRA** work items
+into LLM-generated test cases, requirement PDF packets, E2E automation scripts,
+and bulk defect uploads. Secrets never enter the browser; requirement context
+leaves the machine only in authenticated requests from the local agent to the
+approved GenAI gateway.
 
 The web app is deployed on **Vercel** and talks only to a small **local compute
 agent** (`http://127.0.0.1:7842`) running on the user's machine. ADO and GenAI
@@ -18,13 +18,13 @@ credentials remain agent-side and are never returned by its API.
 
 | Capability | Description |
 |---|---|
-| **Browse ADO boards** | Pick a project and board; view work items in a swim-lane grid with a full detail pane (description, acceptance criteria, comments, attachments, links) |
+| **Browse ADO / JIRA boards** | Pick a project and board from Azure DevOps or JIRA; view work items in a swim-lane grid with a full detail pane (description, acceptance criteria, comments, attachments, links) |
 | **Generate test cases** | Select work items and a phase (Implementation / SIT / UAT); the RLM pipeline reads the work items + project KB and produces a reviewable Excel workbook |
 | **E2E automation** | Self-healing Playwright script generation and execution with a 6-strategy locator waterfall, auto-retry, iframe/shadow-DOM traversal, and a full per-TC result history |
 | **Review + regenerate** | Refine generated test cases and re-run with written feedback (up to 10 iterations per session) |
-| **Upload to ADO** | Push approved test cases into Azure DevOps as properly structured Test Case work items |
+| **Upload to ADO / JIRA** | Push approved test cases into Azure DevOps or JIRA as properly structured Test Case work items |
 | **Package PDFs** | Bundle requirement documents and attachments into per-work-item PDF packets plus a combined PDF and a KB-ready chunk folder |
-| **Bulk defects** | Parse defect documents and upload Bug work items to ADO with inherited board position |
+| **Bulk defects** | Parse defect documents and upload Bug work items to ADO/JIRA with inherited board position |
 | **Per-project knowledge base** | Upload requirement documents; they are chunked and indexed locally (BM25 + dense vectors) for retrieval-augmented generation |
 | **AI Stack explorer** | Live 7-layer visualization of the platform's AI architecture: LLMs, Vector DB, Embeddings, Data Extraction, Open LLM Access, Framework, Evaluation |
 
@@ -41,6 +41,7 @@ Browser (Vercel web app)  ──HTTP──>  Local agent (FastAPI @ 127.0.0.1:78
                                          |-> ~/TestingToolkit workspace
                                          |-> LanceDB embedded vector store
                                          |-> Azure DevOps REST API
+                                         |-> JIRA Server/Data Center REST API
                                          |-> LiteLLM proxy (GenAI gateway)
                                               |-> azure.gpt-4o (generation)
                                               |-> azure.text-embedding-3-small
@@ -66,7 +67,7 @@ components/
   dashboard/                CoverageBar
   dialogs/                  Settings, Generate, E2E, KB, Defects, Upload, Package,
                             Retrieval, AiStack, About, ViewLog
-  onboarding/               OnboardingScreen, FirstRunGate
+  onboarding/               OnboardingScreen, AgentUpdateRequired
   ui/                       shared primitives (button, modal, dropdown)
 lib/
   agent-client.ts           typed client for the local agent (127.0.0.1:7842)
@@ -75,10 +76,10 @@ lib/
   installer-template.ts     per-OS installer script generation
 agent-bundle/src/           the local compute agent + ported desktop backend
   agent/                    FastAPI server, routes, model loader, updater
-  ado/ kb/ testgen/         Azure DevOps, knowledge base, generation pipeline
+  ado/ jira/ kb/ testgen/   Azure DevOps, JIRA, knowledge base, generation pipeline
   defects/ tools/ core/     defect handling, PDF/Office tools, config + orchestrator
   automation/               E2E script generator + self-healing runner
-  tests/                    pytest suite (177 tests)
+  tests/                    pytest suite (48 test files)
 docs/                       ARCHITECTURE.md, DOCS.md
 e2e/                        Playwright E2E specs + mock-agent helpers (8 specs)
 scripts/                    build-agent-update-manifest.mjs
@@ -91,11 +92,11 @@ scripts/                    build-agent-update-manifest.mjs
 Requirements: Node.js 20+.
 
 ```bash
-npm install
-npm run dev        # http://localhost:3000
-npm run build      # production build
-npm run lint       # eslint
-npm test           # vitest unit tests (10 tests)
+pnpm install
+pnpm dev           # http://localhost:3000
+pnpm build         # production build
+pnpm lint          # eslint
+pnpm test          # vitest unit tests
 ```
 
 Deployment is on **Vercel** (`vercel.json`, framework: nextjs). Pushing `main`
@@ -139,7 +140,7 @@ python -m pytest tests/ -q    # 177 tests
 |---|---|
 | Health | `GET /health`, `GET /version` |
 | Settings | `GET /settings`, `POST /settings` |
-| Sources | `GET /sources/projects`, `GET /sources/boards/{project}`, `POST /sources/workitems`, `POST /sources/workitems/stream`, `POST /sources/tag` |
+| Sources | `GET /sources/projects`, `GET /sources/boards/{project}`, `POST /sources/workitems`, `POST /sources/workitems/stream`, `POST /sources/tag` (ADO + JIRA) |
 | Generate | `POST /generate/start`, `GET /jobs/{id}` |
 | E2E | `POST /e2e/start`, `GET /e2e/jobs/{id}`, `GET /e2e/test-cases/{project}` |
 | KB | `POST /kb/index`, `POST /kb/retrieve`, `GET /kb/status/{project}`, `POST /kb/upload/{project}` |
