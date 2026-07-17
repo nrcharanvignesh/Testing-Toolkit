@@ -60,7 +60,7 @@ def _package_all(
             continue
         out_pdf = cfg.output_dir / f"WI_{wid}.pdf"
         try:
-            res = package_for_wi(wi_dir, cfg.paper_size, out_pdf)
+            res = package_for_wi(wi_dir, cfg.paper_size, out_pdf, organization=cfg.organization)
             rows.append({
                 "wi_id": wid, "ok": True, "reason": "",
                 "packet_pdf": str(res.output_pdf),

@@ -291,7 +291,7 @@ def _render_comments_section(
     return _para_from_text(com, sty["body"])
 
 
-def make_cover_pdf(wi_dir: Path, out_pdf: Path, paper: str) -> None:
+def make_cover_pdf(wi_dir: Path, out_pdf: Path, paper: str, *, organization: str = "") -> None:
     meta_path = wi_dir / "_meta.json"
     desc_html_path = wi_dir / "_description.html"
     ac_html_path = wi_dir / "_ac.html"
@@ -333,6 +333,8 @@ def make_cover_pdf(wi_dir: Path, out_pdf: Path, paper: str) -> None:
     story: list = []
     wi_id_str = str(meta.get("wi_id", "?"))
     wi_url = meta.get("wi_url", "")
+    if not wi_url and organization and wi_id_str != "?":
+        wi_url = f"https://dev.azure.com/{organization}/_workitems/edit/{wi_id_str}"
     wi_title = _safe_html(meta.get("title", "(no title)"))
     if wi_url:
         heading = f'<a href="{_safe_html(wi_url)}" color="blue">WI {wi_id_str}</a>: {wi_title}'
@@ -525,6 +527,7 @@ def package_for_wi(
     wi_dir: Path,
     paper_size: str = "A4",
     output_pdf: Path | None = None,
+    organization: str = "",
 ) -> PackageResult:
     wi_dir = wi_dir.resolve()
     meta_path = wi_dir / "_meta.json"
@@ -539,7 +542,7 @@ def package_for_wi(
     output_pdf.parent.mkdir(parents=True, exist_ok=True)
 
     cover = wi_dir / COVER_PDF_NAME
-    make_cover_pdf(wi_dir, cover, paper_size)
+    make_cover_pdf(wi_dir, cover, paper_size, organization=organization)
 
     att_dir = wi_dir / "attachments"
     office_files, pdfs, images = _list_attachments(att_dir)

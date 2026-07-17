@@ -503,15 +503,16 @@ const AGENT_FETCH_TIMEOUT_MS = 30_000;
 const AGENT_FETCH_RETRIES = 1;
 const RETRYABLE_STATUSES = new Set([408, 429, 502, 503, 504]);
 
-async function agentFetch<T>(path: string, options?: RequestInit): Promise<T> {
+async function agentFetch<T>(path: string, options?: RequestInit & { timeoutMs?: number }): Promise<T> {
   let lastError: Error | null = null;
+  const timeout = options?.timeoutMs ?? AGENT_FETCH_TIMEOUT_MS;
   for (let attempt = 0; attempt <= AGENT_FETCH_RETRIES; attempt++) {
     if (attempt > 0) await sleep(1000 * attempt);
     const t0 = performance.now();
     const controller = new AbortController();
     const extSignal = options?.signal;
     if (extSignal?.aborted) throw new Error("Cancelled");
-    const timer = setTimeout(() => controller.abort(), AGENT_FETCH_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), timeout);
     const combinedSignal = extSignal
       ? AbortSignal.any([controller.signal, extSignal])
       : controller.signal;
@@ -543,7 +544,7 @@ async function agentFetch<T>(path: string, options?: RequestInit): Promise<T> {
       const isNetwork = err instanceof TypeError;
       if ((isTimeout || isNetwork) && attempt < AGENT_FETCH_RETRIES) {
         lastError = isTimeout
-          ? new Error(`Agent timeout: ${path} did not respond within ${AGENT_FETCH_TIMEOUT_MS / 1000}s`)
+          ? new Error(`Agent timeout: ${path} did not respond within ${timeout / 1000}s`)
           : (err as Error);
         continue;
       }
@@ -1469,7 +1470,7 @@ export const agent = {
   async regenerateContext(project: string): Promise<ProjectContextSummary> {
     return agentFetch<ProjectContextSummary>(
       `/kb/context/${encodeURIComponent(project)}/regenerate`,
-      { method: "POST" }
+      { method: "POST", timeoutMs: 120_000 }
     );
   },
 
