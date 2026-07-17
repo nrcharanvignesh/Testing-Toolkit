@@ -235,7 +235,6 @@ def test_default_project_prefix_is_string() -> None:
     from core.app_config import DEFAULT_PROJECT_PREFIX
 
     assert isinstance(DEFAULT_PROJECT_PREFIX, str)
-    assert len(DEFAULT_PROJECT_PREFIX) > 0
 
 
 def test_path_constants_are_paths() -> None:

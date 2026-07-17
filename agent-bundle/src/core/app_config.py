@@ -180,10 +180,10 @@ SETTINGS_PATH: Final[Path] = CONFIG_DIR / "settings.json"
 LEGACY_SETTINGS_PATH: Final[Path] = WORKSPACE / "settings.json"
 
 # -------------------------- DISPLAY ---------------------------
-# Projects are shown with this prefix stripped, e.g.
-# "InteractionsHub_Abbott" -> "Abbott". Stored full name is used for
-# every API call; only the displayed label is shortened.
-DEFAULT_PROJECT_PREFIX: Final[str] = "InteractionsHub_"
+# Projects are shown with this prefix stripped (if configured).
+# Stored full name is used for every API call; only the displayed
+# label is shortened.
+DEFAULT_PROJECT_PREFIX: Final[str] = ""
 
 # -------------------------- WINDOW ----------------------------
 DEFAULT_WINDOW_W: Final[int] = 1480
