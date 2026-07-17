@@ -41,7 +41,7 @@ export function InstallationSection() {
 
   const onReinstall = () => {
     setConfirmReinstall(false);
-    pushLog("INFO", "Update requested — returning to the installer step.");
+    pushLog("INFO", "Reinstall requested — returning to the installer step.");
     // Shared with the blocking AgentUpdateRequired gate: reopen the installer
     // while preserving settings, project data and artifacts.
     requestReinstall();
@@ -173,7 +173,7 @@ function ReinstallConfirm({
           </div>
           <div>
             <h2 className="text-base font-bold tracking-tight text-foreground">
-              Update the Testing Toolkit?
+              Reinstall the Testing Toolkit?
             </h2>
             <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
               This will refresh the agent. Here&apos;s what to expect:
@@ -244,7 +244,7 @@ function ReinstallConfirm({
             onClick={onConfirm}
           >
             <RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />
-            Update now
+            Reinstall now
           </button>
         </div>
       </div>

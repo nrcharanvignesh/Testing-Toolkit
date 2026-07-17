@@ -107,18 +107,18 @@ export function OnboardingScreen({
             </svg>
           </div>
           <h1 className="text-3xl font-bold tracking-tight">
-            {reinstall ? "Update Testing Toolkit" : "Testing Toolkit"}
+            {reinstall ? "Reinstall Testing Toolkit" : "Testing Toolkit"}
           </h1>
           <p className="text-muted-foreground">
             AI-powered testing and quality automation
           </p>
         </div>
 
-        {/* Update warning note */}
+        {/* Reinstall warning note */}
         {reinstall && (
           <div className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 px-5 py-4 text-left">
             <p className="text-sm font-semibold text-amber-300">
-              You&apos;re updating the agent
+              You&apos;re reinstalling the agent
             </p>
             <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-muted-foreground">
               <li>
@@ -230,13 +230,13 @@ export function OnboardingScreen({
                 reconnects and the onboarding screen closes automatically. */}
             <div className="flex w-full flex-col gap-2 text-left">
               <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
-                <span>{reinstall ? "Updating agent" : "Installing agent"}</span>
+                <span>{reinstall ? "Reinstalling agent" : "Installing agent"}</span>
                 <span className="animate-pulse">In progress</span>
               </div>
               <div
                 className="h-2 w-full overflow-hidden rounded-full bg-[var(--tt-outline)]"
                 role="progressbar"
-                aria-label={reinstall ? "Updating agent" : "Installing agent"}
+                aria-label={reinstall ? "Reinstalling agent" : "Installing agent"}
                 aria-valuetext="In progress"
               >
                 <span className="tt-progress-indeterminate block h-full w-2/5 rounded-full bg-primary" />
