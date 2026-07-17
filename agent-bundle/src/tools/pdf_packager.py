@@ -331,12 +331,14 @@ def make_cover_pdf(wi_dir: Path, out_pdf: Path, paper: str) -> None:
     sty = _styles()
 
     story: list = []
-    story.append(Paragraph(
-        _safe_html(
-            f"WI {meta.get('wi_id', '?')}: {meta.get('title', '(no title)')}"
-        ),
-        sty["h1"],
-    ))
+    wi_id_str = str(meta.get("wi_id", "?"))
+    wi_url = meta.get("wi_url", "")
+    wi_title = _safe_html(meta.get("title", "(no title)"))
+    if wi_url:
+        heading = f'<a href="{_safe_html(wi_url)}" color="blue">WI {wi_id_str}</a>: {wi_title}'
+    else:
+        heading = f"WI {wi_id_str}: {wi_title}"
+    story.append(Paragraph(heading, sty["h1"]))
     meta_lines = [
         _safe_html(f"Type: {meta.get('type', '')}"),
         _safe_html(f"State: {meta.get('state', '')}"),

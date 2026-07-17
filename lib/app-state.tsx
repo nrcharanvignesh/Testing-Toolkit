@@ -496,8 +496,20 @@ export function AppStateProvider({
           }
           await new Promise((resolve) => setTimeout(resolve, 500));
         }
-        const ctx = await agent.projectContext(project);
+        let ctx = await agent.projectContext(project);
         if (ctl.signal.aborted) return;
+
+        // Auto-retry once if partial context with failed documents
+        if (ctx.status === "partial" && ctx.failed_documents.length > 0) {
+          pushLog("INFO", `Retrying ${ctx.failed_documents.length} failed document(s)...`);
+          try {
+            ctx = await agent.regenerateContext(project);
+            if (ctl.signal.aborted) return;
+          } catch {
+            // Retry failed — use partial context as-is
+          }
+        }
+
         pushLog("SUCCESS", `Project context ready: ${ctx.n_items} item(s).`);
         setKbState("ready");
         setKbMessage(

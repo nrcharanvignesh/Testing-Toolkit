@@ -1016,9 +1016,18 @@ function ProjectContextSection({
         {statusText}
       </p>
       {ctx?.status === "partial" && ctx.failed_documents.length > 0 && (
-        <p className="text-xs text-[var(--tt-warn)]">
-          Retry needed for: {ctx.failed_documents.join(", ")}
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-[var(--tt-warn)]">
+            Retry needed for: {ctx.failed_documents.join(", ")}
+          </p>
+          <button
+            className="tt-btn-ghost !px-2 !py-0.5 !text-[10px]"
+            onClick={regenerate}
+            disabled={busy}
+          >
+            {busy ? "Retrying..." : "Retry now"}
+          </button>
+        </div>
       )}
       {error && (
         <p className="text-xs text-[var(--tt-danger)]">{error}</p>

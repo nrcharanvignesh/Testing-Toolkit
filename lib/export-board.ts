@@ -71,11 +71,19 @@ function wiUrlFromId(
 function autoFitColumns(ws: ExcelJS.Worksheet): void {
   ws.columns.forEach((col) => {
     let max = 10;
-    col.eachCell?.({ includeEmpty: true }, (cell) => {
-      const len = String(cell.value ?? "").length;
+    col.eachCell?.({ includeEmpty: false }, (cell) => {
+      const val = cell.value;
+      const text = typeof val === "object" && val !== null && "text" in val
+        ? String((val as { text: string }).text)
+        : String(val ?? "");
+      const len = text.length;
       if (len > max) max = len;
     });
-    col.width = Math.min(max + 2, 60);
+    col.width = Math.min(max + 2, 50);
+  });
+  // Vertical fit: wrap text for data rows and let Excel auto-size row height
+  ws.eachRow({ includeEmpty: false }, (row) => {
+    row.alignment = { vertical: "top", wrapText: true };
   });
 }
 
@@ -123,19 +131,20 @@ function applyHeaderRow(ws: ExcelJS.Worksheet, rowNum: number, headers: string[]
 
 function applyMetaBlock(
   ws: ExcelJS.Worksheet,
-  projectName: string,
+  opts: ExportBoardOpts,
   sheetTitle: string,
-  ts: string
+  ts: string,
+  description?: string
 ): void {
-  ws.getRow(1).getCell(1).value = projectName;
-  ws.getRow(1).getCell(1).font = { bold: true, size: 13 };
-  ws.getRow(2).getCell(1).value = sheetTitle;
-  ws.getRow(2).getCell(1).font = { bold: true, size: 11 };
-  ws.getRow(3).getCell(1).value = ts;
+  const source = opts.settings?.jira_configured ? "JIRA" : "Azure DevOps Board";
+  ws.getRow(1).getCell(1).value = description || sheetTitle;
+  ws.getRow(1).getCell(1).font = META_FONT;
+  ws.getRow(2).getCell(1).value = `Project: ${opts.projectName}`;
+  ws.getRow(2).getCell(1).font = { bold: true, size: 13 };
+  ws.getRow(3).getCell(1).value = `Source: ${source}`;
   ws.getRow(3).getCell(1).font = META_FONT;
-  ws.getRow(1).height = 22;
-  ws.getRow(2).height = 18;
-  ws.getRow(3).height = 16;
+  ws.getRow(4).getCell(1).value = ts;
+  ws.getRow(4).getCell(1).font = META_FONT;
 }
 
 // Coverage threshold: 0 = red, 1-2 = amber, 3+ = green
@@ -188,20 +197,29 @@ function buildBoardSheet(
 ): void {
   const ws = wb.addWorksheet(sheetName.slice(0, 31));
   const ts = formatTimestamp();
+  const source = opts.settings?.jira_configured ? "JIRA" : "Azure DevOps Board";
 
-  // Row 1: project name
-  ws.getRow(1).getCell(1).value = opts.projectName;
-  ws.getRow(1).getCell(1).font = { bold: true, size: 13 };
+  // Row 1: sheet description
+  ws.getRow(1).getCell(1).value = "Board Export - All work items for the selected board with current filter state";
+  ws.getRow(1).getCell(1).font = META_FONT;
 
-  // Row 2: board name
-  ws.getRow(2).getCell(1).value = opts.boardName;
-  ws.getRow(2).getCell(1).font = { bold: true, size: 11 };
+  // Row 2: "Project: {name}"
+  ws.getRow(2).getCell(1).value = `Project: ${opts.projectName}`;
+  ws.getRow(2).getCell(1).font = { bold: true, size: 13 };
 
-  // Row 3: timestamp
-  ws.getRow(3).getCell(1).value = ts;
+  // Row 3: "Source: Azure DevOps Board" or "Source: JIRA"
+  ws.getRow(3).getCell(1).value = `Source: ${source}`;
   ws.getRow(3).getCell(1).font = META_FONT;
 
-  // Row 4: filters + KPIs
+  // Row 4: "Board: {name}"
+  ws.getRow(4).getCell(1).value = `Board: ${opts.boardName}`;
+  ws.getRow(4).getCell(1).font = { bold: true, size: 11 };
+
+  // Row 5: timestamp
+  ws.getRow(5).getCell(1).value = ts;
+  ws.getRow(5).getCell(1).font = META_FONT;
+
+  // Filters row: only show if at least one filter is active
   const activeFilters: string[] = [];
   if (opts.filters.search) activeFilters.push(`Search: "${opts.filters.search}"`);
   if (opts.filters.type !== "All") activeFilters.push(`Type: ${opts.filters.type}`);
@@ -209,20 +227,21 @@ function buildBoardSheet(
   if (opts.filters.sprint !== "All") activeFilters.push(`Sprint: ${opts.filters.sprint}`);
   if (opts.filters.column !== "All") activeFilters.push(`Column: ${opts.filters.column}`);
 
-  const kpiParts = Object.entries(opts.kpiCounts).map(([k, v]) => `${k}: ${v}`);
-  let row4 = activeFilters.length
-    ? `Filters: ${activeFilters.join(", ")}`
-    : "Filters: None";
-  if (kpiParts.length) row4 += `  |  KPIs: ${kpiParts.join(", ")}`;
-  ws.getRow(4).getCell(1).value = row4;
-  ws.getRow(4).getCell(1).font = META_FONT;
+  let headerRowNum: number;
+  if (activeFilters.length > 0) {
+    ws.getRow(6).getCell(1).value = `Filters: ${activeFilters.join(", ")}`;
+    ws.getRow(6).getCell(1).font = META_FONT;
+    headerRowNum = 7;
+  } else {
+    headerRowNum = 6;
+  }
 
-  // Row 5: column headers
+  // Column headers
   const hasRels = rels && (rels.parents.size > 0 || rels.children.size > 0);
   const headers = hasRels
     ? ["ID", "Title", "Type", "State", "Board Column", "Assignee", "Sprint", "Area Path", "Tags", "Linked TCs", "Parent", "Children"]
     : ["ID", "Title", "Type", "State", "Board Column", "Assignee", "Sprint", "Area Path", "Tags", "Linked TCs"];
-  applyHeaderRow(ws, 5, headers);
+  applyHeaderRow(ws, headerRowNum, headers);
 
   // Data rows
   opts.rows.forEach((r) => {
@@ -267,20 +286,16 @@ function buildBoardSheet(
     }
   });
 
-  // Freeze rows 1-4
-  ws.views = [{ state: "frozen", xSplit: 0, ySplit: 4, topLeftCell: "A5" }];
+  // Freeze through the header row (meta + header visible when scrolling)
+  ws.views = [{ state: "frozen", xSplit: 0, ySplit: headerRowNum, topLeftCell: `A${headerRowNum + 1}` }];
 
-  // Autofilter on data header row (row 5)
+  // Autofilter on data header row
   ws.autoFilter = {
-    from: { row: 5, column: 1 },
-    to: { row: 5 + opts.rows.length, column: headers.length },
+    from: { row: headerRowNum, column: 1 },
+    to: { row: headerRowNum + opts.rows.length, column: headers.length },
   };
 
   autoFitColumns(ws);
-  ws.getRow(1).height = 22;
-  ws.getRow(2).height = 18;
-  ws.getRow(3).height = 16;
-  ws.getRow(4).height = 16;
 }
 
 // ---------------------------------------------------------------------------
@@ -297,7 +312,7 @@ function buildTestCoverageSheet(
 
   const ws = wb.addWorksheet("Test Coverage");
   const ts = formatTimestamp();
-  applyMetaBlock(ws, opts.projectName, "Test Coverage Report", ts);
+  applyMetaBlock(ws, opts, "Test Coverage Report", ts, "Test Coverage - Work items mapped to generated test cases with last run pass/fail status");
 
   // Build lookup: wi_id -> { tcCount, passCount, failCount }
   const tcByWi = new Map<string, { count: number; pass: number; fail: number }>();
@@ -325,7 +340,7 @@ function buildTestCoverageSheet(
 
   // Header row at row 4
   const headers = ["ID", "Title", "Type", "Test Cases", "Passed", "Failed", "Coverage Status"];
-  applyHeaderRow(ws, 4, headers);
+  applyHeaderRow(ws, 5, headers);
 
   // Data rows
   opts.rows.forEach((r) => {
@@ -363,10 +378,10 @@ function buildTestCoverageSheet(
     dataRow.getCell(7).font = sFmt.font;
   });
 
-  ws.views = [{ state: "frozen", xSplit: 0, ySplit: 3, topLeftCell: "A4" }];
+  ws.views = [{ state: "frozen", xSplit: 0, ySplit: 5, topLeftCell: "A6" }];
   ws.autoFilter = {
-    from: { row: 4, column: 1 },
-    to: { row: 4 + opts.rows.length, column: headers.length },
+    from: { row: 5, column: 1 },
+    to: { row: 5 + opts.rows.length, column: headers.length },
   };
   autoFitColumns(ws);
 }
@@ -385,7 +400,7 @@ function buildTraceabilitySheet(
 
   const ws = wb.addWorksheet("Traceability Matrix");
   const ts = formatTimestamp();
-  applyMetaBlock(ws, opts.projectName, "Traceability Matrix", ts);
+  applyMetaBlock(ws, opts, "Traceability Matrix", ts, "Traceability Matrix - Work items cross-referenced with test cases showing pass/fail per cell");
 
   // Group TCs by parent WI
   const wiTcMap = new Map<string, E2ETestCase[]>();
@@ -410,7 +425,7 @@ function buildTraceabilitySheet(
 
   // Header
   const headers = ["ID", "Title", "Type", ...tcColHeaders];
-  applyHeaderRow(ws, 4, headers);
+  applyHeaderRow(ws, 5, headers);
 
   // Data rows
   opts.rows.forEach((r) => {
@@ -448,7 +463,7 @@ function buildTraceabilitySheet(
     }
   });
 
-  ws.views = [{ state: "frozen", xSplit: 3, ySplit: 3, topLeftCell: "D4" }];
+  ws.views = [{ state: "frozen", xSplit: 3, ySplit: 5, topLeftCell: "D6" }];
   autoFitColumns(ws);
 }
 
@@ -467,7 +482,7 @@ function buildDefectDensitySheet(
 
   const ws = wb.addWorksheet("Defect Density");
   const ts = formatTimestamp();
-  applyMetaBlock(ws, opts.projectName, "Defect Density Analysis", ts);
+  applyMetaBlock(ws, opts, "Defect Density Analysis", ts, "Defect Density - Bug count grouped by board column and sprint with percentage breakdown");
 
   // Group by Board Column
   const byColumn = new Map<string, number>();
@@ -484,7 +499,7 @@ function buildDefectDensitySheet(
   }
 
   // Section 1: By Column
-  let rowNum = 4;
+  let rowNum = 6;
   applyHeaderRow(ws, rowNum, ["Board Column", "Bug Count", "% of Total"]);
   rowNum++;
   for (const [col, count] of [...byColumn.entries()].sort((a, b) => b[1] - a[1])) {
@@ -527,7 +542,7 @@ function buildDefectDensitySheet(
   ws.getRow(rowNum).getCell(1).value = `Total bugs: ${bugs.length}`;
   ws.getRow(rowNum).getCell(1).font = { bold: true, size: 11 };
 
-  ws.views = [{ state: "frozen", xSplit: 0, ySplit: 3, topLeftCell: "A4" }];
+  ws.views = [{ state: "frozen", xSplit: 0, ySplit: 5, topLeftCell: "A6" }];
   autoFitColumns(ws);
 }
 
@@ -542,7 +557,7 @@ function buildPivotDataSheet(
 ): void {
   const ws = wb.addWorksheet("Pivot Data");
   const ts = formatTimestamp();
-  applyMetaBlock(ws, opts.projectName, "Pivot-Ready Data (Flat Table)", ts);
+  applyMetaBlock(ws, opts, "Pivot-Ready Data", ts, "Pivot Data - Denormalized flat table with all WI fields, test counts, and relationships for Excel pivot tables");
 
   // Build lookups
   const testCases = opts.testCases ?? [];
@@ -578,7 +593,7 @@ function buildPivotDataSheet(
     "Last Run Passed", "Last Run Failed", "Coverage Status", "Is Bug",
     ...(hasRels ? ["Parent IDs", "Child IDs", "Related IDs"] : []),
   ];
-  applyHeaderRow(ws, 4, headers);
+  applyHeaderRow(ws, 5, headers);
 
   // Data
   opts.rows.forEach((r) => {
@@ -629,10 +644,10 @@ function buildPivotDataSheet(
     dataRow.getCell(14).font = sFmt.font;
   });
 
-  ws.views = [{ state: "frozen", xSplit: 0, ySplit: 3, topLeftCell: "A4" }];
+  ws.views = [{ state: "frozen", xSplit: 0, ySplit: 5, topLeftCell: "A6" }];
   ws.autoFilter = {
-    from: { row: 4, column: 1 },
-    to: { row: 4 + opts.rows.length, column: headers.length },
+    from: { row: 5, column: 1 },
+    to: { row: 5 + opts.rows.length, column: headers.length },
   };
   autoFitColumns(ws);
 }
@@ -650,19 +665,19 @@ function buildExecutionHistorySheet(
 
   const ws = wb.addWorksheet("Execution Results");
   const ts = formatTimestamp();
-  applyMetaBlock(ws, opts.projectName, "E2E Execution Results (Last Run)", ts);
+  applyMetaBlock(ws, opts, "Execution Results", ts, "Execution Results - E2E test run results sorted by failures first with duration and parent WI link");
 
-  // Run metadata row
+  // Run summary row (after meta block rows 1-4)
   const started = new Date(lastRun.started_at * 1000).toLocaleString();
   const finished = new Date(lastRun.finished_at * 1000).toLocaleString();
-  ws.getRow(3).getCell(1).value =
-    `${ts}  |  Run: ${lastRun.run_id}  |  Started: ${started}  |  Finished: ${finished}  |  ` +
+  ws.getRow(5).getCell(1).value =
+    `Run: ${lastRun.run_id}  |  Started: ${started}  |  Finished: ${finished}  |  ` +
     `Total: ${lastRun.total}  Passed: ${lastRun.passed}  Failed: ${lastRun.failed}  Skipped: ${lastRun.skipped}`;
-  ws.getRow(3).getCell(1).font = META_FONT;
+  ws.getRow(5).getCell(1).font = META_FONT;
 
   // Header
   const headers = ["TC ID", "Title", "Status", "Duration (ms)", "Parent WI"];
-  applyHeaderRow(ws, 4, headers);
+  applyHeaderRow(ws, 6, headers);
 
   // Map tc_id to parent WI
   const testCases = opts.testCases ?? [];
@@ -705,10 +720,10 @@ function buildExecutionHistorySheet(
     }
   }
 
-  ws.views = [{ state: "frozen", xSplit: 0, ySplit: 3, topLeftCell: "A4" }];
+  ws.views = [{ state: "frozen", xSplit: 0, ySplit: 6, topLeftCell: "A7" }];
   ws.autoFilter = {
-    from: { row: 4, column: 1 },
-    to: { row: 4 + sorted.length, column: headers.length },
+    from: { row: 6, column: 1 },
+    to: { row: 6 + sorted.length, column: headers.length },
   };
   autoFitColumns(ws);
 }
@@ -777,10 +792,10 @@ function buildRelationshipsSheet(
 
   const ws = wb.addWorksheet("Relationships");
   const ts = formatTimestamp();
-  applyMetaBlock(ws, opts.projectName, "Work Item Relationships", ts);
+  applyMetaBlock(ws, opts, "Relationships", ts, "Relationships - Parent/child/related work item linkage map");
 
   const headers = ["ID", "Title", "Type", "Parent IDs", "Child IDs", "Related IDs"];
-  applyHeaderRow(ws, 4, headers);
+  applyHeaderRow(ws, 5, headers);
 
   opts.rows.forEach((r) => {
     const key = String(r.wi_id);
@@ -807,7 +822,7 @@ function buildRelationshipsSheet(
     }
   });
 
-  ws.views = [{ state: "frozen", xSplit: 0, ySplit: 3, topLeftCell: "A4" }];
+  ws.views = [{ state: "frozen", xSplit: 0, ySplit: 5, topLeftCell: "A6" }];
   autoFitColumns(ws);
 }
 

@@ -29,7 +29,6 @@ export function NavPanel() {
     openDialog,
     setLogVisible,
     pushLog,
-    boardView,
     settings,
   } = useAppState();
 
@@ -37,17 +36,23 @@ export function NavPanel() {
   const { check: checkForUpdate, busy: updateBusy } = useAppUpdate(pushLog);
   const [width, setWidth] = useState(() => getPreferences().sizes.navWidth);
   const [exportingAll, setExportingAll] = useState(false);
+  const [exportAllProgress, setExportAllProgress] = useState("");
 
   async function onExportAllBoards() {
     if (!currentProject || boards.length === 0) return;
     setExportingAll(true);
+    setExportAllProgress(`0/${boards.length} boards`);
     pushLog("INFO", `Exporting ${boards.length} board(s) to Excel...`);
     try {
       const results: Array<{ board: Board; rows: import("@/lib/agent-client").WorkItemRow[] }> = [];
-      for (const b of boards) {
+      for (let i = 0; i < boards.length; i++) {
+        const b = boards[i];
+        const name = b.team_name || b.name || b.label;
+        setExportAllProgress(`${i + 1}/${boards.length}: ${name}`);
         const view = await agent.boardView(currentProject, b);
         results.push({ board: b, rows: view.rows });
       }
+      setExportAllProgress("Building workbook...");
       await exportAllBoards({
         projectName: displayName(currentProject),
         boards: results,
@@ -58,6 +63,7 @@ export function NavPanel() {
       pushLog("ERROR", `Export failed: ${(e as Error).message}`);
     } finally {
       setExportingAll(false);
+      setExportAllProgress("");
     }
   }
 
@@ -148,13 +154,23 @@ export function NavPanel() {
             <span className="tt-section-header">Boards</span>
             <div className="flex items-center gap-1">
               <button
-                className="tt-btn-ghost flex h-5 w-5 items-center justify-center !p-0"
+                className="tt-btn-ghost flex items-center justify-center !p-0 gap-1"
+                style={{ height: 20, minWidth: 20, paddingInline: exportAllProgress ? 6 : 0 }}
                 onClick={() => void onExportAllBoards()}
                 disabled={exportingAll || !currentProject || boards.length === 0}
-                title="Export all boards to Excel workbook"
+                title={exportingAll ? exportAllProgress : "Export all boards to Excel workbook"}
                 aria-label="Export all boards to Excel workbook"
               >
-                <Download className={`h-2.5 w-2.5 ${exportingAll ? "animate-pulse" : ""}`} />
+                {exportingAll ? (
+                  <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                ) : (
+                  <Download className="h-2.5 w-2.5" />
+                )}
+                {exportAllProgress && (
+                  <span className="text-[9px] whitespace-nowrap" style={{ color: "var(--tt-text-muted)" }}>
+                    {exportAllProgress}
+                  </span>
+                )}
               </button>
               <button
                 className="tt-btn-ghost !px-1.5 !py-0.5 !text-[10px] !gap-1"

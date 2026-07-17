@@ -463,8 +463,10 @@ async def extract_one(
 
         n_comments_count = len(comments) if isinstance(comments, list) else 0
 
+        wi_url = f"https://dev.azure.com/{cfg.organization}/_workitems/edit/{wi_id}"
         meta = {
             "wi_id": wi_id,
+            "wi_url": wi_url,
             "title": title,
             "type": fields.get("System.WorkItemType", ""),
             "state": fields.get("System.State", ""),
