@@ -188,6 +188,11 @@ function DocumentsSection({
   useEffect(() => {
     if (!project || !contextRunning) return;
     let cancelled = false;
+    let pollCount = 0;
+    let lastProgress = -1;
+    let staleTicks = 0;
+    const MAX_POLLS = 90; // 90 * 2s = 3 min hard cap
+    const MAX_STALE = 30; // 30 * 2s = 60s stale cap
     const poll = async () => {
       try {
         const active = await agent.activeContextJob(project);
@@ -196,6 +201,15 @@ function DocumentsSection({
         const current = Number(progress?.current ?? 0);
         const total = Number(progress?.total ?? 0);
         if (active.job_id) {
+          pollCount++;
+          if (current === lastProgress) staleTicks++;
+          else { staleTicks = 0; lastProgress = current; }
+          if (pollCount >= MAX_POLLS || staleTicks >= MAX_STALE) {
+            setContextRunning(false);
+            setContextProgress("Timed out — retry from KB panel");
+            setContextPct(null);
+            return;
+          }
           setContextProgress(
             total > 0
               ? `${current}/${total} (${Math.round((100 * current) / total)}%)`
@@ -334,6 +348,9 @@ function DocumentsSection({
     pushLog("WARN", "Clearing knowledge base...");
     try {
       const r = await agent.clearKb(project, keepDocuments);
+      // Belt-and-suspenders: explicitly delete context so stale job refs
+      // don't cause the polling loop to restart after reload.
+      await agent.clearContext(project).catch(() => {});
       clearKbDirty();
       setSelectedDocs(new Set());
       if (!keepDocuments) clearKbUploads();
@@ -417,6 +434,19 @@ function DocumentsSection({
       pushLog("ERROR", `Index failed: ${(e as Error).message}`);
     } finally {
       setIndexing(false);
+      // If context polling is still running after index completes, give
+      // the agent one final check: if no active job remains, stop polling.
+      if (contextRunning) {
+        agent.activeContextJob(project).then((r) => {
+          if (!r.job_id) {
+            setContextRunning(false);
+            setContextProgress("");
+            setContextPct(null);
+          }
+        }).catch(() => {
+          setContextRunning(false);
+        });
+      }
     }
   };
 

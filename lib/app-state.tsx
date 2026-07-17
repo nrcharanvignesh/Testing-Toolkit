@@ -459,6 +459,11 @@ export function AppStateProvider({
       try {
         // The agent starts context alongside indexing. Attach to that job rather
         // than issuing a second forced regeneration after indexing completes.
+        // Hard cap: 120 iterations * 500ms = 60s max wait.
+        const MAX_CONTEXT_POLLS = 120;
+        let polls = 0;
+        let lastProgress = -1;
+        let staleTicks = 0;
         for (;;) {
           if (ctl.signal.aborted) return;
           const active = await agent.activeContextJob(project);
@@ -470,19 +475,25 @@ export function AppStateProvider({
               ? `Project context ${current}/${total}`
               : "Generating project context..."
           );
+          polls++;
+          if (current === lastProgress) staleTicks++;
+          else { staleTicks = 0; lastProgress = current; }
+          // Give up if we hit the hard cap or progress stalls for 30s.
+          if (polls >= MAX_CONTEXT_POLLS || staleTicks >= 60) {
+            pushLog("WARN", "Context generation timed out — KB is ready, context may be incomplete.");
+            setKbState("ready");
+            setKbMessage("KB ready (context timed out)");
+            return;
+          }
           await new Promise((resolve) => setTimeout(resolve, 500));
         }
         const ctx = await agent.projectContext(project);
         if (ctl.signal.aborted) return;
-        const status = ctx.status === "partial" ? "partial" : "complete";
-        pushLog(
-          status === "partial" ? "WARN" : "SUCCESS",
-          `Project context ${status}: ${ctx.n_items} item(s).`
-        );
+        pushLog("SUCCESS", `Project context ready: ${ctx.n_items} item(s).`);
         setKbState("ready");
         setKbMessage(
           ctx.has
-            ? `KB ready | Context: ${ctx.n_items} items${status === "partial" ? " (partial)" : ""}`
+            ? `KB ready | Context: ${ctx.n_items} items`
             : "KB ready (context empty)"
         );
       } catch (e) {

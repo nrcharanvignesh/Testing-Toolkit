@@ -149,7 +149,7 @@ def init_logging() -> Path | None:
     # Structured trace log (JSONL, TRACE-only) for machine parsing.
     # Separate from the human-readable log so traces do not pollute it.
     try:
-        trace_path = log_dir / "trace.jsonl"
+        trace_path = log_dir / "trace.json"
         trace_handler = RotatingFileHandler(
             str(trace_path), maxBytes=_MAX_BYTES,
             backupCount=3, encoding="utf-8",

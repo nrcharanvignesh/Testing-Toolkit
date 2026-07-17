@@ -11,7 +11,7 @@ Provides:
 - Stack capture on exceptions
 - Session-level user journey reconstruction via session_id
 
-All trace entries write to trace.jsonl via the dedicated RotatingFileHandler
+All trace entries write to trace.json via the dedicated RotatingFileHandler
 configured in app_logging.init_logging(). The human-readable log is unaffected.
 """
 from __future__ import annotations
