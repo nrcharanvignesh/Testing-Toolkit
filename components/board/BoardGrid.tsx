@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   XCircle,
   Archive,
+  Download,
 } from "lucide-react";
 import { useAppState } from "@/lib/app-state";
 import { usePreferences, getPreferences, setSizePref } from "@/lib/preferences";
@@ -37,7 +38,9 @@ import {
   type WiId,
   type E2ELastRun,
   type E2ETestCase,
+  type SettingsResponse,
 } from "@/lib/agent-client";
+import { exportSingleBoard } from "@/lib/export-board";
 import {
   ALL,
   COLOR_MUTED,
@@ -61,6 +64,7 @@ export function BoardGrid() {
     selected,
     setSelected,
     toggleSelected,
+    settings,
   } = useAppState();
 
   const { prefs, togglePanel, setPanel } = usePreferences();
@@ -254,6 +258,37 @@ export function BoardGrid() {
               {selected.size} selected
             </span>
             <button
+              className="tt-btn-ghost flex h-7 w-7 shrink-0 items-center justify-center rounded-md !p-0"
+              onClick={() => {
+                const projectName = currentProject ? displayName(currentProject) : "Project";
+                const boardName = currentBoard?.team_name || currentBoard?.name || "Board";
+                const visibleRows = groups.flatMap(([, rs]) => rs);
+                const kpiCounts: Record<string, number> = {};
+                for (const b of KPI_BUCKETS) {
+                  const bucketCols = columnsForBucket(columns, b.label);
+                  let count = 0;
+                  for (const r of rows) {
+                    const col = r.board_column || NO_COLUMN;
+                    if (bucketCols.has(col)) count++;
+                  }
+                  kpiCounts[b.label] = count;
+                }
+                void exportSingleBoard({
+                  projectName,
+                  boardName,
+                  rows: visibleRows,
+                  kpiCounts,
+                  filters: { type: fType, assignee: fAssignee, sprint: fSprint, column: fColumn, search },
+                  settings,
+                });
+              }}
+              disabled={boardLoading || !boardView || rows.length === 0}
+              title="Export board to Excel"
+              aria-label="Export board to Excel"
+            >
+              <Download className="h-3.5 w-3.5" strokeWidth={2} />
+            </button>
+            <button
               className="tt-btn-ghost flex shrink-0 items-center gap-1.5 !px-3 !py-1.5 text-xs"
               onClick={() => togglePanel("detail")}
               title={
@@ -381,6 +416,7 @@ export function BoardGrid() {
                       hasCoverageData={hasCoverageData}
                       runStatus={runStatus}
                       hasRunData={hasRunData}
+                      settings={settings}
                       onToggleCollapsed={() => toggleLaneCollapsed(lane)}
                       onToggleLane={(on) => toggleLane(laneRows, on)}
                       onToggleRow={toggleSelected}
@@ -614,6 +650,7 @@ function LaneGroup({
   hasCoverageData,
   runStatus,
   hasRunData,
+  settings,
   onToggleCollapsed,
   onToggleLane,
   onToggleRow,
@@ -631,6 +668,7 @@ function LaneGroup({
   hasCoverageData: boolean;
   runStatus: Map<string, "pass" | "fail">;
   hasRunData: boolean;
+  settings: SettingsResponse | null;
   onToggleCollapsed: () => void;
   onToggleLane: (on: boolean) => void;
   onToggleRow: (id: WiId, on: boolean) => void;
@@ -709,14 +747,12 @@ function LaneGroup({
                 onChange={(e) => onToggleRow(r.wi_id, e.target.checked)}
               />
             </td>
-            {/* ID cell — no redundant left-border (now on <tr>) */}
+            {/* ID cell — clickable link to source system */}
             <td className="truncate whitespace-nowrap px-2 py-1.5">
               {collapsedCols.id ? (
                 dot(true)
               ) : (
-                <span className="font-mono text-xs font-bold text-[var(--tt-primary)]">
-                  {r.wi_id}
-                </span>
+                <WiIdLink wiId={r.wi_id} settings={settings} />
               )}
             </td>
             {/* Title — colored by work-item type (desktop parity: green
@@ -960,5 +996,41 @@ function EmptyHint({ text, warn }: { text: string; warn?: boolean }) {
         {text}
       </p>
     </div>
+  );
+}
+
+function WiIdLink({
+  wiId,
+  settings,
+}: {
+  wiId: WiId;
+  settings: SettingsResponse | null;
+}) {
+  const isJira = typeof wiId === "string";
+  let href: string | null = null;
+  if (isJira) {
+    const base = (settings?.jira_url ?? "").replace(/\/+$/, "");
+    if (base) href = `${base}/browse/${encodeURIComponent(String(wiId))}`;
+  } else if (settings?.organization) {
+    href = `https://dev.azure.com/${encodeURIComponent(settings.organization)}/_workitems/edit/${wiId}`;
+  }
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-mono text-xs font-bold text-[var(--tt-primary)] underline decoration-transparent hover:decoration-current"
+        onClick={(e) => e.stopPropagation()}
+        title={`Open ${wiId} in ${isJira ? "Jira" : "Azure DevOps"}`}
+      >
+        {wiId}
+      </a>
+    );
+  }
+  return (
+    <span className="font-mono text-xs font-bold text-[var(--tt-primary)]">
+      {wiId}
+    </span>
   );
 }

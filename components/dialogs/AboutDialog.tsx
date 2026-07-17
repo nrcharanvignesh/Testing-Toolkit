@@ -42,17 +42,19 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
           </p>
 
           <p className="mt-4 text-sm leading-relaxed text-foreground">
-            A unified Azure DevOps testing toolkit.
+            A unified Azure DevOps and Jira testing toolkit.
           </p>
           <p className="mt-3 text-sm leading-relaxed text-foreground">
-            Browse boards, select work items, generate ADO Test Cases with a
-            Recursive Language Model over the project knowledge base, or package
-            work items as PDFs.
+            Browse boards, select work items, generate Test Cases with a
+            Recursive Language Model over the project knowledge base, export
+            boards to Excel, or package work items as PDFs.
           </p>
 
           <p className="mt-4 text-sm font-semibold text-foreground">Features:</p>
           <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm leading-relaxed text-foreground">
-            <li>Board-driven work item selection</li>
+            <li>Board-driven work item selection with hyperlinked IDs</li>
+            <li>Export board to Excel (filtered state, KPIs, hyperlinks)</li>
+            <li>Export all boards as a multi-sheet workbook</li>
             <li>Recursive Language Model test case generation</li>
             <li>Per-client template support</li>
             <li>PDF packaging with KB-ready bundles</li>

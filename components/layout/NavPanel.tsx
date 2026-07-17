@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { RefreshCw, LayoutDashboard } from "lucide-react";
+import { RefreshCw, LayoutDashboard, Download } from "lucide-react";
 
 import { useAppState } from "@/lib/app-state";
 import { useTheme } from "@/lib/theme";
 import { Dropdown } from "@/components/ui/dropdown";
-import { agent } from "@/lib/agent-client";
+import { agent, type Board } from "@/lib/agent-client";
 import { getPreferences, setSizePref } from "@/lib/preferences";
+import { exportAllBoards } from "@/lib/export-board";
 import { ResizeHandle } from "@/components/ui/resizer";
 import { useAppUpdate } from "@/lib/use-app-update";
 import { SourceLogo } from "@/components/ui/source-logo";
@@ -35,6 +36,30 @@ export function NavPanel() {
   const { theme, toggleTheme } = useTheme();
   const { check: checkForUpdate, busy: updateBusy } = useAppUpdate(pushLog);
   const [width, setWidth] = useState(() => getPreferences().sizes.navWidth);
+  const [exportingAll, setExportingAll] = useState(false);
+
+  async function onExportAllBoards() {
+    if (!currentProject || boards.length === 0) return;
+    setExportingAll(true);
+    pushLog("INFO", `Exporting ${boards.length} board(s) to Excel...`);
+    try {
+      const results: Array<{ board: Board; rows: import("@/lib/agent-client").WorkItemRow[] }> = [];
+      for (const b of boards) {
+        const view = await agent.boardView(currentProject, b);
+        results.push({ board: b, rows: view.rows });
+      }
+      await exportAllBoards({
+        projectName: displayName(currentProject),
+        boards: results,
+        settings,
+      });
+      pushLog("SUCCESS", `Exported ${boards.length} board(s) to Excel.`);
+    } catch (e) {
+      pushLog("ERROR", `Export failed: ${(e as Error).message}`);
+    } finally {
+      setExportingAll(false);
+    }
+  }
 
   async function onUpdateClick() {
     setLogVisible(true);
@@ -121,14 +146,25 @@ export function NavPanel() {
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center justify-between px-1 pb-1.5">
             <span className="tt-section-header">Boards</span>
-            <button
-              className="tt-btn-ghost !px-1.5 !py-0.5 !text-[10px] !gap-1"
-              onClick={() => reloadBoards()}
-              title="Refresh board list"
-            >
-              <RefreshCw className="h-2.5 w-2.5" />
-              Refresh
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                className="tt-btn-ghost flex h-5 w-5 items-center justify-center !p-0"
+                onClick={() => void onExportAllBoards()}
+                disabled={exportingAll || !currentProject || boards.length === 0}
+                title="Export all boards to Excel workbook"
+                aria-label="Export all boards to Excel workbook"
+              >
+                <Download className={`h-2.5 w-2.5 ${exportingAll ? "animate-pulse" : ""}`} />
+              </button>
+              <button
+                className="tt-btn-ghost !px-1.5 !py-0.5 !text-[10px] !gap-1"
+                onClick={() => reloadBoards()}
+                title="Refresh board list"
+              >
+                <RefreshCw className="h-2.5 w-2.5" />
+                Refresh
+              </button>
+            </div>
           </div>
           <div className="min-h-0 flex-1 overflow-auto rounded-[8px] border border-[var(--tt-outline-soft)] bg-[var(--tt-surface-base)] p-1">
             {boards.length === 0 ? (

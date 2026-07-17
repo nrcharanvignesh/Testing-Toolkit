@@ -1,6 +1,6 @@
 # Testing Toolkit
 
-> **Web v3.0.0 — Agent v2.25.0**
+> **Web v3.1.0 — Agent v2.25.0**
 
 A browser-based QA platform that turns **Azure DevOps** and **JIRA** work items
 into LLM-generated test cases, requirement PDF packets, E2E automation scripts,
@@ -18,7 +18,8 @@ credentials remain agent-side and are never returned by its API.
 
 | Capability | Description |
 |---|---|
-| **Browse ADO / JIRA boards** | Pick a project and board from Azure DevOps or JIRA; view work items in a swim-lane grid with a full detail pane (description, acceptance criteria, comments, attachments, links) |
+| **Browse ADO / JIRA boards** | Pick a project and board from Azure DevOps or JIRA; view work items in a swim-lane grid with clickable WI ID hyperlinks and a full detail pane (description, acceptance criteria, comments, attachments, links) |
+| **Export to Excel** | Export the current board (filtered state, search term, KPIs) to a formatted .xlsx with hyperlinked IDs, autofit columns, frozen header, and autofilter. Export all boards as a multi-sheet workbook with a summary page |
 | **Generate test cases** | Select work items and a phase (Implementation / SIT / UAT); the RLM pipeline reads the work items + project KB and produces a reviewable Excel workbook |
 | **E2E automation** | Self-healing Playwright script generation and execution with a 6-strategy locator waterfall, auto-retry, iframe/shadow-DOM traversal, and a full per-TC result history |
 | **Review + regenerate** | Refine generated test cases and re-run with written feedback (up to 10 iterations per session) |
@@ -73,6 +74,7 @@ lib/
   agent-client.ts           typed client for the local agent (127.0.0.1:7842)
   app-state.tsx             central UI state (project/board/selection/log/KB)
   agent-context.tsx         agent connection status
+  export-board.ts           Excel export (single board + all-boards workbook)
   installer-template.ts     per-OS installer script generation
 agent-bundle/src/           the local compute agent + ported desktop backend
   agent/                    FastAPI server, routes, model loader, updater
@@ -172,7 +174,7 @@ path; default is `anthropic` (also supported by the LiteLLM proxy).
 
 ## Design system
 
-Web v3.0.0 ships a complete CXO-level design system:
+Web v3.1.0 ships a complete CXO-level design system:
 
 - **Token set**: work-item type colors (story/bug/task/epic/feature), state
   badge colors, elevation shadows (sm/md/lg), teal brand accent
