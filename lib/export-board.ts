@@ -79,7 +79,6 @@ function autoFitColumns(ws: ExcelJS.Worksheet): void {
   });
 }
 
-const HEADER_FONT: Partial<ExcelJS.Font> = { bold: true, size: 11 };
 const META_FONT: Partial<ExcelJS.Font> = { size: 10, color: { argb: "FF555555" } };
 const HEADER_FILL: ExcelJS.Fill = {
   type: "pattern",
