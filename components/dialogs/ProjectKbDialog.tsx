@@ -813,28 +813,6 @@ function ProjectContextSection({
     };
   }, [project]);
 
-  const toggleEnabled = async () => {
-    if (!project || !ctx?.has) return;
-    const newEnabled = !ctx.enabled;
-    setBusy(true);
-    setError("");
-    try {
-      const updated = await agent.setContextEnabled(project, newEnabled);
-      setCtx(updated);
-      pushLog(
-        "INFO",
-        newEnabled
-          ? "Project context will be injected into generation prompts."
-          : "Project context injection disabled."
-      );
-    } catch (e) {
-      const msg = (e as Error).message;
-      setError(msg);
-      pushLog("ERROR", `Failed to update context setting: ${msg}`);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const regenerate = async () => {
     if (!project) return;
@@ -933,7 +911,6 @@ function ProjectContextSection({
         } workflows, ${ctx.counts.screens ?? 0} screens)${ctx.edited ? " • edited" : ""}`
       : "No project context extracted yet. Index the knowledge base with the AI API available, or click Regenerate.";
 
-  const canToggle = ctx?.has && !busy;
 
   return (
     <div className="flex flex-col gap-2">
@@ -941,18 +918,6 @@ function ProjectContextSection({
         <h4 className="mr-auto text-sm font-bold text-[var(--tt-text-primary)]">
           Project Context
         </h4>
-        {canToggle && (
-          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--tt-text-secondary)]">
-            <input
-              type="checkbox"
-              className="tt-check"
-              checked={ctx.enabled}
-              onChange={toggleEnabled}
-              disabled={busy}
-            />
-            Inject into generation
-          </label>
-        )}
         <button
           className="tt-btn-ghost !px-2.5 !py-1 !text-xs !gap-1.5"
           onClick={() => setShowSummary((s) => !s)}

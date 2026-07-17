@@ -499,18 +499,19 @@ export function AppStateProvider({
         let ctx = await agent.projectContext(project);
         if (ctl.signal.aborted) return;
 
-        // Auto-retry up to 3 times if partial context with failed documents
+        // Auto-retry until ALL docs succeed (max 10 attempts with exp backoff)
         let retries = 0;
-        while (ctx.status === "partial" && ctx.failed_documents.length > 0 && retries < 3) {
+        while (ctx.status === "partial" && ctx.failed_documents.length > 0 && retries < 10) {
           retries++;
-          pushLog("INFO", `Auto-retrying failed document(s) (attempt ${retries}/3)...`);
-          await new Promise((r) => setTimeout(r, 2000 * retries));
+          const delay = Math.min(2000 * Math.pow(1.5, retries - 1), 30000);
+          pushLog("INFO", `Auto-retrying ${ctx.failed_documents.length} failed document(s) (attempt ${retries}/10)...`);
+          await new Promise((r) => setTimeout(r, delay));
           if (ctl.signal.aborted) return;
           try {
             ctx = await agent.regenerateContext(project);
             if (ctl.signal.aborted) return;
           } catch {
-            // Retry failed — try again or use partial
+            // Retry failed — next iteration will try again
           }
         }
 

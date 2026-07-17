@@ -915,22 +915,30 @@ async def generate_test_cases_rlm_async(
         _log(on_log, f"[INFO] Decomposition complete ({n_reqs} requirements, "
                      f"{time.perf_counter() - _t1:.1f}s).")
 
-    # Load project context summary (deep domain understanding)
-    _proj_ctx = ""
+    # Load project context -- selective RAG injection (only items relevant to WI)
+    _proj_ctx_obj: Any = None
     if project_full:
         try:
             from core.project_store import read_context_summary
-            ctx_obj = read_context_summary(project_full)
-            if ctx_obj is not None:
-                _proj_ctx = ctx_obj.to_prompt_section()
-                if _proj_ctx:
-                    _log(on_log, "[INFO] Project context summary injected into prompt")
+            _proj_ctx_obj = read_context_summary(project_full)
         except Exception as e:
-            _logger.debug("read_context_summary failed: %s", e)  # graceful: context summary is optional
+            _logger.debug("read_context_summary failed: %s", e)
 
     dumps = [d for d in (per_item_dumps or []) if d and d.strip()]
     if not dumps:
         dumps = [work_item_dump]
+
+    def _selective_ctx(dump_text: str) -> str:
+        """Per-WI selective context retrieval instead of full dump."""
+        if _proj_ctx_obj is None:
+            return ""
+        try:
+            ctx_text = _proj_ctx_obj.to_prompt_section_selective(dump_text)
+            if ctx_text:
+                _log(on_log, "[INFO] Selective project context injected")
+            return ctx_text
+        except Exception:
+            return ""
 
     if len(dumps) == 1:
         _log(on_log,
@@ -940,7 +948,7 @@ async def generate_test_cases_rlm_async(
         res = await _generate_one(
             client, primary_model, system_prompt, dumps[0], kb_context,
             on_log, stop_event, trace, max_repair, cache=cache,
-            decomposed_reqs=decomposed, project_context=_proj_ctx,
+            decomposed_reqs=decomposed, project_context=_selective_ctx(dumps[0]),
         )
         if on_progress is not None:
             on_progress(1, 1)
@@ -960,7 +968,7 @@ async def generate_test_cases_rlm_async(
                     client, primary_model, system_prompt, dump, kb_context,
                     on_log, stop_event, trace, max_repair,
                     label=f"item {i + 1}/{len(dumps)}", cache=cache,
-                    decomposed_reqs=decomposed, project_context=_proj_ctx,
+                    decomposed_reqs=decomposed, project_context=_selective_ctx(dump),
                 )
                 _completed_count += 1
                 if on_progress is not None:

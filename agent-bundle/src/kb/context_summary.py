@@ -18,6 +18,7 @@ _WINDOW_OVERLAP_CHARS: Final[int] = 2000
 _MAX_TOKENS: Final[int] = 8192
 _MAX_CONCURRENCY: Final[int] = 3
 _MAX_WINDOW_CONCURRENCY: Final[int] = 3
+_MAX_DOC_RETRIES: Final[int] = 10
 CATEGORIES: Final[tuple[str, ...]] = (
     "actors",
     "entities",
@@ -37,48 +38,36 @@ CATEGORIES: Final[tuple[str, ...]] = (
     "glossary",
 )
 _SYSTEM: Final[str] = (
-    "You are a Principal QA architect and systems analyst performing exhaustive "
-    "knowledge extraction. Extract EVERY fact supported by the supplied document "
-    "window. Return valid JSON only, with exactly the requested 16 category keys. "
-    "Each value is a list of objects with name and description.\n\n"
-    "EXTRACTION DEPTH -- be maximally thorough:\n"
-    "- actors: every user role, persona, system actor, API consumer, admin type, "
-    "service account, external system identity\n"
-    "- entities: every business object, domain entity, data record type with all "
-    "known fields, constraints, cardinality, lifecycle states\n"
-    "- data_models: ER relationships, class hierarchies, inheritance chains, "
-    "composition/aggregation, foreign keys, indexes, enums, lookup tables\n"
-    "- workflows: every process flow, sequence of steps, approval chains, "
-    "branching logic, parallel paths, error/retry/timeout paths, happy + unhappy paths\n"
-    "- system_architecture: technology stacks, deployment topology, services, "
-    "containers, databases, queues, caches, CDNs, load balancers, regions, "
-    "scaling policies, failover strategies\n"
-    "- integrations: every API endpoint, webhook, event bus, file transfer, "
-    "protocol (REST/gRPC/SOAP/GraphQL), auth mechanism, rate limits, SLAs\n"
-    "- business_rules: every validation rule, calculation formula, threshold, "
-    "conditional logic, priority ordering, conflict resolution, date/time rules\n"
-    "- screens: every UI page, dialog, modal, panel, tab, form, table, chart, "
-    "navigation flow, responsive breakpoints, accessibility requirements\n"
-    "- inputs_outputs: every input field (type, format, min/max, required/optional, "
-    "default), every output (reports, exports, notifications, emails, PDFs, logs)\n"
-    "- state_machines: every entity state, valid transitions, guards/conditions, "
-    "actions on entry/exit, event triggers, terminal states\n"
-    "- test_data_needs: specific test data configurations, boundary values, "
-    "prerequisite states, seed data, environment requirements\n"
-    "- edge_cases: boundary conditions, off-by-one scenarios, concurrency conflicts, "
-    "race conditions, null/empty handling, overflow, timezone/locale issues\n"
-    "- non_functional: performance targets (latency, throughput, concurrency), "
-    "availability (SLA, RPO, RTO), scalability limits, data retention, compliance "
-    "(GDPR, HIPAA, SOC2), browser/device support matrix\n"
-    "- dependencies: upstream/downstream services, data flows, shared libraries, "
-    "third-party SDKs, version constraints, deprecation timelines\n"
-    "- security_constraints: authentication methods, authorization models (RBAC/ABAC), "
-    "encryption requirements, audit logging, PII handling, session management, "
-    "CORS/CSP policies, vulnerability mitigations\n"
-    "- glossary: domain-specific terminology, abbreviations, acronyms with "
-    "precise definitions\n\n"
-    "Be specific: preserve exact limits, states, field names, conditions, URLs, "
-    "version numbers. Omit categories with no evidence rather than guessing."
+    "You are a Principal QA architect extracting testable domain knowledge from "
+    "project documentation. Return valid JSON only with exactly the requested 16 "
+    "category keys. Each value is a list of objects with 'name' and 'description'.\n\n"
+    "QUALITY RULES (follow strictly):\n"
+    "- Extract ONLY concrete, testable, verifiable facts directly stated in the text.\n"
+    "- DO NOT paraphrase vaguely. Preserve exact field names, limits, states, URLs, "
+    "version numbers, thresholds, formulas.\n"
+    "- DO NOT infer or speculate. If the document says 'may' or 'could', skip it.\n"
+    "- DO NOT extract document metadata (author, revision date, filename).\n"
+    "- DO NOT extract generic software truisms ('the system should be reliable').\n"
+    "- Each item.name must be a specific noun or noun phrase (not a sentence).\n"
+    "- Each item.description must state a testable fact in one concise sentence.\n"
+    "- Omit categories with no evidence -- empty list [] is correct.\n\n"
+    "CATEGORIES:\n"
+    "- actors: named user roles, personas, system actors with stated permissions\n"
+    "- entities: business objects with known fields, constraints, cardinality\n"
+    "- data_models: stated relationships, foreign keys, enums, inheritance\n"
+    "- workflows: explicit step sequences, approval chains, branching, error paths\n"
+    "- system_architecture: named services, databases, deployment topology\n"
+    "- integrations: API endpoints, protocols, auth, rate limits, SLAs\n"
+    "- business_rules: validation rules, formulas, thresholds, conditional logic\n"
+    "- screens: named pages/dialogs/forms with stated fields and behavior\n"
+    "- inputs_outputs: fields with type/format/min/max/required, reports, exports\n"
+    "- state_machines: named states, valid transitions, guards, triggers\n"
+    "- test_data_needs: specific configs, boundary values, prerequisite states\n"
+    "- edge_cases: stated boundary conditions, concurrency, null handling\n"
+    "- non_functional: explicit targets (latency, SLA, RPO, compliance)\n"
+    "- dependencies: named upstream/downstream services, version constraints\n"
+    "- security_constraints: stated auth methods, encryption, audit, PII rules\n"
+    "- glossary: domain terms with precise definitions from the document"
 )
 
 
@@ -220,6 +209,76 @@ class ProjectContext:
                 if key in seen:
                     continue
                 seen.add(key)
+                parts.append(f"  - {item.name}: {item.description}")
+        parts.append("")
+        return "\n".join(parts)
+
+    def to_prompt_section_selective(self, work_item_text: str, max_items: int = 80) -> str:
+        """RAG-style selective injection: only categories/items relevant to the WI."""
+        if not self.enabled:
+            return ""
+        if self.override_summary.strip():
+            return self.override_summary.strip()
+        if self.is_empty() or not work_item_text.strip():
+            return self.to_prompt_section()
+        wi_lower = work_item_text.lower()
+        wi_tokens = frozenset(re.sub(r"[^a-z0-9]+", " ", wi_lower).split())
+        titles = {
+            "actors": "ACTORS / ROLES",
+            "entities": "BUSINESS ENTITIES",
+            "data_models": "DATA MODELS",
+            "workflows": "WORKFLOWS",
+            "system_architecture": "SYSTEM ARCHITECTURE",
+            "integrations": "INTEGRATIONS / APIs",
+            "business_rules": "BUSINESS RULES",
+            "screens": "SCREENS / UI",
+            "inputs_outputs": "INPUTS / OUTPUTS",
+            "state_machines": "STATE MACHINES",
+            "test_data_needs": "TEST DATA NEEDS",
+            "edge_cases": "EDGE CASES",
+            "non_functional": "NON-FUNCTIONAL REQUIREMENTS",
+            "dependencies": "DEPENDENCIES",
+            "security_constraints": "SECURITY CONSTRAINTS",
+            "glossary": "GLOSSARY",
+        }
+        selected: list[tuple[str, ContextItem, float]] = []
+        for category in CATEGORIES:
+            items = getattr(self, category)
+            if not items:
+                continue
+            for item in items:
+                name_lower = item.name.lower()
+                desc_lower = item.description.lower()
+                name_tokens = frozenset(re.sub(r"[^a-z0-9]+", " ", name_lower).split())
+                overlap = len(wi_tokens & name_tokens)
+                score = 0.0
+                if overlap >= 2:
+                    score = float(overlap) * 3.0
+                elif overlap == 1 and len(name_tokens) <= 3:
+                    score = 2.0
+                if name_lower in wi_lower:
+                    score += 5.0
+                desc_tokens = frozenset(re.sub(r"[^a-z0-9]+", " ", desc_lower).split())
+                desc_overlap = len(wi_tokens & desc_tokens)
+                if desc_overlap >= 3:
+                    score += float(desc_overlap) * 0.5
+                if score > 0:
+                    selected.append((category, item, score))
+        if not selected:
+            # No keyword matches -- return empty rather than full dump
+            return ""
+        selected.sort(key=lambda t: t[2], reverse=True)
+        selected = selected[:max_items]
+        grouped: dict[str, list[ContextItem]] = {}
+        for category, item, _score in selected:
+            grouped.setdefault(category, []).append(item)
+        parts = ["PROJECT CONTEXT (selective -- relevant to this work item)", "=" * 40]
+        for category in CATEGORIES:
+            items = grouped.get(category)
+            if not items:
+                continue
+            parts.append(f"\n{titles[category]}:")
+            for item in items:
                 parts.append(f"  - {item.name}: {item.description}")
         parts.append("")
         return "\n".join(parts)
@@ -477,7 +536,7 @@ async def build_context_incremental_async(
                 return
         log(f"[INFO] Context map queued {position}/{len(wanted)}: {source}")
         last_error: Exception | None = None
-        for attempt in range(1, 4):
+        for attempt in range(1, _MAX_DOC_RETRIES + 1):
             try:
                 async with semaphore:
                     window_sem = asyncio.Semaphore(_MAX_WINDOW_CONCURRENCY)
@@ -498,17 +557,17 @@ async def build_context_incremental_async(
                 break
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
-                if attempt < 3:
-                    delay = float(2 ** (attempt - 1))
+                if attempt < _MAX_DOC_RETRIES:
+                    delay = min(float(2 ** (attempt - 1)), 30.0)
                     log(
-                        f"[WARN] Context map retry {attempt}/3 for {source} "
+                        f"[WARN] Context map retry {attempt}/{_MAX_DOC_RETRIES} for {source} "
                         f"in {delay:.0f}s: {type(exc).__name__}: {exc}"
                     )
                     await asyncio.sleep(delay)
         if last_error is not None:
             failures.append(source)
             log(
-                f"[WARN] Context map unavailable after 3 attempts for {source}: "
+                f"[ERROR] Context map failed after {_MAX_DOC_RETRIES} attempts for {source}: "
                 f"{type(last_error).__name__}: {last_error}"
             )
         await report_progress(source)
