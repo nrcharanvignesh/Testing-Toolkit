@@ -31,9 +31,7 @@
  *     Location WITHOUT the Authorization header.
  *   - Progress is reported as each part COMPLETES (not in submission order),
  *     plus a periodic heartbeat, so the user always sees forward motion.
- *   - Every part is cached under the centralized workspace
- *     (%USERPROFILE%\\TestingToolkitWeb\\.cache\\downloads\\<ref>) and skipped
- *     on re-run if its checksum already matches (true resume).
+ *   - Every run downloads all parts fresh (no caching between runs).
  *   - A full, trace-level log is ALWAYS written to a documented, stable folder
  *     (%USERPROFILE%\\TestingToolkitWeb\\logs, with %TEMP% fallback). Each run gets
  *     a timestamped installer-<stamp>.log plus a stable installer-last.log that
@@ -276,22 +274,16 @@ try {
   # Transient extraction scratch under the centralized cache (deleted on finish).
   $work = Join-Path $CacheDir ('work\\' + [Guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Force -Path $work | Out-Null
-  # Stable cache keyed by ref => completed parts survive a re-run (true resume).
-  # Kept inside the single centralized workspace so EVERYTHING (downloads, logs,
-  # install, data) lives under %USERPROFILE%\\TestingToolkitWeb. Falls back to
-  # %TEMP% only if that folder cannot be created.
+  # Downloads dir under the centralized workspace. Purged every run so nothing
+  # stale is reused. Falls back to %TEMP% only if that folder cannot be created.
   $wsRoot = $env:TT_WORKSPACE_DIR
   if (-not $wsRoot) { $wsRoot = Join-Path $env:USERPROFILE 'TestingToolkitWeb' }
   $cacheRoot = Join-Path $wsRoot '.cache\\downloads'
   try { New-Item -ItemType Directory -Force -Path $cacheRoot -ErrorAction Stop | Out-Null }
   catch { $cacheRoot = Join-Path $env:TEMP 'TestingToolkitWeb-cache'; Write-Dbg ('cache fell back to TEMP: ' + $cacheRoot) }
-  # On a fresh (reinstall) download, wipe any previously downloaded parts so
-  # nothing stale is reused and the whole bundle is fetched again.
-  if ($Fresh) {
-    Write-Host "  Fresh reinstall: clearing any previously downloaded parts." -ForegroundColor Yellow
-    Write-Dbg ("purging cache " + $cacheRoot)
-    try { Remove-Item -Recurse -Force -LiteralPath $cacheRoot -ErrorAction SilentlyContinue } catch {}
-  }
+  # Always start clean — no part reuse between runs.
+  Write-Dbg ("purging parts cache " + $cacheRoot)
+  try { Remove-Item -Recurse -Force -LiteralPath $cacheRoot -ErrorAction SilentlyContinue } catch {}
   $partsDir = Join-Path $cacheRoot ($Ref -replace '[^A-Za-z0-9_.-]', '_')
   New-Item -ItemType Directory -Force -Path $partsDir | Out-Null
   Write-Dbg ("work dir:  " + $work)
@@ -326,15 +318,10 @@ try {
     # RESUMES from where it left off (HTTP Range) instead of restarting 48 MB.
     $part = $dest + '.part'
 
-    # Resume: a previously completed, checksum-valid part is reused as-is.
+    # Always pull fresh — never reuse a cached part.
     if (Test-Path $dest) {
       try {
-        $h0 = (Get-FileHash -Algorithm SHA256 -LiteralPath $dest).Hash.ToLower()
-        if ($h0 -eq $shaLower) {
-          LL 'cached copy valid; skipping download'
-          return [pscustomobject]@{ Name = $name; Status = 'cached'; Bytes = (Get-Item $dest).Length; Attempts = 0; Ms = 0; Redirect = $false; Log = $log }
-        }
-        LL 'stale cached copy; removing'
+        LL 'removing previous copy; always pulling fresh'
         Remove-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue
       } catch {}
     }
@@ -515,7 +502,7 @@ try {
   $pool.Close(); $pool.Dispose()
   if ($failures.Count -gt 0) {
     foreach ($f in $failures) { Write-Host ("    [x] " + $f.Name + " failed: " + $f.Error) -ForegroundColor Red }
-    throw ([string]$failures.Count + ' part(s) failed to download. Completed parts are cached and will be skipped when you re-run this installer. See the log: ' + $LogFile)
+    throw ([string]$failures.Count + ' part(s) failed to download. You can safely re-run this installer. See the log: ' + $LogFile)
   }
 
   Write-Step "Reassembling bundle"
@@ -823,7 +810,7 @@ try {
   Write-Host ""
   Write-Host ("  ERROR: " + $errMsg) -ForegroundColor Red
   Write-Host ("  Debug log: " + $LogFile) -ForegroundColor Yellow
-  Write-Host "  Nothing was installed. You can safely re-run this installer (finished parts are cached)."
+  Write-Host "  Nothing was installed. You can safely re-run this installer."
 } finally {
   # Always keep a stable copy of this run's trace log at installer-last.log so
   # there is a single, predictable file to open / send to support.
@@ -857,9 +844,8 @@ try {
  *
  * Same download robustness as the Windows installer: redirects from GitHub's
  * Contents API are followed WITHOUT the Authorization header (otherwise storage
- * rejects >1 MB blobs), completed parts are cached under the centralized
- * workspace (~/TestingToolkitWeb/.cache/downloads/<ref>) for true resume, every
- * part is logged in real time, and a full trace log is written to
+ * rejects >1 MB blobs), every run downloads all parts fresh (no caching),
+ * every part is logged in real time, and a full trace log is written to
  * ~/TestingToolkitWeb/logs. Trace logging is on by default; set TT_VERBOSE=0 to
  * quiet only the on-console echo.
  *
@@ -1090,9 +1076,9 @@ try:
         work = tempfile.mkdtemp(prefix="TestingToolkit_", dir=_work_parent)
     except Exception:
         work = tempfile.mkdtemp(prefix="TestingToolkit_")
-    # Stable cache keyed by ref => completed parts survive a re-run (resume).
-    # Kept inside the single centralized workspace (~/TestingToolkitWeb/.cache/
-    # downloads) so EVERYTHING lives in one place; falls back to TMPDIR if that
+    # Downloads dir under the centralized workspace. Purged every run so nothing
+    # stale is reused. Kept inside ~/TestingToolkitWeb/.cache/downloads so
+    # EVERYTHING lives in one place; falls back to TMPDIR if that
     # cannot be created.
     safe_ref = "".join(c if (c.isalnum() or c in "_.-") else "_" for c in ref)
     cache_root = os.path.join(_ws_root, ".cache", "downloads")
@@ -1100,12 +1086,9 @@ try:
         os.makedirs(cache_root, exist_ok=True)
     except Exception:
         cache_root = os.path.join(tempfile.gettempdir(), "TestingToolkitWeb-cache")
-    # On a fresh (reinstall) download, wipe any previously downloaded parts so
-    # nothing stale is reused and the whole bundle is fetched again.
-    if fresh:
-        log("    Fresh reinstall: clearing any previously downloaded parts.")
-        dbg("purging cache %s" % cache_root)
-        shutil.rmtree(cache_root, ignore_errors=True)
+    # Always start clean — no part reuse between runs.
+    dbg("purging parts cache %s" % cache_root)
+    shutil.rmtree(cache_root, ignore_errors=True)
     parts_dir = os.path.join(cache_root, safe_ref)
     os.makedirs(parts_dir, exist_ok=True)
     dbg("work dir: %s" % work)
@@ -1138,11 +1121,9 @@ try:
         # proxy RESUMES from where it left off instead of restarting 48 MB.
         part = dest + ".part"
         want = p["sha256"].lower()
-        # Resume: reuse a previously completed, checksum-valid part.
+        # Always pull fresh — never reuse a cached part.
         if os.path.exists(dest):
             try:
-                if sha256_file(dest) == want:
-                    return {"name": p["name"], "status": "cached", "bytes": os.path.getsize(dest), "attempts": 0, "secs": 0.0}
                 os.remove(dest)
             except Exception:
                 pass
@@ -1203,8 +1184,8 @@ try:
         for f in failures:
             log("    [x] %s failed: %s" % (f["name"], f["error"]))
         raise RuntimeError(
-            "%d part(s) failed to download. Completed parts are cached and will be "
-            "skipped when you re-run this installer. See the log: %s" % (len(failures), _log_path))
+            "%d part(s) failed to download. You can safely re-run this installer. "
+            "See the log: %s" % (len(failures), _log_path))
 
     step("Reassembling bundle")
     write_progress("extracting", "Reassembling bundle", 61)
@@ -1356,7 +1337,7 @@ except Exception as e:
         try: _log_fh.write("    [fatal] " + _tb.format_exc() + "\\n"); _log_fh.flush()
         except Exception: pass
     log("  Debug log: %s" % (_last_log_path or _log_path))
-    log("  Nothing was installed. You can safely re-run this installer (finished parts are cached).")
+    log("  Nothing was installed. You can safely re-run this installer.")
     _finish_log()
     sys.exit(1)
 TT_PYEOF
