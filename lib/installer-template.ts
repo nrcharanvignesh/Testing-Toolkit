@@ -550,6 +550,9 @@ try {
       if (-not $expectedHash) { throw ('overlay manifest is missing a checksum for ' + $label) }
       $last = $null
       $partial = $outFile + '.part'
+      # Cache-bust: append a unique timestamp so GitHub CDN never serves stale content.
+      $bustChar = if ($uri -match '\?') { '&' } else { '?' }
+      $freshUri = $uri + $bustChar + '_t=' + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
       for ($attempt = 1; $attempt -le 4; $attempt++) {
         $client = $null; $response = $null; $stream = $null; $file = $null
         try {
@@ -564,7 +567,7 @@ try {
           } catch {}
           $client = New-Object System.Net.Http.HttpClient($handler)
           $client.Timeout = [TimeSpan]::FromMinutes(30)
-          $request = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Get, $uri)
+          $request = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Get, $freshUri)
           [void]$request.Headers.TryAddWithoutValidation('Authorization', 'Bearer ' + $Token)
           [void]$request.Headers.TryAddWithoutValidation('Accept', 'application/vnd.github.raw')
           [void]$request.Headers.TryAddWithoutValidation('User-Agent', 'TestingToolkit-Installer')
@@ -599,7 +602,7 @@ try {
       throw $last
     }
 
-    $um = Invoke-RestMethod -Uri ($ApiBase + 'agent-update.json?ref=' + $Ref) -Headers $headers -UseBasicParsing
+    $um = Invoke-RestMethod -Uri ($ApiBase + 'agent-update.json?ref=' + $Ref + '&_t=' + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -Headers $headers -UseBasicParsing
     $srcRef = $um.ref
     $stage = Join-Path $CacheDir ('overlay-stage-' + $stamp)
     if (Test-Path $stage) { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue }
@@ -1048,7 +1051,7 @@ def _get_to_file(url, headers, part_path, resume_from, timeout=1800):
         return code
 
 def fetch(path):
-    return _get(api + path + "?ref=" + ref, AUTH_HEADERS)
+    return _get(api + path + "?ref=" + ref + "&_t=" + str(int(time.time())), AUTH_HEADERS)
 
 # --- Install progress (console) ------------------------------------------
 # The installer runs in a visible terminal, so progress is simply printed to
@@ -1238,10 +1241,13 @@ try:
         dbg("overlay ref=%s files=%d" % (src_ref, len(um.get("files", []))))
 
         def overlay_get(url):
+            # Cache-bust so GitHub CDN never serves stale content.
+            sep = "&" if "?" in url else "?"
+            fresh_url = url + sep + "_t=" + str(int(time.time()))
             last = None
             for attempt in range(1, 5):
                 try:
-                    return _get(url, AUTH_HEADERS, timeout=120)
+                    return _get(fresh_url, AUTH_HEADERS, timeout=120)
                 except Exception as exc:
                     last = exc
                     if attempt < 4:
