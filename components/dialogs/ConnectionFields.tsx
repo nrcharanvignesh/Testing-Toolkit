@@ -134,7 +134,7 @@ export function ConnectionFields({
         <input
           type="text"
           className="tt-input"
-          placeholder="e.g. pwc-us-adv-digital"
+          placeholder="your-organization"
           value={values.organization}
           onChange={(e) => set("organization", e.target.value)}
         />
@@ -148,14 +148,14 @@ export function ConnectionFields({
         <input
           type="text"
           className="tt-input"
-          placeholder="InteractionsHub_"
+          placeholder="MyProject_"
           value={values.project_prefix}
           onChange={(e) => set("project_prefix", e.target.value)}
         />
       </Field>
       <p className="pl-[152px] text-xs text-muted-foreground">
         Project names are shown with this prefix stripped, e.g.
-        InteractionsHub_Abbott → Abbott.
+        MyProject_Alpha → Alpha.
       </p>
 
       <SectionHeader>JIRA (optional)</SectionHeader>
