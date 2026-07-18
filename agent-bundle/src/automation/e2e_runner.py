@@ -265,7 +265,7 @@ async def _get_bbox(locator: Any) -> tuple[int, int, int, int] | None:
 
 _NAVIGATION_ACTIONS = frozenset({"navigate", "submit"})
 # Actions that are "soft" (assert failures do not abort the remaining flow)
-_SOFT_ACTIONS = frozenset({"assert_text", "assert_url", "assert_element", "screenshot"})
+_SOFT_ACTIONS = frozenset({"assert_text", "assert_url", "assert_element", "screenshot", "assert_new_tab", "wait_for_new_page", "assert_not_present"})
 
 
 async def _execute_step(
@@ -509,6 +509,62 @@ async def _execute_step(
                 await loc.clear()
                 actual = f"Cleared [{target}] via [{winning_strategy}]"
 
+            elif action == "wait_for_new_page":
+                # Wait for a new page/tab to open via context event
+                context = page.context
+                try:
+                    new_page = await context.wait_for_event(
+                        "page", timeout=ELEMENT_TIMEOUT_MS
+                    )
+                    await new_page.wait_for_load_state("domcontentloaded")
+                    url_fragment = value or expected
+                    if url_fragment and url_fragment not in new_page.url:
+                        status = "fail"
+                        actual = f"New page opened but URL [{new_page.url}] does not contain [{url_fragment}]"
+                    else:
+                        actual = f"New page opened: [{new_page.url}]"
+                except PwTimeout:
+                    status = "fail"
+                    actual = "No new page/tab opened within timeout"
+
+            elif action == "assert_new_tab":
+                # Assert that a new tab was opened (checks context pages)
+                context = page.context
+                pages_before = len(context.pages)
+                # Give a short grace period for the tab to appear
+                await page.wait_for_timeout(2000)
+                pages_after = len(context.pages)
+                if pages_after > pages_before:
+                    new_page = context.pages[-1]
+                    url_fragment = expected or value
+                    if url_fragment and url_fragment not in new_page.url:
+                        status = "fail"
+                        actual = f"New tab opened [{new_page.url}] but expected [{url_fragment}]"
+                    else:
+                        actual = f"New tab confirmed: [{new_page.url}]"
+                elif pages_after == pages_before:
+                    # Check if any page other than current has the expected URL
+                    url_fragment = expected or value
+                    found = False
+                    for p in context.pages:
+                        if p != page and (not url_fragment or url_fragment in p.url):
+                            actual = f"New tab found: [{p.url}]"
+                            found = True
+                            break
+                    if not found:
+                        status = "fail"
+                        actual = "No new tab detected"
+
+            elif action == "select_text":
+                # Select text in an element via triple-click
+                loc, winning_strategy = await _find_element(
+                    page, target, preferred_strategy
+                )
+                await _wait_for_stable(loc)
+                last_bbox = await _get_bbox(loc)
+                await loc.click(click_count=3, timeout=ELEMENT_TIMEOUT_MS)
+                actual = f"Text selected in [{target}] via [{winning_strategy}]"
+
             else:
                 status = "error"
                 actual = f"Unsupported action: [{action}]"
@@ -573,6 +629,7 @@ async def _execute_step(
                     )
                     if retry_result.status != "error":
                         retry_result.locator_strategy = "recompiled"
+                        retry_result.actual = f"[HEAL] {retry_result.actual}"
                         record_healing(step, original_step, corrected, True)
                         return retry_result
                     # Feed the new error back for next recompile attempt
@@ -582,7 +639,12 @@ async def _execute_step(
                     record_healing(step, original_step, None, False)
                     break
         elif heal_decision == HealingDecision.REPORT_TEST_DEBT:
-            actual = f"[TEST DEBT] Persistent failure: {actual}"
+            actual = f"[HEAL] [TEST DEBT] Persistent failure: {actual}"
+
+    # Downgrade errors on manual-verification steps to skip (expected limitation)
+    if step.get("manual_verification_needed") and status in ("error", "fail"):
+        actual = f"[MANUAL CHECK] {actual}"
+        status = "skip"
 
     # Always capture a screenshot with bounding box annotation at every step
     # for full traceability (Senior QA mode). The annotator draws the element

@@ -332,6 +332,32 @@ def run_doctor() -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         _check(checks, "updates", "Agent update", _WARN, f"probe failed: {e!r}")
 
+    # --- Self-healing subsystem -----------------------------------------
+    try:
+        from automation.healing_guardrails import HISTORY_PATH
+
+        if HISTORY_PATH.exists():
+            import json as _json
+            data = _json.loads(HISTORY_PATH.read_text(encoding="utf-8"))
+            records = data.get("records", [])
+            total_heals = len(records)
+            successful = sum(1 for r in records if r.get("success"))
+            rate = (successful / total_heals * 100) if total_heals else 0
+            _check(
+                checks, "self_healing", "Self-healing subsystem",
+                _PASS if rate >= 50 or total_heals == 0 else _WARN,
+                f"{total_heals} healing attempt(s), {successful} successful ({rate:.0f}%)",
+                "" if rate >= 50 else
+                "Low healing success rate. Review persistent test failures "
+                "and update locators or test definitions.",
+            )
+        else:
+            _check(checks, "self_healing", "Self-healing subsystem", _PASS,
+                   "no healing history yet (clean slate)")
+    except Exception as e:  # noqa: BLE001
+        _check(checks, "self_healing", "Self-healing subsystem", _WARN,
+               f"probe failed: {e!r}")
+
     # Overall = worst severity.
     severity = {_PASS: 0, _WARN: 1, _FAIL: 2}
     overall = _PASS
