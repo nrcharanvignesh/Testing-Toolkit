@@ -341,6 +341,65 @@ def _run_context_job(
         job.log(f"[ERROR] Project context did not finish: {job.error}")
 
 
+# ---------------------------------------------------------------------------
+# Selective context update: debounced per-file context refresh
+# ---------------------------------------------------------------------------
+
+_CONTEXT_DEBOUNCE: dict[str, "threading.Timer"] = {}
+_CONTEXT_DEBOUNCE_SECS = 5.0  # batch CRUD within 5s window
+
+
+def _schedule_selective_context(project: str, filename: str) -> None:
+    """Debounced trigger: schedules a context job 5s after the last file change.
+
+    Multiple rapid uploads batch into one context run (the incremental cache
+    ensures only changed files are re-mapped).
+    """
+    import threading
+
+    key = project
+    existing = _CONTEXT_DEBOUNCE.get(key)
+    if existing is not None:
+        existing.cancel()
+
+    def _fire() -> None:
+        _CONTEXT_DEBOUNCE.pop(key, None)
+        _log.info("[INFO] Auto-context triggered for %s (file: %s)", project, filename)
+        _start_context_job(project, force=False)
+
+    timer = threading.Timer(_CONTEXT_DEBOUNCE_SECS, _fire)
+    timer.daemon = True
+    _CONTEXT_DEBOUNCE[key] = timer
+    timer.start()
+
+
+def _invalidate_context_map(project: str, filename: str) -> None:
+    """Remove cached context maps for a deleted file.
+
+    The context map signature is sha256(schema_version + source + text), so we
+    cannot reconstruct it without the file content. Instead, load each cached map
+    and remove those whose source matches the deleted filename.
+    """
+    import json as _json
+    import core.project_store as ps
+
+    try:
+        p = ps.ensure_project(project)
+        maps_dir = p.context_maps_dir
+        if not maps_dir.exists():
+            return
+        for cached in maps_dir.glob("*.json"):
+            try:
+                data = _json.loads(cached.read_text(encoding="utf-8"))
+                sources = data.get("sources") or []
+                if filename in sources or any(filename in s for s in sources):
+                    cached.unlink(missing_ok=True)
+            except (OSError, _json.JSONDecodeError, TypeError):
+                pass
+    except Exception:
+        pass
+
+
 def _start_context_job(
     project: str, force: bool = False,
     client: Any | None = None, model: str = "",
@@ -494,6 +553,8 @@ async def upload_document(
     finally:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
+    # Trigger selective context update for just this file (non-blocking)
+    _schedule_selective_context(project, safe_name)
     return {"ok": True, "path": str(dest), "size": size}
 
 
@@ -552,6 +613,8 @@ async def delete_document(project: str, name: str) -> dict:
     # The next index pass compares source name + SHA, removes this document's
     # chunks/maps, and preserves every unchanged document. This avoids a window
     # where a failed rebuild destroys the last usable KB.
+    # Invalidate context map for the deleted file so next context run skips it
+    _invalidate_context_map(project, name)
     return {"ok": True, "changed": name}
 
 

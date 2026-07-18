@@ -9,6 +9,7 @@ import { Dropdown } from "@/components/ui/dropdown";
 import { agent, type Board } from "@/lib/agent-client";
 import { getPreferences, setSizePref } from "@/lib/preferences";
 import { exportAllBoards, exportAllProjects } from "@/lib/export-board";
+import { showToast } from "@/lib/toast";
 import { ResizeHandle } from "@/components/ui/resizer";
 import { useAppUpdate } from "@/lib/use-app-update";
 import { SourceLogo } from "@/components/ui/source-logo";
@@ -61,6 +62,7 @@ export function NavPanel() {
         settings,
       });
       pushLog("SUCCESS", `Exported ${boards.length} board(s) to Excel.`);
+      showToast(`Exported ${boards.length} board(s) to Excel`);
     } catch (e) {
       pushLog("ERROR", `Export failed: ${(e as Error).message}`);
     } finally {
@@ -130,6 +132,7 @@ export function NavPanel() {
         ? `Exported ${allProjectData.length} project(s) to Excel (${skipped} board(s) skipped due to timeout).`
         : `Exported ${allProjectData.length} project(s) to Excel.`;
       pushLog("SUCCESS", msg);
+      showToast(msg);
     } catch (e) {
       pushLog("ERROR", `Export all projects failed: ${(e as Error).message}`);
     } finally {

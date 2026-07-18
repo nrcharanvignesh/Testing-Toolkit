@@ -16,8 +16,8 @@ SCHEMA_VERSION: Final[int] = 3
 _MAX_WINDOW_CHARS: Final[int] = 36000
 _WINDOW_OVERLAP_CHARS: Final[int] = 2000
 _MAX_TOKENS: Final[int] = 8192
-_MAX_CONCURRENCY: Final[int] = 3
-_MAX_WINDOW_CONCURRENCY: Final[int] = 3
+_MAX_CONCURRENCY: Final[int] = 5
+_MAX_WINDOW_CONCURRENCY: Final[int] = 4
 _MAX_DOC_RETRIES: Final[int] = 10
 CATEGORIES: Final[tuple[str, ...]] = (
     "actors",

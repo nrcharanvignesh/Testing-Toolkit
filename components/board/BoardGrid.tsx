@@ -41,6 +41,7 @@ import {
   type SettingsResponse,
 } from "@/lib/agent-client";
 import { exportSingleBoard } from "@/lib/export-board";
+import { showToast } from "@/lib/toast";
 import {
   ALL,
   COLOR_MUTED,
@@ -294,6 +295,8 @@ export function BoardGrid() {
                   onProgress: (done, total, phase) => {
                     setExportProgress(`${phase}: ${done}/${total}`);
                   },
+                }).then(() => {
+                  showToast(`Exported ${boardName} to Excel`);
                 }).finally(() => {
                   setExporting(false);
                   setExportProgress("");
