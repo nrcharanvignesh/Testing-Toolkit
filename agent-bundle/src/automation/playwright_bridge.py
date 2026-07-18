@@ -349,17 +349,39 @@ def _wait_for_port(port: int, timeout: float = 15.0) -> bool:
 
 
 def _kill_stale_port_holder(port: int) -> None:
-    """Kill any process holding the CDP port so a fresh launch can bind it."""
-    try:
-        import psutil
-    except ImportError:
-        return
-    for conn in psutil.net_connections(kind="tcp"):
-        if conn.laddr and conn.laddr.port == port and conn.pid:
-            try:
-                psutil.Process(conn.pid).kill()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
+    """Kill any process holding the CDP port so a fresh launch can bind it.
+
+    Uses stdlib subprocess + netstat/taskkill (Windows) or lsof/kill (POSIX).
+    No third-party dependency required.
+    """
+    import platform
+    if platform.system() == "Windows":
+        try:
+            out = subprocess.check_output(
+                ["netstat", "-ano"], text=True, stderr=subprocess.DEVNULL
+            )
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and f":{port}" in parts[1] and parts[3] == "LISTENING":
+                    pid = int(parts[4])
+                    subprocess.run(
+                        ["taskkill", "/F", "/PID", str(pid)],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    )
+        except (subprocess.SubprocessError, ValueError, OSError):
+            pass
+    else:
+        try:
+            out = subprocess.check_output(
+                ["lsof", "-ti", f":{port}"], text=True, stderr=subprocess.DEVNULL
+            )
+            for pid_str in out.strip().splitlines():
+                try:
+                    os.kill(int(pid_str), 9)
+                except (ProcessLookupError, PermissionError, ValueError):
+                    pass
+        except (subprocess.SubprocessError, OSError):
+            pass
 
 
 # -------------------------------------------------------------------

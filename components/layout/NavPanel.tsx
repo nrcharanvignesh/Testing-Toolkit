@@ -8,7 +8,7 @@ import { useTheme } from "@/lib/theme";
 import { Dropdown } from "@/components/ui/dropdown";
 import { agent, type Board } from "@/lib/agent-client";
 import { getPreferences, setSizePref } from "@/lib/preferences";
-import { exportAllBoards } from "@/lib/export-board";
+import { exportAllBoards, exportAllProjects } from "@/lib/export-board";
 import { ResizeHandle } from "@/components/ui/resizer";
 import { useAppUpdate } from "@/lib/use-app-update";
 import { SourceLogo } from "@/components/ui/source-logo";
@@ -37,6 +37,8 @@ export function NavPanel() {
   const [width, setWidth] = useState(() => getPreferences().sizes.navWidth);
   const [exportingAll, setExportingAll] = useState(false);
   const [exportAllProgress, setExportAllProgress] = useState("");
+  const [exportingAllProjects, setExportingAllProjects] = useState(false);
+  const [exportAllProjectsProgress, setExportAllProjectsProgress] = useState("");
 
   async function onExportAllBoards() {
     if (!currentProject || boards.length === 0) return;
@@ -64,6 +66,38 @@ export function NavPanel() {
     } finally {
       setExportingAll(false);
       setExportAllProgress("");
+    }
+  }
+
+  async function onExportAllProjects() {
+    if (projects.length === 0) return;
+    setExportingAllProjects(true);
+    pushLog("INFO", `Exporting all projects (${projects.length}) to Excel...`);
+    try {
+      const allProjectData: Array<{
+        projectName: string;
+        boards: Array<{ board: Board; rows: import("@/lib/agent-client").WorkItemRow[] }>;
+      }> = [];
+      for (let p = 0; p < projects.length; p++) {
+        const proj = projects[p];
+        const projName = displayName(proj);
+        setExportAllProjectsProgress(`${p + 1}/${projects.length}: ${projName}`);
+        const projBoards = await agent.listBoards(proj);
+        const boardResults: Array<{ board: Board; rows: import("@/lib/agent-client").WorkItemRow[] }> = [];
+        for (const b of projBoards) {
+          const view = await agent.boardView(proj, b);
+          boardResults.push({ board: b, rows: view.rows });
+        }
+        allProjectData.push({ projectName: projName, boards: boardResults });
+      }
+      setExportAllProjectsProgress("Building workbook...");
+      await exportAllProjects({ projects: allProjectData, settings });
+      pushLog("SUCCESS", `Exported ${projects.length} project(s) to Excel.`);
+    } catch (e) {
+      pushLog("ERROR", `Export all projects failed: ${(e as Error).message}`);
+    } finally {
+      setExportingAllProjects(false);
+      setExportAllProjectsProgress("");
     }
   }
 
@@ -96,14 +130,35 @@ export function NavPanel() {
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center justify-between px-1 pb-1.5">
             <span className="tt-section-header">Projects</span>
-            <button
-              className="tt-btn-ghost !px-1.5 !py-0.5 !text-[10px] !gap-1"
-              onClick={reloadProjects}
-              title="Refresh project list"
-            >
-              <RefreshCw className="h-2.5 w-2.5" />
-              Refresh
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                className="tt-btn-ghost flex items-center justify-center !p-0 gap-1"
+                style={{ height: 20, minWidth: 20, paddingInline: exportAllProjectsProgress ? 6 : 0 }}
+                onClick={() => void onExportAllProjects()}
+                disabled={exportingAllProjects || projects.length === 0}
+                title={exportingAllProjects ? exportAllProjectsProgress : "Export all projects to Excel workbook"}
+                aria-label="Export all projects to Excel workbook"
+              >
+                {exportingAllProjects ? (
+                  <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                ) : (
+                  <Download className="h-2.5 w-2.5" />
+                )}
+                {exportAllProjectsProgress && (
+                  <span className="text-[9px] whitespace-nowrap" style={{ color: "var(--tt-text-muted)" }}>
+                    {exportAllProjectsProgress}
+                  </span>
+                )}
+              </button>
+              <button
+                className="tt-btn-ghost !px-1.5 !py-0.5 !text-[10px] !gap-1"
+                onClick={reloadProjects}
+                title="Refresh project list"
+              >
+                <RefreshCw className="h-2.5 w-2.5" />
+                Refresh
+              </button>
+            </div>
           </div>
           <div className="min-h-[60px] flex-1 overflow-auto rounded-[8px] border border-[var(--tt-outline-soft)] bg-[var(--tt-surface-base)] p-1">
             {projects.length === 0 ? (

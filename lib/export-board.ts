@@ -324,7 +324,7 @@ function buildBoardSheet(
 // Test Coverage sheet
 // ---------------------------------------------------------------------------
 
-function buildTestCoverageSheet(
+export function buildTestCoverageSheet(
   wb: ExcelJS.Workbook,
   opts: ExportBoardOpts
 ): void {
@@ -412,7 +412,7 @@ function buildTestCoverageSheet(
 // Traceability Matrix sheet
 // ---------------------------------------------------------------------------
 
-function buildTraceabilitySheet(
+export function buildTraceabilitySheet(
   wb: ExcelJS.Workbook,
   opts: ExportBoardOpts
 ): void {
@@ -493,7 +493,7 @@ function buildTraceabilitySheet(
 // Defect Density sheet
 // ---------------------------------------------------------------------------
 
-function buildDefectDensitySheet(
+export function buildDefectDensitySheet(
   wb: ExcelJS.Workbook,
   opts: ExportBoardOpts
 ): void {
@@ -567,7 +567,7 @@ function buildDefectDensitySheet(
 // Execution Results sheet (last run dump)
 // ---------------------------------------------------------------------------
 
-function buildExecutionHistorySheet(
+export function buildExecutionHistorySheet(
   wb: ExcelJS.Workbook,
   opts: ExportBoardOpts
 ): void {
