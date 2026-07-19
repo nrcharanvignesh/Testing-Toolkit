@@ -470,9 +470,8 @@ export function AppStateProvider({
 
         // The agent starts context alongside indexing. Attach to that job rather
         // than issuing a second forced regeneration after indexing completes.
-        // Safety-valve only: 30 min hard cap. No stale detection — slow agents
-        // under heavy load can legitimately stall for minutes between increments.
-        const MAX_CONTEXT_POLLS = 3600; // 3600 * 500ms = 30 min hard cap
+        // Safety-valve: 15 min hard cap at 2s intervals.
+        const MAX_CONTEXT_POLLS = 450; // 450 * 2s = 15 min hard cap
         let polls = 0;
         for (;;) {
           if (ctl.signal.aborted) return;
@@ -498,32 +497,38 @@ export function AppStateProvider({
           }
           polls++;
           if (polls >= MAX_CONTEXT_POLLS) {
-            // Extreme edge: 30 min elapsed. Server-side gen continues; next
-            // page load re-attaches via the activeContextJob probe.
             pushLog("WARN", "Context generation still running server-side — it will complete in the background.");
             setKbState("ready");
             setKbMessage("KB ready | Context finishing in background...");
             return;
           }
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
         let ctx = await agent.projectContext(project);
         if (ctl.signal.aborted) return;
 
-        // Auto-retry until ALL docs succeed (max 10 attempts with exp backoff)
+        // Auto-retry failed docs (max 3 attempts; circuit-break if no progress)
         let retries = 0;
-        while (ctx.status === "partial" && ctx.failed_documents.length > 0 && retries < 10) {
+        let prevFailCount = ctx.failed_documents?.length ?? 0;
+        while (ctx.status === "partial" && ctx.failed_documents.length > 0 && retries < 3) {
           retries++;
-          const delay = Math.min(2000 * Math.pow(1.5, retries - 1), 30000);
-          pushLog("INFO", `Auto-retrying ${ctx.failed_documents.length} failed document(s) (attempt ${retries}/10)...`);
+          const delay = Math.min(5000 * Math.pow(2, retries - 1), 30000);
+          pushLog("INFO", `Auto-retrying ${ctx.failed_documents.length} failed document(s) (attempt ${retries}/3)...`);
           await new Promise((r) => setTimeout(r, delay));
           if (ctl.signal.aborted) return;
           try {
             ctx = await agent.regenerateContext(project);
             if (ctl.signal.aborted) return;
           } catch {
-            // Retry failed — next iteration will try again
+            break;
           }
+          // Circuit breaker: stop if no documents were recovered this round
+          const currentFailCount = ctx.failed_documents?.length ?? 0;
+          if (currentFailCount >= prevFailCount) {
+            pushLog("WARN", `Context retry made no progress (${currentFailCount} still failing) — stopping.`);
+            break;
+          }
+          prevFailCount = currentFailCount;
         }
 
         pushLog("SUCCESS", `Project context ready: ${ctx.n_items} item(s).`);

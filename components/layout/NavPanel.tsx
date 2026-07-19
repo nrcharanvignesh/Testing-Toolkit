@@ -317,6 +317,12 @@ export function NavPanel() {
 
         {/* ── Bottom toolbar ─────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-1 border-t border-[var(--tt-outline-soft)] pt-2 min-[300px]:grid-cols-3">
+          <NavLabelBtn
+            title="Check for updates"
+            disabled={updateBusy}
+            onClick={() => void onUpdateClick()}
+            label={updateBusy ? "Checking..." : "Update"}
+          />
           <Dropdown
             className="w-full"
             align="left"
@@ -357,12 +363,6 @@ export function NavPanel() {
             aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
             onClick={toggleTheme}
             label="Theme"
-          />
-          <NavLabelBtn
-            title="Check for updates"
-            disabled={updateBusy}
-            onClick={() => void onUpdateClick()}
-            label={updateBusy ? "Checking..." : "Update"}
           />
           <div className="col-span-full">
             <NavLabelBtn

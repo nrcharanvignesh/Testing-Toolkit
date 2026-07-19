@@ -87,12 +87,8 @@ async def upload_artifact(
     file: UploadFile = File(...),
     project: str = Form(""),
 ) -> dict[str, Any]:
-    """Save an uploaded file (Excel export) to the workspace exports folder."""
-    from core.app_config import OUTPUTS_DIR
-    from core.project_store import _safe_name
-
-    folder_name = _safe_name(project) if project else "_general"
-    dest_dir = OUTPUTS_DIR / folder_name / "exports"
+    """Save an uploaded file (Excel export) to local Downloads/TestingToolkit."""
+    dest_dir = Path.home() / "Downloads" / "TestingToolkit"
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     filename = file.filename or "export.xlsx"
@@ -126,9 +122,9 @@ async def list_artifacts(project: str) -> list[dict[str, Any]]:
             if f.is_file() and not f.name.startswith("_"):
                 out.append(_describe(f, "packets"))
 
-    exports = OUTPUTS_DIR / _safe_name(project) / "exports"
-    if exports.exists():
-        for f in exports.iterdir():
+    exports_dir = Path.home() / "Downloads" / "TestingToolkit"
+    if exports_dir.exists():
+        for f in exports_dir.iterdir():
             if f.is_file() and not f.name.startswith("."):
                 out.append(_describe(f, "exports"))
 

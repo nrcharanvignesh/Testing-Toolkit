@@ -202,12 +202,18 @@ export interface ExportBoardOpts {
   onProgress?: (done: number, total: number, phase: string) => void;
 }
 
+const _BOTTOM_TYPES = new Set(["bug", "defect", "issue", "impediment", "risk"]);
+
 function sortRows(rows: WorkItemRow[]): WorkItemRow[] {
   if (!rows || rows.length === 0) return [];
   return [...rows].sort((a, b) => {
-    const typeCompare = (a.wi_type || "").localeCompare(b.wi_type || "");
+    const aType = (a.wi_type || "").toLowerCase();
+    const bType = (b.wi_type || "").toLowerCase();
+    const aBottom = _BOTTOM_TYPES.has(aType) ? 1 : 0;
+    const bBottom = _BOTTOM_TYPES.has(bType) ? 1 : 0;
+    if (aBottom !== bBottom) return aBottom - bBottom;
+    const typeCompare = aType.localeCompare(bType);
     if (typeCompare !== 0) return typeCompare;
-    // wi_id as proxy for creation date (ADO IDs are sequential)
     const aId = typeof a.wi_id === "number" ? a.wi_id : parseInt(String(a.wi_id), 10) || 0;
     const bId = typeof b.wi_id === "number" ? b.wi_id : parseInt(String(b.wi_id), 10) || 0;
     return aId - bId;
@@ -806,6 +812,8 @@ export interface ExportAllProjectsOpts {
 }
 
 export async function exportAllProjects(opts: ExportAllProjectsOpts): Promise<void> {
+  // Reuse the exact same per-project workbook logic as exportAllBoards,
+  // just stitched across multiple projects into one combined workbook.
   const wb = new ExcelJS.Workbook();
   const summaryWs = wb.addWorksheet("Summary");
   const usedNames = new Set<string>(["Summary"]);
@@ -813,42 +821,40 @@ export async function exportAllProjects(opts: ExportAllProjectsOpts): Promise<vo
   const ignored: Array<{ boardName: string; project?: string }> = [];
 
   for (const project of opts.projects) {
-    for (let idx = 0; idx < project.boards.length; idx++) {
+    // Same forEach logic as exportAllBoards, per project
+    project.boards.forEach((b, idx) => {
       try {
-        const b = project.boards[idx];
-        const rawBoardName = b.board?.team_name || b.board?.name || b.board?.label || `Board ${idx + 1}`;
-        const shortBoard = _stripProjectPrefix(rawBoardName, project.projectName);
+        const rawName = b.board?.team_name || b.board?.name || b.board?.label || "";
+        const shortName = _stripProjectPrefix(rawName || `Board ${idx + 1}`, project.projectName);
         const rows = b.rows ?? [];
         if (rows.length === 0) {
-          ignored.push({ boardName: shortBoard, project: project.projectName });
-          continue;
+          ignored.push({ boardName: shortName, project: project.projectName });
+          return;
         }
-        const sheetLabel = _safeSheetName(shortBoard, usedNames);
-        usedNames.add(sheetLabel);
+        const sheetName = _safeSheetName(shortName, usedNames);
+        usedNames.add(sheetName);
         try {
-          buildBoardSheet(wb, sheetLabel, {
+          buildBoardSheet(wb, sheetName, {
             projectName: project.projectName,
-            boardName: rawBoardName,
+            boardName: rawName,
             rows,
             kpiCounts: {},
             filters: { type: "All", assignee: "All", sprint: "All", column: "All", search: "" },
             settings: opts.settings,
           });
         } catch {
-          // Sheet creation failed — already added to workbook, move on
+          // Sheet build failed — already added, move on
         }
-        index.push({ sheetName: sheetLabel, project: project.projectName, boardName: shortBoard, rowCount: rows.length });
+        index.push({ sheetName, project: project.projectName, boardName: shortName, rowCount: rows.length });
       } catch {
-        // Entire board entry malformed — skip silently
         ignored.push({ boardName: `Board ${idx + 1}`, project: project.projectName });
       }
-    }
+    });
   }
 
   try {
     _populateSummary(summaryWs, null, index, ignored);
   } catch {
-    // Summary failed — at minimum write the title
     summaryWs.getRow(1).getCell(2).value = "All Projects - Export Summary";
   }
 

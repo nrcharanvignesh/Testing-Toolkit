@@ -18,8 +18,8 @@ _WINDOW_OVERLAP_CHARS: Final[int] = 2000
 _MAX_TOKENS: Final[int] = 8192
 _MAX_CONCURRENCY: Final[int] = 3  # reduced for Sonnet tier; avoids rate-limit cascades
 _MAX_WINDOW_CONCURRENCY: Final[int] = 4
-_MAX_DOC_RETRIES: Final[int] = 10
-_DOC_TIMEOUT_SEC: Final[float] = 300.0  # per-document hard cap; allows large multi-window docs
+_MAX_DOC_RETRIES: Final[int] = 3
+_DOC_TIMEOUT_SEC: Final[float] = 120.0  # per-document hard cap
 CATEGORIES: Final[tuple[str, ...]] = (
     "actors",
     "entities",

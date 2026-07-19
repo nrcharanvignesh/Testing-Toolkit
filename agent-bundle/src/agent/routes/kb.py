@@ -277,31 +277,31 @@ def _run_context_job(
         from agent.jobs import JOBS
 
         job.log(f"[INFO] Project context mapping started for '{project}'.")
-        # Map the last complete index immediately while extraction works on file
-        # deltas. Then wait for indexing to atomically publish its final index and
-        # run once more; unchanged document maps are cache hits.
-        try:
-            initial = ps.get_index(project)
-        except Exception as e:
-            _log.debug("get_index failed: %s", e)
-            initial = None
-        if initial is not None and getattr(initial, "chunks", None):
-            ps.extract_project_context(
-                project, initial, client, model,
-                on_log=_log, on_progress=_progress, force=False,
-            )
+        # Skip the speculative initial pass when a KB index job is also running
+        # (the final pass after indexing covers the same work via cache hits).
+        index_running = JOBS.find_active("kb_index", project) is not None
+        if not index_running:
+            try:
+                initial = ps.get_index(project)
+            except Exception as e:
+                _log.debug("get_index failed: %s", e)
+                initial = None
+            if initial is not None and getattr(initial, "chunks", None):
+                ps.extract_project_context(
+                    project, initial, client, model,
+                    on_log=_log, on_progress=_progress, force=False,
+                )
 
-        # Wait for the index job to finish, capped at 30 minutes.
-        # Signal the waiting phase so the UI does not show stale progress.
+        # Wait for the index job to finish, capped at 10 minutes.
         job.set_progress("waiting-for-index", 0, 0)
         job.log("[INFO] Waiting for KB indexing to complete before final context pass...")
-        _wait_deadline = time.time() + 30 * 60
+        _wait_deadline = time.time() + 10 * 60
         while JOBS.find_active("kb_index", project) is not None:
             if job.stopped:
                 job.fail("Project context mapping stopped")
                 return
             if time.time() > _wait_deadline:
-                job.log("[WARN] Timed out waiting for KB index (30 min cap).")
+                job.log("[WARN] Timed out waiting for KB index (10 min cap).")
                 break
             time.sleep(0.25)
 
