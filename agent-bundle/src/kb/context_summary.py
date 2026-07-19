@@ -612,6 +612,48 @@ async def build_context_incremental_async(
         process(signature, source, text, position)
         for position, (signature, (source, text)) in enumerate(wanted.items(), 1)
     ))
+
+    # Post-pass retry: cooldown then re-attempt only failed docs (max 3 rounds).
+    for retry_round in range(1, 4):
+        if not failures:
+            break
+        cooldown = 10.0 * retry_round
+        log(
+            f"[INFO] Context retry round {retry_round}/3: "
+            f"{len(failures)} failed doc(s), cooldown {cooldown:.0f}s..."
+        )
+        if on_progress:
+            on_progress("context-retry", len(completed), len(wanted))
+        await asyncio.sleep(cooldown)
+        retry_sigs = [
+            sig for sig, (src, _) in wanted.items()
+            if src in failures and sig not in completed
+        ]
+        retry_failures: list[str] = []
+        for sig in retry_sigs:
+            failures.remove(wanted[sig][0])
+
+        async def retry_one(sig: str) -> None:
+            src, txt = wanted[sig]
+            try:
+                await asyncio.wait_for(
+                    _process_doc_retries(
+                        sig, src, txt, semaphore, client, model,
+                        maps_dir, completed, log,
+                    ),
+                    timeout=_DOC_TIMEOUT_SEC,
+                )
+                log(f"[SUCCESS] Context retry succeeded: {src}")
+            except (asyncio.TimeoutError, _DocRetryExhausted) as exc:
+                retry_failures.append(src)
+                cause = exc.cause if isinstance(exc, _DocRetryExhausted) else exc
+                log(f"[WARN] Context retry still failing: {src}: {cause}")
+            if on_progress:
+                on_progress("context-retry", len(completed), len(wanted))
+
+        await asyncio.gather(*(retry_one(s) for s in retry_sigs))
+        failures.extend(retry_failures)
+
     aggregate = merge_context_maps(list(completed.values()), kb_fingerprint)
     aggregate.total_documents = len(wanted)
     aggregate.mapped_documents = len(completed)

@@ -483,6 +483,12 @@ export function AppStateProvider({
           const stage = String(active.progress?.stage ?? "");
           if (stage === "waiting-for-index") {
             setKbMessage("Context: waiting for KB index...");
+          } else if (stage === "context-retry") {
+            setKbMessage(
+              total > 0
+                ? `Retrying failed docs (${current}/${total} done)`
+                : "Retrying failed documents..."
+            );
           } else {
             setKbMessage(
               total > 0

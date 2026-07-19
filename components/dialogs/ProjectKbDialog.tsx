@@ -220,6 +220,13 @@ function DocumentsSection({
         if (stage === "waiting-for-index") {
           setContextProgress("Waiting for KB index...");
           setContextPct(null);
+        } else if (stage === "context-retry") {
+          setContextProgress(
+            total > 0
+              ? `Retrying failed (${current}/${total} done)`
+              : "Retrying failed documents..."
+          );
+          setContextPct(total > 0 ? current / total : null);
         } else {
           setContextProgress(
             total > 0
