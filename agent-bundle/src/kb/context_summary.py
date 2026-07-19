@@ -19,6 +19,7 @@ _MAX_TOKENS: Final[int] = 8192
 _MAX_CONCURRENCY: Final[int] = 5
 _MAX_WINDOW_CONCURRENCY: Final[int] = 4
 _MAX_DOC_RETRIES: Final[int] = 10
+_DOC_TIMEOUT_SEC: Final[float] = 180.0  # per-document hard cap prevents infinite hangs
 CATEGORIES: Final[tuple[str, ...]] = (
     "actors",
     "entities",
@@ -494,6 +495,51 @@ async def _extract_window(client: Any, model: str, source: str, text: str) -> Pr
     raise RuntimeError(f"invalid context JSON after 3 attempts: {last_error}")
 
 
+class _DocRetryExhausted(Exception):
+    """Sentinel: all retry attempts for a single document failed."""
+    def __init__(self, cause: Exception) -> None:
+        self.cause = cause
+        super().__init__(str(cause))
+
+
+async def _process_doc_retries(
+    signature: str, source: str, text: str,
+    semaphore: asyncio.Semaphore, client: Any, model: str,
+    maps_dir: Path, completed: dict[str, "ProjectContext"],
+    log: LogFn,
+) -> None:
+    """Retry loop for a single document, separated so wait_for can wrap it."""
+    for attempt in range(1, _MAX_DOC_RETRIES + 1):
+        try:
+            async with semaphore:
+                window_sem = asyncio.Semaphore(_MAX_WINDOW_CONCURRENCY)
+
+                async def _throttled(w: str) -> "ProjectContext":
+                    async with window_sem:
+                        return await _extract_window(client, model, source, w)
+
+                window_maps: list["ProjectContext"] = list(await asyncio.gather(
+                    *[_throttled(w) for w in _windows(text)]
+                ))
+            mapped = merge_context_maps(window_maps, signature)
+            mapped.mapped_documents = 1
+            mapped.total_documents = 1
+            _atomic_json(maps_dir / f"{signature}.json", mapped.to_dict())
+            completed[signature] = mapped
+            return
+        except Exception as exc:  # noqa: BLE001
+            if attempt < _MAX_DOC_RETRIES:
+                delay = min(float(2 ** (attempt - 1)), 30.0)
+                log(
+                    f"[WARN] Context map retry {attempt}/{_MAX_DOC_RETRIES} "
+                    f"for {source} in {delay:.0f}s: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                await asyncio.sleep(delay)
+            else:
+                raise _DocRetryExhausted(exc) from exc
+
+
 async def build_context_incremental_async(
     kb_index: Any, client: Any, model: str, maps_dir: Path,
     kb_fingerprint: str = "", on_log: LogFn | None = None,
@@ -536,40 +582,30 @@ async def build_context_incremental_async(
                 return
         log(f"[INFO] Context map queued {position}/{len(wanted)}: {source}")
         last_error: Exception | None = None
-        for attempt in range(1, _MAX_DOC_RETRIES + 1):
-            try:
-                async with semaphore:
-                    window_sem = asyncio.Semaphore(_MAX_WINDOW_CONCURRENCY)
-
-                    async def _throttled(w: str) -> ProjectContext:
-                        async with window_sem:
-                            return await _extract_window(client, model, source, w)
-
-                    window_maps: list[ProjectContext] = list(await asyncio.gather(
-                        *[_throttled(w) for w in _windows(text)]
-                    ))
-                mapped = merge_context_maps(window_maps, signature)
-                mapped.mapped_documents = 1
-                mapped.total_documents = 1
-                _atomic_json(path, mapped.to_dict())
-                completed[signature] = mapped
-                last_error = None
-                break
-            except Exception as exc:  # noqa: BLE001
-                last_error = exc
-                if attempt < _MAX_DOC_RETRIES:
-                    delay = min(float(2 ** (attempt - 1)), 30.0)
-                    log(
-                        f"[WARN] Context map retry {attempt}/{_MAX_DOC_RETRIES} for {source} "
-                        f"in {delay:.0f}s: {type(exc).__name__}: {exc}"
-                    )
-                    await asyncio.sleep(delay)
+        try:
+            await asyncio.wait_for(
+                _process_doc_retries(
+                    signature, source, text, semaphore, client, model,
+                    maps_dir, completed, log,
+                ),
+                timeout=_DOC_TIMEOUT_SEC,
+            )
+        except asyncio.TimeoutError:
+            last_error = TimeoutError(
+                f"document exceeded {_DOC_TIMEOUT_SEC:.0f}s hard cap"
+            )
+            log(
+                f"[ERROR] Context map timed out for {source} "
+                f"after {_DOC_TIMEOUT_SEC:.0f}s"
+            )
+        except _DocRetryExhausted as exc:
+            last_error = exc.cause
+            log(
+                f"[ERROR] Context map failed after {_MAX_DOC_RETRIES} attempts "
+                f"for {source}: {type(exc.cause).__name__}: {exc.cause}"
+            )
         if last_error is not None:
             failures.append(source)
-            log(
-                f"[ERROR] Context map failed after {_MAX_DOC_RETRIES} attempts for {source}: "
-                f"{type(last_error).__name__}: {last_error}"
-            )
         await report_progress(source)
 
     await asyncio.gather(*(

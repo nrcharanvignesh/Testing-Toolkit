@@ -292,6 +292,9 @@ def _run_context_job(
             )
 
         # Wait for the index job to finish, capped at 30 minutes.
+        # Signal the waiting phase so the UI does not show stale progress.
+        job.set_progress("waiting-for-index", 0, 0)
+        job.log("[INFO] Waiting for KB indexing to complete before final context pass...")
         _wait_deadline = time.time() + 30 * 60
         while JOBS.find_active("kb_index", project) is not None:
             if job.stopped:

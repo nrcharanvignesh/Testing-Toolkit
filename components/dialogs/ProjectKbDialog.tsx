@@ -216,12 +216,18 @@ function DocumentsSection({
           setContextPct(null);
           return;
         }
-        setContextProgress(
-          total > 0
-            ? `${current}/${total} (${Math.round((100 * current) / total)}%)`
-            : "Preparing document maps..."
-        );
-        setContextPct(total > 0 ? current / total : null);
+        const stage = String(progress?.stage ?? "");
+        if (stage === "waiting-for-index") {
+          setContextProgress("Waiting for KB index...");
+          setContextPct(null);
+        } else {
+          setContextProgress(
+            total > 0
+              ? `${current}/${total} (${Math.round((100 * current) / total)}%)`
+              : "Preparing document maps..."
+          );
+          setContextPct(total > 0 ? current / total : null);
+        }
       } catch {
         if (!cancelled && !indexing) setContextRunning(false);
       }

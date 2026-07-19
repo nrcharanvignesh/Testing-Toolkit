@@ -480,11 +480,16 @@ export function AppStateProvider({
           if (!active.job_id) break;
           const current = Number(active.progress?.current ?? 0);
           const total = Number(active.progress?.total ?? 0);
-          setKbMessage(
-            total > 0
-              ? `Project context ${current}/${total}`
-              : "Generating project context..."
-          );
+          const stage = String(active.progress?.stage ?? "");
+          if (stage === "waiting-for-index") {
+            setKbMessage("Context: waiting for KB index...");
+          } else {
+            setKbMessage(
+              total > 0
+                ? `Project context ${current}/${total}`
+                : "Generating project context..."
+            );
+          }
           polls++;
           if (polls >= MAX_CONTEXT_POLLS) {
             // Extreme edge: 30 min elapsed. Server-side gen continues; next
