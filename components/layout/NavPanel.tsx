@@ -61,8 +61,9 @@ export function NavPanel() {
         boards: results,
         settings,
       });
-      pushLog("SUCCESS", `Exported ${boards.length} board(s) to Excel.`);
-      showToast(`Exported ${boards.length} board(s) to Excel`);
+      const projName = displayName(currentProject);
+      pushLog("SUCCESS", `Exported ${boards.length} board(s) from ${projName} to Excel.`);
+      showToast(`Exported ${boards.length} board(s) from ${projName} to Excel`);
     } catch (e) {
       pushLog("ERROR", `Export failed: ${(e as Error).message}`);
     } finally {
@@ -127,14 +128,17 @@ export function NavPanel() {
 
       setExportAllProjectsProgress("Building workbook...");
       await exportAllProjects({ projects: allProjectData, settings });
-      const skipped = totalBoards - allProjectData.reduce((s, p) => s + p.boards.length, 0);
+      const exportedBoards = allProjectData.reduce((s, p) => s + p.boards.length, 0);
+      const skipped = totalBoards - exportedBoards;
       const msg = skipped > 0
-        ? `Exported ${allProjectData.length} project(s) to Excel (${skipped} board(s) skipped due to timeout).`
-        : `Exported ${allProjectData.length} project(s) to Excel.`;
+        ? `Exported ${exportedBoards} board(s) from ${allProjectData.length} project(s) to Excel (${skipped} board(s) skipped).`
+        : `Exported ${exportedBoards} board(s) from ${allProjectData.length} project(s) to Excel.`;
       pushLog("SUCCESS", msg);
       showToast(msg);
     } catch (e) {
-      pushLog("ERROR", `Export all projects failed: ${(e as Error).message}`);
+      const msg = (e as Error).message || String(e);
+      pushLog("ERROR", `Export all projects failed: ${msg}`);
+      showToast(`Export failed: ${msg}`);
     } finally {
       setExportingAllProjects(false);
       setExportAllProjectsProgress("");
@@ -169,10 +173,10 @@ export function NavPanel() {
         {/* ── Projects ───────────────────────────────────────────── */}
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center justify-between px-1 pb-1.5">
-            <span className="tt-section-header">Projects</span>
-            <div className="flex items-center gap-1">
+            <span className="tt-section-header shrink-0">Projects</span>
+            <div className="flex min-w-0 items-center gap-1">
               <button
-                className="tt-btn-ghost flex items-center justify-center !p-0 gap-1"
+                className="tt-btn-ghost flex min-w-0 items-center justify-center !p-0 gap-1"
                 style={{ height: 20, minWidth: 20, paddingInline: exportAllProjectsProgress ? 6 : 0 }}
                 onClick={() => void onExportAllProjects()}
                 disabled={exportingAllProjects || projects.length === 0}
@@ -180,18 +184,18 @@ export function NavPanel() {
                 aria-label="Export all projects to Excel workbook"
               >
                 {exportingAllProjects ? (
-                  <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                  <RefreshCw className="h-2.5 w-2.5 shrink-0 animate-spin" />
                 ) : (
-                  <Download className="h-2.5 w-2.5" />
+                  <Download className="h-2.5 w-2.5 shrink-0" />
                 )}
                 {exportAllProjectsProgress && (
-                  <span className="text-[9px] whitespace-nowrap" style={{ color: "var(--tt-text-muted)" }}>
+                  <span className="truncate text-[9px]" style={{ color: "var(--tt-text-muted)", maxWidth: "8rem" }}>
                     {exportAllProjectsProgress}
                   </span>
                 )}
               </button>
               <button
-                className="tt-btn-ghost !px-1.5 !py-0.5 !text-[10px] !gap-1"
+                className="tt-btn-ghost shrink-0 !px-1.5 !py-0.5 !text-[10px] !gap-1"
                 onClick={reloadProjects}
                 title="Refresh project list"
               >
@@ -246,10 +250,10 @@ export function NavPanel() {
         {/* ── Boards ─────────────────────────────────────────────── */}
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center justify-between px-1 pb-1.5">
-            <span className="tt-section-header">Boards</span>
-            <div className="flex items-center gap-1">
+            <span className="tt-section-header shrink-0">Boards</span>
+            <div className="flex min-w-0 items-center gap-1">
               <button
-                className="tt-btn-ghost flex items-center justify-center !p-0 gap-1"
+                className="tt-btn-ghost flex min-w-0 items-center justify-center !p-0 gap-1"
                 style={{ height: 20, minWidth: 20, paddingInline: exportAllProgress ? 6 : 0 }}
                 onClick={() => void onExportAllBoards()}
                 disabled={exportingAll || !currentProject || boards.length === 0}
@@ -257,18 +261,18 @@ export function NavPanel() {
                 aria-label="Export all boards to Excel workbook"
               >
                 {exportingAll ? (
-                  <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                  <RefreshCw className="h-2.5 w-2.5 shrink-0 animate-spin" />
                 ) : (
-                  <Download className="h-2.5 w-2.5" />
+                  <Download className="h-2.5 w-2.5 shrink-0" />
                 )}
                 {exportAllProgress && (
-                  <span className="text-[9px] whitespace-nowrap" style={{ color: "var(--tt-text-muted)" }}>
+                  <span className="truncate text-[9px]" style={{ color: "var(--tt-text-muted)", maxWidth: "8rem" }}>
                     {exportAllProgress}
                   </span>
                 )}
               </button>
               <button
-                className="tt-btn-ghost !px-1.5 !py-0.5 !text-[10px] !gap-1"
+                className="tt-btn-ghost shrink-0 !px-1.5 !py-0.5 !text-[10px] !gap-1"
                 onClick={() => reloadBoards()}
                 title="Refresh board list"
               >
@@ -358,13 +362,13 @@ export function NavPanel() {
             onClick={toggleTheme}
             label="Theme"
           />
-          <NavLabelBtn
-            title="Check for updates"
-            disabled={updateBusy}
-            onClick={() => void onUpdateClick()}
-            label={updateBusy ? "Checking..." : "Update"}
-          />
-          <div className="col-span-full">
+          <div className="col-span-full flex gap-1">
+            <NavLabelBtn
+              title="Check for updates"
+              disabled={updateBusy}
+              onClick={() => void onUpdateClick()}
+              label={updateBusy ? "Checking..." : "Check for updates"}
+            />
             <NavLabelBtn
               title="Collapse Navigation Bar"
               onClick={() => setNavVisible(false)}

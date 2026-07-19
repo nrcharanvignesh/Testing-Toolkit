@@ -1507,6 +1507,18 @@ export const agent = {
     );
   },
 
+  async uploadArtifact(blob: Blob, filename: string, project: string): Promise<{ ok: boolean; path: string }> {
+    const form = new FormData();
+    form.append("file", blob, filename);
+    form.append("project", project);
+    const res = await fetch(`${AGENT_URL}/artifacts/upload`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+    return res.json();
+  },
+
   // -- Generation (async job) --
   /** Start a generation run and poll to completion. */
   async generate(

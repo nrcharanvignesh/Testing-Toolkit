@@ -5,9 +5,11 @@ two kinds of generated files the toolkit produces for a project:
 
   * "testcases" — reviewer Excel workbooks in projects/<p>/generated/
   * "packets"   — combined PDF packets in outputs/<p>/packets/
+  * "exports"   — Excel exports from the web UI saved for offline access
 
-    GET /artifacts/{project}        list artifacts (newest first)
-    GET /artifacts/download?path=   stream a single artifact
+    GET  /artifacts/{project}        list artifacts (newest first)
+    GET  /artifacts/download?path=   stream a single artifact
+    POST /artifacts/upload           save a file to the exports folder
 
 Downloads are constrained to the toolkit workspace so a crafted ?path= cannot
 escape and read arbitrary files off the user's machine.
@@ -19,7 +21,7 @@ import mimetypes
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import FileResponse
 
 from core.trace import trace
@@ -79,6 +81,30 @@ async def delete_artifact(path: str = Query(...)) -> dict[str, Any]:
     return {"ok": True, "deleted": str(target)}
 
 
+@router.post("/upload")
+@trace
+async def upload_artifact(
+    file: UploadFile = File(...),
+    project: str = Form(""),
+) -> dict[str, Any]:
+    """Save an uploaded file (Excel export) to the workspace exports folder."""
+    from core.app_config import OUTPUTS_DIR
+    from core.project_store import _safe_name
+
+    folder_name = _safe_name(project) if project else "_general"
+    dest_dir = OUTPUTS_DIR / folder_name / "exports"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = file.filename or "export.xlsx"
+    # Sanitize filename
+    safe_filename = Path(filename).name.replace("/", "_").replace("\\", "_")
+    dest = dest_dir / safe_filename
+
+    content = await file.read()
+    dest.write_bytes(content)
+    return {"ok": True, "path": str(dest), "size": len(content)}
+
+
 @router.get("/{project}")
 @trace
 async def list_artifacts(project: str) -> list[dict[str, Any]]:
@@ -99,6 +125,12 @@ async def list_artifacts(project: str) -> list[dict[str, Any]]:
         for f in packets.rglob("*.pdf"):
             if f.is_file() and not f.name.startswith("_"):
                 out.append(_describe(f, "packets"))
+
+    exports = OUTPUTS_DIR / _safe_name(project) / "exports"
+    if exports.exists():
+        for f in exports.iterdir():
+            if f.is_file() and not f.name.startswith("."):
+                out.append(_describe(f, "exports"))
 
     out.sort(key=lambda r: r["modified"], reverse=True)
     return out

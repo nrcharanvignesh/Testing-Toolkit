@@ -296,7 +296,7 @@ export function BoardGrid() {
                     setExportProgress(`${phase}: ${done}/${total}`);
                   },
                 }).then(() => {
-                  showToast(`Exported ${boardName} to Excel`);
+                  showToast(`Exported 1 board from ${projectName} to Excel`);
                 }).finally(() => {
                   setExporting(false);
                   setExportProgress("");
