@@ -749,35 +749,42 @@ export async function exportAllBoards(opts: ExportAllBoardsOpts): Promise<void> 
   const summaryWs = wb.addWorksheet("Summary");
   const usedNames = new Set<string>(["Summary"]);
   const index: Array<{ sheetName: string; boardName: string; rowCount: number }> = [];
-
   const ignored: Array<{ boardName: string }> = [];
 
   opts.boards.forEach((b, idx) => {
-    const rawName = b.board.team_name || b.board.name || b.board.label;
-    const shortName = _stripProjectPrefix(rawName || `Board ${idx + 1}`, opts.projectName);
-    const rows = b.rows ?? [];
-    if (rows.length === 0) {
-      ignored.push({ boardName: shortName });
-      return;
-    }
-    const sheetName = _safeSheetName(shortName, usedNames);
-    usedNames.add(sheetName);
     try {
-      buildBoardSheet(wb, sheetName, {
-        projectName: opts.projectName,
-        boardName: rawName,
-        rows,
-        kpiCounts: {},
-        filters: { type: "All", assignee: "All", sprint: "All", column: "All", search: "" },
-        settings: opts.settings,
-      });
+      const rawName = b.board?.team_name || b.board?.name || b.board?.label || "";
+      const shortName = _stripProjectPrefix(rawName || `Board ${idx + 1}`, opts.projectName);
+      const rows = b.rows ?? [];
+      if (rows.length === 0) {
+        ignored.push({ boardName: shortName });
+        return;
+      }
+      const sheetName = _safeSheetName(shortName, usedNames);
+      usedNames.add(sheetName);
+      try {
+        buildBoardSheet(wb, sheetName, {
+          projectName: opts.projectName,
+          boardName: rawName,
+          rows,
+          kpiCounts: {},
+          filters: { type: "All", assignee: "All", sprint: "All", column: "All", search: "" },
+          settings: opts.settings,
+        });
+      } catch {
+        // Sheet build failed — already added, move on
+      }
+      index.push({ sheetName, boardName: shortName, rowCount: rows.length });
     } catch {
-      // Board failed to render — sheet already created, move on
+      ignored.push({ boardName: `Board ${idx + 1}` });
     }
-    index.push({ sheetName, boardName: shortName, rowCount: rows.length });
   });
 
-  _populateSummary(summaryWs, opts.projectName, index.map(i => ({ ...i, project: opts.projectName })), ignored);
+  try {
+    _populateSummary(summaryWs, opts.projectName, index.map(i => ({ ...i, project: opts.projectName })), ignored);
+  } catch {
+    summaryWs.getRow(1).getCell(2).value = `${opts.projectName} - Export Summary`;
+  }
 
   const buf = await wb.xlsx.writeBuffer();
   downloadBuffer(buf, `${opts.projectName}_AllBoards_${fileTimestamp()}.xlsx`, opts.projectName);
@@ -803,38 +810,47 @@ export async function exportAllProjects(opts: ExportAllProjectsOpts): Promise<vo
   const summaryWs = wb.addWorksheet("Summary");
   const usedNames = new Set<string>(["Summary"]);
   const index: Array<{ sheetName: string; project: string; boardName: string; rowCount: number }> = [];
-
   const ignored: Array<{ boardName: string; project?: string }> = [];
 
   for (const project of opts.projects) {
     for (let idx = 0; idx < project.boards.length; idx++) {
-      const b = project.boards[idx];
-      const rawBoardName = b.board.team_name || b.board.name || b.board.label || `Board ${idx + 1}`;
-      const shortBoard = _stripProjectPrefix(rawBoardName, project.projectName);
-      const rows = b.rows ?? [];
-      if (rows.length === 0) {
-        ignored.push({ boardName: shortBoard, project: project.projectName });
-        continue;
-      }
-      const sheetLabel = _safeSheetName(shortBoard, usedNames);
-      usedNames.add(sheetLabel);
       try {
-        buildBoardSheet(wb, sheetLabel, {
-          projectName: project.projectName,
-          boardName: rawBoardName,
-          rows,
-          kpiCounts: {},
-          filters: { type: "All", assignee: "All", sprint: "All", column: "All", search: "" },
-          settings: opts.settings,
-        });
+        const b = project.boards[idx];
+        const rawBoardName = b.board?.team_name || b.board?.name || b.board?.label || `Board ${idx + 1}`;
+        const shortBoard = _stripProjectPrefix(rawBoardName, project.projectName);
+        const rows = b.rows ?? [];
+        if (rows.length === 0) {
+          ignored.push({ boardName: shortBoard, project: project.projectName });
+          continue;
+        }
+        const sheetLabel = _safeSheetName(shortBoard, usedNames);
+        usedNames.add(sheetLabel);
+        try {
+          buildBoardSheet(wb, sheetLabel, {
+            projectName: project.projectName,
+            boardName: rawBoardName,
+            rows,
+            kpiCounts: {},
+            filters: { type: "All", assignee: "All", sprint: "All", column: "All", search: "" },
+            settings: opts.settings,
+          });
+        } catch {
+          // Sheet creation failed — already added to workbook, move on
+        }
+        index.push({ sheetName: sheetLabel, project: project.projectName, boardName: shortBoard, rowCount: rows.length });
       } catch {
-        // Board failed to render — sheet was already created by buildBoardSheet
+        // Entire board entry malformed — skip silently
+        ignored.push({ boardName: `Board ${idx + 1}`, project: project.projectName });
       }
-      index.push({ sheetName: sheetLabel, project: project.projectName, boardName: shortBoard, rowCount: rows.length });
     }
   }
 
-  _populateSummary(summaryWs, null, index, ignored);
+  try {
+    _populateSummary(summaryWs, null, index, ignored);
+  } catch {
+    // Summary failed — at minimum write the title
+    summaryWs.getRow(1).getCell(2).value = "All Projects - Export Summary";
+  }
 
   const buf = await wb.xlsx.writeBuffer();
   downloadBuffer(buf, `AllProjects_${fileTimestamp()}.xlsx`, "AllProjects");
