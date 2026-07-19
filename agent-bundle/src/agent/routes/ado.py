@@ -110,6 +110,7 @@ class WorkItemsRequest(BaseModel):
     board_name: str
     team_id: str
     team_name: str
+    scope_to_team_area: bool = True
 
 
 @router.post("/workitems")
@@ -126,7 +127,10 @@ async def list_work_items(req: WorkItemsRequest) -> dict[str, Any]:
         team_name=req.team_name,
     )
     try:
-        view = await load_board_view_async(org, req.project, board, cfg)
+        view = await load_board_view_async(
+            org, req.project, board, cfg,
+            scope_to_team_area=req.scope_to_team_area,
+        )
     except Exception as e:
         raise HTTPException(502, str(e))
 

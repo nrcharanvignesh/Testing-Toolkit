@@ -145,6 +145,7 @@ class WorkItemsRequest(BaseModel):
     board_name: str
     team_id: str = ""
     team_name: str = ""
+    scope_to_team_area: bool = True
 
 
 @router.post("/workitems")
@@ -179,6 +180,7 @@ async def list_work_items(req: WorkItemsRequest) -> dict[str, Any]:
             board_name=req.board_name,
             team_id=req.team_id,
             team_name=req.team_name,
+            scope_to_team_area=req.scope_to_team_area,
         )
     )
 

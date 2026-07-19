@@ -82,6 +82,7 @@ _GRID_FIELDS: Final[list[str]] = [
     "System.AssignedTo",
     "System.Tags",
     "System.IterationPath",
+    "System.AreaPath",
 ]
 
 
@@ -404,6 +405,7 @@ def _wit_types_from_columns(columns: list[BoardColumn]) -> list[str]:
 # ---------------------------------------------------------------------
 async def get_team_area_paths(
     org: str, project: str, team: Team, cfg: RuntimeConfig,
+    on_log: LogFn | None = None,
 ) -> list[str]:
     url = (
         f"https://dev.azure.com/{org}/{project}/{team.id}"
@@ -413,7 +415,15 @@ async def get_team_area_paths(
         async with _client(cfg) as client:
             data = await _get_json(client, url, cfg)
     except Exception as e:
-        _log.debug("get_team_area_paths failed for team %r: %s", cfg, e)
+        _log.warning(
+            "get_team_area_paths failed for team %r in %s/%s: %s",
+            team.name, org, project, e,
+        )
+        if on_log:
+            on_log(
+                f"[WARN] Area-path fetch failed for team '{team.name}': {e!r} "
+                f"-- query will run WITHOUT area-path filter (broader scope)"
+            )
         return []
     out: list[str] = []
     for v in data.get("values", []) or []:
@@ -446,16 +456,31 @@ def _build_wiql(
     return q
 
 
+_WIQL_TOP: Final[int] = 2000
+
+
 async def _run_wiql(
     client: httpx.AsyncClient, org: str, project: str,
     query: str, cfg: RuntimeConfig,
+    on_log: LogFn | None = None,
 ) -> list[int]:
     url = (
         f"https://dev.azure.com/{org}/{project}/_apis/wit/wiql"
-        f"?api-version={API_VER_WIQL}&$top=2000"
+        f"?api-version={API_VER_WIQL}&$top={_WIQL_TOP}"
     )
     data = await _post_json(client, url, {"query": query}, cfg, label="WIQL")
-    return [int(it["id"]) for it in data.get("workItems", []) or []]
+    ids = [int(it["id"]) for it in data.get("workItems", []) or []]
+    if len(ids) == _WIQL_TOP:
+        _log.warning(
+            "WIQL returned exactly %d items for project=%r -- results may be "
+            "truncated (ADO $top limit hit)", _WIQL_TOP, project,
+        )
+        if on_log:
+            on_log(
+                f"[WARN] WIQL hit ${_WIQL_TOP} cap -- some work items may be "
+                f"missing from this board"
+            )
+    return ids
 
 
 def _parse_row(
@@ -517,17 +542,26 @@ async def load_board_view_async(
     area_paths: list[str] = []
     if scope_to_team_area:
         team = Team(id=board.team_id, name=board.team_name)
-        area_paths = await get_team_area_paths(org, project, team, cfg)
+        area_paths = await get_team_area_paths(
+            org, project, team, cfg, on_log=on_log,
+        )
     query = _build_wiql(project, wit_types, area_paths)
     if on_log:
         on_log(
             f"[INFO] Board '{board.label}': {len(columns)} columns, "
-            f"types={wit_types}"
+            f"types={wit_types}, area_scope={'ON' if scope_to_team_area else 'OFF'}"
+            f"{', paths=' + repr(area_paths) if area_paths else ''}"
         )
     async with _client(cfg) as client:
-        ids = await _run_wiql(client, org, project, query, cfg)
+        ids = await _run_wiql(client, org, project, query, cfg, on_log=on_log)
         if on_log:
             on_log(f"[INFO] WIQL matched {len(ids)} work item(s)")
+        if not ids and on_log:
+            on_log(
+                f"[WARN] 0 work items for board '{board.label}' -- "
+                f"wit_types={wit_types}, area_paths={area_paths or '(none)'}, "
+                f"scope_to_team_area={scope_to_team_area}"
+            )
         rows = await _fetch_rows(client, org, project, ids, cfg) if ids else []
         if rows:
             counts = await _fetch_test_case_counts(client, org, project, ids, cfg)
@@ -839,20 +873,29 @@ async def load_board_view_streaming(
     area_paths: list[str] = []
     if scope_to_team_area:
         team = Team(id=board.team_id, name=board.team_name)
-        area_paths = await get_team_area_paths(org, project, team, cfg)
+        area_paths = await get_team_area_paths(
+            org, project, team, cfg, on_log=on_log,
+        )
     query = _build_wiql(project, wit_types, area_paths)
     if on_log:
         on_log(
             f"[INFO] Board '{board.label}': {len(columns)} columns, "
-            f"types={wit_types}"
+            f"types={wit_types}, area_scope={'ON' if scope_to_team_area else 'OFF'}"
+            f"{', paths=' + repr(area_paths) if area_paths else ''}"
         )
     # Emit columns first so UI can render the skeleton
     if on_batch:
         on_batch([], -1, 0)  # -1 signals "columns ready, rows incoming"
     async with _client(cfg) as client:
-        ids = await _run_wiql(client, org, project, query, cfg)
+        ids = await _run_wiql(client, org, project, query, cfg, on_log=on_log)
         if on_log:
             on_log(f"[INFO] WIQL matched {len(ids)} work item(s)")
+        if not ids and on_log:
+            on_log(
+                f"[WARN] 0 work items for board '{board.label}' -- "
+                f"wit_types={wit_types}, area_paths={area_paths or '(none)'}, "
+                f"scope_to_team_area={scope_to_team_area}"
+            )
         # Fetch linked test-case counts BEFORE streaming the rows so every
         # emitted batch already carries the count. Previously the counts were
         # computed after all batches were streamed, but the streamed rows were

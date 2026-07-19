@@ -939,7 +939,7 @@ export const agent = {
     );
   },
 
-  async boardView(project: string, board: Board, opts?: { timeoutMs?: number }): Promise<BoardView> {
+  async boardView(project: string, board: Board, opts?: { timeoutMs?: number; scopeToTeamArea?: boolean }): Promise<BoardView> {
     const raw = await agentFetch<RawWorkItemsResponse>("/sources/workitems", {
       method: "POST",
       body: JSON.stringify({
@@ -948,6 +948,7 @@ export const agent = {
         board_name: board.name,
         team_id: board.team_id,
         team_name: board.team_name,
+        scope_to_team_area: opts?.scopeToTeamArea ?? true,
       }),
       timeoutMs: opts?.timeoutMs,
     });
