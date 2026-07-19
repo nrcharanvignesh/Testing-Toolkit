@@ -358,13 +358,13 @@ export function NavPanel() {
             onClick={toggleTheme}
             label="Theme"
           />
-          <div className="col-span-full flex gap-1">
-            <NavLabelBtn
-              title="Check for updates"
-              disabled={updateBusy}
-              onClick={() => void onUpdateClick()}
-              label={updateBusy ? "Checking..." : "Check for updates"}
-            />
+          <NavLabelBtn
+            title="Check for updates"
+            disabled={updateBusy}
+            onClick={() => void onUpdateClick()}
+            label={updateBusy ? "Checking..." : "Update"}
+          />
+          <div className="col-span-full">
             <NavLabelBtn
               title="Collapse Navigation Bar"
               onClick={() => setNavVisible(false)}
