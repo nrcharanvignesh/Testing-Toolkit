@@ -56,6 +56,13 @@ export function AppShell() {
     void checkForAgentUpdate();
   }, [status, checkForAgentUpdate]);
 
+  // Re-check for updates every 10 minutes while connected.
+  useEffect(() => {
+    if (status !== "connected") return;
+    const timer = window.setInterval(() => void checkForAgentUpdate(), 10 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [status, checkForAgentUpdate]);
+
   // (A) Minimum-version handshake — the hard guarantee. The web app knows the
   // lowest agent version it works with (REQUIRED_AGENT_VERSION). The moment a
   // connected agent reports an older version, BLOCK the whole app immediately
