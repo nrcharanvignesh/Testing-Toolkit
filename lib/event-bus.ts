@@ -18,7 +18,7 @@ interface TraceEvent {
   client_ts: number;
 }
 
-let buffer: TraceEvent[] = [];
+const buffer: TraceEvent[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 function flush(): void {

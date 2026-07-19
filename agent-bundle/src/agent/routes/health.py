@@ -23,7 +23,7 @@ _PROC = None
 # The app's own data footprint (workspace dir size) is expensive to walk, so it
 # is cached and recomputed at most every _DIR_TTL seconds.
 _DIR_CACHE: dict = {"value": None, "at": 0.0}
-_DIR_TTL = 30.0
+_DIR_TTL = 60.0
 
 
 def _proc():

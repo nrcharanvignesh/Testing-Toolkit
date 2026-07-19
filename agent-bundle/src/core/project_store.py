@@ -322,11 +322,21 @@ def _maybe_extract_context(
         from core.model_router import Task, route
         model = route(Task.MAP_EXTRACT)
 
+    # Resolve the frontier model for oversized-document escalation
+    large_model = ""
+    try:
+        from core.app_config import MODEL_LARGE
+        if MODEL_LARGE and MODEL_LARGE != model:
+            large_model = MODEL_LARGE
+    except Exception:
+        pass
+
     previous = load_context_summary(p.context_summary_path)
     context = asyncio.run(build_context_incremental_async(
         kb_index=index, client=llm_client, model=model,
         maps_dir=p.context_maps_dir, kb_fingerprint=fingerprint,
         on_log=on_log, on_progress=on_sub_progress, force=force,
+        large_model=large_model,
     ))
     if previous is not None:
         context.enabled = previous.enabled

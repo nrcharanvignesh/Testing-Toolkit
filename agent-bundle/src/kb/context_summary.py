@@ -16,10 +16,14 @@ SCHEMA_VERSION: Final[int] = 3
 _MAX_WINDOW_CHARS: Final[int] = 36000
 _WINDOW_OVERLAP_CHARS: Final[int] = 2000
 _MAX_TOKENS: Final[int] = 8192
-_MAX_CONCURRENCY: Final[int] = 3  # reduced for Sonnet tier; avoids rate-limit cascades
-_MAX_WINDOW_CONCURRENCY: Final[int] = 4
+_MAX_CONCURRENCY: Final[int] = 4
+_MAX_WINDOW_CONCURRENCY: Final[int] = 5
 _MAX_DOC_RETRIES: Final[int] = 3
-_DOC_TIMEOUT_SEC: Final[float] = 120.0  # per-document hard cap
+_DOC_TIMEOUT_SEC: Final[float] = 120.0  # per-document base cap (scaled by windows)
+# Documents exceeding this character count are routed to the frontier model
+# instead of the medium tier, because they produce more windows whose JSON
+# merge complexity exceeds Sonnet's reliable extraction depth.
+_LARGE_DOC_CHARS: Final[int] = 100_000
 CATEGORIES: Final[tuple[str, ...]] = (
     "actors",
     "entities",
@@ -540,11 +544,19 @@ async def _process_doc_retries(
                 raise _DocRetryExhausted(exc) from exc
 
 
+def _timeout_for_doc(text: str) -> float:
+    """Scale the per-document timeout by the number of windows it produces.
+    A single-window doc gets the base 120s; a 10-window doc gets 360s."""
+    n_windows = max(1, len(_windows(text)))
+    return min(_DOC_TIMEOUT_SEC * max(1.0, n_windows * 0.5), 600.0)
+
+
 async def build_context_incremental_async(
     kb_index: Any, client: Any, model: str, maps_dir: Path,
     kb_fingerprint: str = "", on_log: LogFn | None = None,
     on_progress: Callable[[str, int, int], None] | None = None,
     force: bool = False,
+    large_model: str = "",
 ) -> ProjectContext:
     log = on_log or (lambda _message: None)
     documents = _document_groups(kb_index)
@@ -580,23 +592,32 @@ async def build_context_incremental_async(
                 log(f"[DEBUG] Context map cache hit: {source}")
                 await report_progress(source)
                 return
-        log(f"[INFO] Context map queued {position}/{len(wanted)}: {source}")
+        # Route oversized documents to the frontier model for better extraction
+        effective_model = model
+        if large_model and len(text) > _LARGE_DOC_CHARS:
+            effective_model = large_model
+            log(
+                f"[INFO] Document '{source}' is {len(text):,} chars "
+                f"(>{_LARGE_DOC_CHARS:,}); escalating to frontier model."
+            )
+        doc_timeout = _timeout_for_doc(text)
+        log(f"[INFO] Context map queued {position}/{len(wanted)}: {source} (timeout={doc_timeout:.0f}s)")
         last_error: Exception | None = None
         try:
             await asyncio.wait_for(
                 _process_doc_retries(
-                    signature, source, text, semaphore, client, model,
+                    signature, source, text, semaphore, client, effective_model,
                     maps_dir, completed, log,
                 ),
-                timeout=_DOC_TIMEOUT_SEC,
+                timeout=doc_timeout,
             )
         except asyncio.TimeoutError:
             last_error = TimeoutError(
-                f"document exceeded {_DOC_TIMEOUT_SEC:.0f}s hard cap"
+                f"document exceeded {doc_timeout:.0f}s hard cap"
             )
             log(
                 f"[ERROR] Context map timed out for {source} "
-                f"after {_DOC_TIMEOUT_SEC:.0f}s"
+                f"after {doc_timeout:.0f}s"
             )
         except _DocRetryExhausted as exc:
             last_error = exc.cause
@@ -635,13 +656,16 @@ async def build_context_incremental_async(
 
         async def retry_one(sig: str) -> None:
             src, txt = wanted[sig]
+            # Retries always escalate to frontier model when available
+            retry_model = large_model or model
+            retry_timeout = _timeout_for_doc(txt) * 1.5  # 50% extra headroom
             try:
                 await asyncio.wait_for(
                     _process_doc_retries(
-                        sig, src, txt, semaphore, client, model,
+                        sig, src, txt, semaphore, client, retry_model,
                         maps_dir, completed, log,
                     ),
-                    timeout=_DOC_TIMEOUT_SEC,
+                    timeout=retry_timeout,
                 )
                 log(f"[SUCCESS] Context retry succeeded: {src}")
             except (asyncio.TimeoutError, _DocRetryExhausted) as exc:

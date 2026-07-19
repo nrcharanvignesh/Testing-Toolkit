@@ -957,6 +957,15 @@ async def regenerate_context(project: str) -> dict:
         h.update((getattr(c, "text", "") or "").encode("utf-8", errors="replace"))
     fingerprint = h.hexdigest()[:16]
 
+    # Resolve frontier model for oversized-document escalation
+    large_model = ""
+    try:
+        from core.app_config import MODEL_LARGE
+        if MODEL_LARGE and MODEL_LARGE != primary:
+            large_model = MODEL_LARGE
+    except Exception:
+        pass
+
     paths = ps.ensure_project(project)
     ctx = await build_context_incremental_async(
         kb_index=index,
@@ -965,6 +974,7 @@ async def regenerate_context(project: str) -> dict:
         maps_dir=paths.context_maps_dir,
         kb_fingerprint=fingerprint,
         force=True,
+        large_model=large_model,
     )
     previous = await asyncio.to_thread(ps.read_context_summary, project)
     if ctx.mapped_documents == 0 and previous is not None and not previous.is_empty():

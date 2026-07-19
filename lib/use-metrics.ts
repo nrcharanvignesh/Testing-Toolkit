@@ -12,7 +12,7 @@ import { agent, type MetricsResponse } from "./agent-client";
  * status bar simply omits the metrics on older agents instead of spamming
  * requests.
  */
-export function useMetrics(enabled: boolean, intervalMs = 3000) {
+export function useMetrics(enabled: boolean, intervalMs = 5000) {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
 
   useEffect(() => {

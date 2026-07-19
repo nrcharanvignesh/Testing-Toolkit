@@ -39,6 +39,7 @@ vi.mock("react", () => ({
   },
   useCallback: (fn: unknown, _deps: unknown[]) => fn,
   useRef: (initial: unknown) => ({ current: initial }),
+  useEffect: (fn: () => void) => { fn(); },
 }));
 
 // Import the mocked agent after vi.mock declarations

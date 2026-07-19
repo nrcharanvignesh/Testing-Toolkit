@@ -15,7 +15,7 @@ import { useAppUpdate } from "@/lib/use-app-update";
 import { SourceLogo } from "@/components/ui/source-logo";
 import { projectSourceType } from "@/lib/board-utils";
 
-export function NavPanel() {
+export function NavPanel({ hidden }: { hidden?: boolean } = {}) {
   const {
     projects,
     currentProject,
@@ -108,10 +108,14 @@ export function NavPanel() {
           setExportAllProjectsProgress(`${fetchedBoards}/${totalBoards}: ${projName} / ${boardName}`);
           try {
             const view = await agent.boardView(proj, b, { timeoutMs: 120_000 });
-            boardResults.push({ board: b, rows: view.rows ?? [] });
+            const rows = (view.rows ?? []).filter((r) => r && r.wi_id != null);
+            if (rows.length > 0) {
+              boardResults.push({ board: b, rows });
+            } else {
+              pushLog("WARN", `${boardName} in ${projName} returned 0 valid rows — skipped.`);
+            }
           } catch {
             pushLog("WARN", `Skipped ${boardName} in ${projName} (fetch failed)`);
-            boardResults.push({ board: b, rows: [] });
           }
           // 3s rest between requests — gives the agent time to release resources
           if (fetchedBoards < totalBoards) {
@@ -161,7 +165,7 @@ export function NavPanel() {
   }
 
   return (
-    <>
+    <div style={hidden ? { display: "none" } : { display: "contents" }}>
       <div
         className="tt-rail flex shrink-0 flex-col gap-3 p-2"
         style={{ width }}
@@ -383,7 +387,7 @@ export function NavPanel() {
         onCommit={(v) => setSizePref("navWidth", v)}
         ariaLabel="Resize navigator"
       />
-    </>
+    </div>
   );
 }
 

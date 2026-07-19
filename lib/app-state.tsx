@@ -366,7 +366,7 @@ export function AppStateProvider({
             }
             setBoardView({ columns: cols, rows: [...rows] });
           }, ctrl.signal);
-        } catch (e) {
+        } catch {
           if (ctrl.signal.aborted) return;
           view = await agent.boardView(project, board);
         }

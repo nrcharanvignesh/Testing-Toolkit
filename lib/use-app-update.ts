@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { agent, type UpdateStatus } from "./agent-client";
-import { isAgentOutdated } from "./agent-version";
 
 type Pushed = (
   level: "INFO" | "SUCCESS" | "WARN" | "ERROR",
@@ -38,7 +37,7 @@ export function useAppUpdate(pushLog?: Pushed): {
   const [checking, setChecking] = useState(false);
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const pushLogRef = useRef(pushLog);
-  pushLogRef.current = pushLog;
+  useEffect(() => { pushLogRef.current = pushLog; }, [pushLog]);
 
   const log: Pushed = useCallback(
     (level, text) => pushLogRef.current?.(level, text),

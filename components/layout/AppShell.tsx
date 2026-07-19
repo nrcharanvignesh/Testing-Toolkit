@@ -104,7 +104,7 @@ export function AppShell() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {navVisible ? <NavPanel /> : <ActivityBar />}
+        {navVisible ? <NavPanel /> : <><NavPanel hidden /><ActivityBar /></>}
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* Board grid fills the space; the action bar sits BELOW it (desktop
               parity — main_window stacks the grid, then the action row, then

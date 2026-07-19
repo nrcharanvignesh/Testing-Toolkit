@@ -761,7 +761,7 @@ export async function exportAllBoards(opts: ExportAllBoardsOpts): Promise<void> 
     try {
       const rawName = b.board?.team_name || b.board?.name || b.board?.label || "";
       const shortName = _stripProjectPrefix(rawName || `Board ${idx + 1}`, opts.projectName);
-      const rows = b.rows ?? [];
+      const rows = (b.rows ?? []).filter((r) => r && r.wi_id != null);
       if (rows.length === 0) {
         ignored.push({ boardName: shortName });
         return;
@@ -778,7 +778,7 @@ export async function exportAllBoards(opts: ExportAllBoardsOpts): Promise<void> 
           settings: opts.settings,
         });
       } catch {
-        // Sheet build failed — already added, move on
+        ignored.push({ boardName: `${shortName} (build error)` });
       }
       index.push({ sheetName, boardName: shortName, rowCount: rows.length });
     } catch {
@@ -821,17 +821,16 @@ export async function exportAllProjects(opts: ExportAllProjectsOpts): Promise<vo
   const ignored: Array<{ boardName: string; project?: string }> = [];
 
   for (const project of opts.projects) {
-    // Same forEach logic as exportAllBoards, per project
     project.boards.forEach((b, idx) => {
       try {
         const rawName = b.board?.team_name || b.board?.name || b.board?.label || "";
         const shortName = _stripProjectPrefix(rawName || `Board ${idx + 1}`, project.projectName);
-        const rows = b.rows ?? [];
+        const rows = (b.rows ?? []).filter((r) => r && r.wi_id != null);
         if (rows.length === 0) {
           ignored.push({ boardName: shortName, project: project.projectName });
           return;
         }
-        const sheetName = _safeSheetName(shortName, usedNames);
+        const sheetName = _safeSheetName(shortName, usedNames, project.projectName);
         usedNames.add(sheetName);
         try {
           buildBoardSheet(wb, sheetName, {
@@ -843,7 +842,7 @@ export async function exportAllProjects(opts: ExportAllProjectsOpts): Promise<vo
             settings: opts.settings,
           });
         } catch {
-          // Sheet build failed — already added, move on
+          ignored.push({ boardName: `${shortName} (build error)`, project: project.projectName });
         }
         index.push({ sheetName, project: project.projectName, boardName: shortName, rowCount: rows.length });
       } catch {
@@ -876,10 +875,15 @@ function _stripProjectPrefix(boardName: string, projectName: string): string {
   return name || boardName;
 }
 
-function _safeSheetName(raw: string, used: Set<string>): string {
+function _safeSheetName(raw: string, used: Set<string>, projectPrefix?: string): string {
   let name = raw.replace(_INVALID_SHEET_CHARS, "").trim().slice(0, 31);
   if (!name) name = "Sheet";
   if (used.has(name)) {
+    // Disambiguate with project prefix first (common in multi-project exports)
+    if (projectPrefix) {
+      const prefixed = `${projectPrefix.slice(0, 12)}-${name}`.slice(0, 31);
+      if (!used.has(prefixed)) return prefixed;
+    }
     let n = 2;
     const base = name.slice(0, 28);
     while (used.has(`${base} ${n}`)) n++;
@@ -945,6 +949,13 @@ function _populateSummary(
   // Set Col A to a fixed narrow width for the # column
   ws.getColumn(1).width = 5;
   ws.views = [{ state: "frozen", xSplit: 0, ySplit: 5, topLeftCell: "A6" }];
+  // Auto-filter on the header row for easy sorting/filtering
+  if (index.length > 0) {
+    ws.autoFilter = {
+      from: { row: 5, column: 1 },
+      to: { row: 5 + index.length, column: headers.length },
+    };
+  }
   autoFitColumns(ws);
   // Re-enforce Col A narrow width after autoFit
   ws.getColumn(1).width = 5;

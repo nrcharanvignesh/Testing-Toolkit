@@ -29,7 +29,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const inFlightRef = useRef(false);
   const statusRef = useRef(status);
   const failCountRef = useRef(0);
-  statusRef.current = status;
+  useEffect(() => { statusRef.current = status; }, [status]);
 
   // Require 3 consecutive failures before declaring offline. Prevents
   // the onboarding screen from flashing when the agent is simply slow
