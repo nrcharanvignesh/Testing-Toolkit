@@ -58,19 +58,13 @@ export function useAppUpdate(pushLog?: Pushed): {
             log("SUCCESS", `Patch v${result.version} applied. Reconnecting...`);
             setTimeout(() => window.location.reload(), 3000);
           } else {
-            log("WARN", `Patch failed: ${result.error}. Update required.`);
-            announceAgentUpdateRequired(next);
+            log("WARN", `Patch failed: ${result.error}`);
           }
         } catch {
-          log("WARN", "Patch apply failed. Update required.");
-          announceAgentUpdateRequired(next);
+          log("WARN", "Patch apply failed.");
         }
       } else if (next.update_available) {
-        log(
-          "WARN",
-          `Agent v${next.latest ?? "latest"} is required. Update needed.`
-        );
-        announceAgentUpdateRequired(next);
+        log("INFO", `Agent v${next.latest ?? "newer"} available (current: v${next.current}).`);
       } else if (next.reachable) {
         log("SUCCESS", `Agent v${next.current} is up to date.`);
       } else {
