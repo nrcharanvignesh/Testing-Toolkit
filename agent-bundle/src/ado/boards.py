@@ -651,7 +651,7 @@ async def _fetch_rows_streaming(
 # attribute name matches one of these hints (alnum-stripped, lowercased).
 # Covers "Tested By" (TestedBy-Forward), "Tests", shared-step "TestCase..",
 # and custom link types teams rename for test coverage.
-_TEST_REL_HINTS: Final[tuple[str, ...]] = ("testedby", "tests", "testcase")
+_TEST_REL_HINTS: Final[tuple[str, ...]] = ("testedby", "tests")
 # Link relations whose TARGETS we type-check as possible test cases -- many
 # teams model a test as a child/related work item instead of using a
 # TestedBy relation.
