@@ -1,24 +1,26 @@
 """
 automation/playwright_bridge.py
-CDP attach to the user's real Chrome/Edge browser for SSO preservation.
+Isolated Playwright Chromium session for E2E automation.
 
-Instead of ephemeral profiles (which lose SSO/MFA state), this module:
-1. Detects installed Chrome/Edge and user profiles.
-2. Launches the browser with --remote-debugging-port on the real profile.
-3. Connects Playwright via CDP so SSO cookies, extensions, MFA state persist.
-4. Handles singleton lock cleanup for profiles locked by crashed sessions.
+Uses Playwright's own bundled Chromium with a dedicated automation profile
+directory (~/.testing_toolkit/e2e_profile/). This guarantees:
+- Zero interference with the user's open Chrome/Edge windows.
+- Persistent cookies/login state across E2E runs (same profile reused).
+- No user-data-dir lock conflicts (automation browser is fully owned/killed).
+- No risk of killing the user's real browser processes.
 
-SECURITY: The user's real cookies/session are used intentionally for SSO.
-Video output dir is separate from the profile. Passwords never logged.
+The user's installed Chrome/Edge binary and profile directories are detected
+ONLY for informational purposes (BrowserProfile dataclass). The actual
+automation always runs on Playwright's bundled Chromium at its own path.
 """
 
 from __future__ import annotations
 
-import json
+import asyncio
+import logging
 import os
 import platform
 import shutil
-import socket
 import subprocess
 import time
 from contextlib import asynccontextmanager
@@ -31,12 +33,12 @@ try:
     _PLAYWRIGHT_AVAILABLE = True
 except ImportError:  # playwright not installed (optional dep)
     _PLAYWRIGHT_AVAILABLE = False
-    # Provide stubs so type annotations in function signatures resolve at
-    # import time without playwright present.
     Browser = object  # type: ignore[assignment,misc]
     BrowserContext = object  # type: ignore[assignment,misc]
     Page = object  # type: ignore[assignment,misc]
     async_playwright = None  # type: ignore[assignment]
+
+_log = logging.getLogger(__name__)
 
 
 def _require_playwright() -> None:
@@ -48,7 +50,7 @@ def _require_playwright() -> None:
 
 
 # -------------------------------------------------------------------
-# Browser profile detection
+# Browser profile detection (informational only -- not used for launch)
 # -------------------------------------------------------------------
 
 _SYSTEM = platform.system()
@@ -56,7 +58,7 @@ _SYSTEM = platform.system()
 
 @dataclass(slots=True)
 class BrowserProfile:
-    """A detected browser profile on the system."""
+    """A detected browser profile on the system (informational)."""
     browser: str       # "chrome" | "edge"
     channel: str       # playwright channel: "chrome" | "msedge"
     exe_path: Path     # full path to browser executable
@@ -196,17 +198,15 @@ def _find_profile_dirs(user_data_dir: Path) -> list[str]:
 
 
 # -------------------------------------------------------------------
-# Singleton lock cleanup
+# Automation profile directory (fully isolated from user's real browser)
 # -------------------------------------------------------------------
 
-def _cleanup_singleton_lock(profile_dir: Path, profile_name: str) -> None:
-    """Remove singleton lock files left by a crashed browser session.
+_AUTOMATION_PROFILE_DIR = Path.home() / ".testing_toolkit" / "e2e_profile"
 
-    Chrome/Edge use 'SingletonLock' (Linux/Mac) or 'lockfile' (Windows)
-    to prevent multiple instances on the same profile. If the browser
-    crashed, this file remains and blocks new launches.
-    """
-    locks = ["SingletonLock", "SingletonSocket", "SingletonCookie"]
+
+def _cleanup_singleton_lock(profile_dir: Path) -> None:
+    """Remove singleton lock files left by a crashed automation session."""
+    locks = ["SingletonLock", "SingletonSocket", "SingletonCookie", "lockfile"]
     for lock_name in locks:
         lock_path = profile_dir / lock_name
         if lock_path.exists() or lock_path.is_symlink():
@@ -214,172 +214,92 @@ def _cleanup_singleton_lock(profile_dir: Path, profile_name: str) -> None:
                 lock_path.unlink(missing_ok=True)
             except OSError:
                 pass
-    # Windows-specific lock
-    parent_lock = profile_dir / "lockfile"
-    if parent_lock.exists():
-        try:
-            parent_lock.unlink(missing_ok=True)
-        except OSError:
-            pass
 
 
-# -------------------------------------------------------------------
-# Port management
-# -------------------------------------------------------------------
+def _get_playwright_chromium_path() -> Path | None:
+    """Locate Playwright's bundled Chromium executable.
 
-_CDP_PORT_START = 9222
-_CDP_PORT_END = 9260
-
-
-def _find_free_port(start: int = _CDP_PORT_START, end: int = _CDP_PORT_END) -> int:
-    """Find a free TCP port in the given range for CDP."""
-    for port in range(start, end + 1):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("127.0.0.1", port))
-                return port
-            except OSError:
-                continue
-    # ponytail: fallback to OS-assigned; proper error if range exhaustion matters
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-# -------------------------------------------------------------------
-# CDP session file (persist across runs for reattach)
-# -------------------------------------------------------------------
-
-_SESSION_DIR = Path.home() / ".testing_toolkit"
-_SESSION_FILE = _SESSION_DIR / ".cdp_session.json"
-
-
-@dataclass(slots=True)
-class CdpSession:
-    """Persisted CDP session info for reattach."""
-    pid: int
-    port: int
-    ws_endpoint: str
-    browser: str
-    profile_name: str
-
-
-def _save_session(session: CdpSession) -> None:
-    _SESSION_DIR.mkdir(parents=True, exist_ok=True)
-    _SESSION_FILE.write_text(json.dumps({
-        "pid": session.pid,
-        "port": session.port,
-        "ws_endpoint": session.ws_endpoint,
-        "browser": session.browser,
-        "profile_name": session.profile_name,
-    }), encoding="utf-8")
-
-
-def _load_session() -> CdpSession | None:
-    if not _SESSION_FILE.exists():
-        return None
-    try:
-        data = json.loads(_SESSION_FILE.read_text(encoding="utf-8"))
-        return CdpSession(
-            pid=data["pid"],
-            port=data["port"],
-            ws_endpoint=data["ws_endpoint"],
-            browser=data["browser"],
-            profile_name=data["profile_name"],
-        )
-    except (json.JSONDecodeError, KeyError, OSError):
-        return None
-
-
-def _clear_session() -> None:
-    _SESSION_FILE.unlink(missing_ok=True)
-
-
-def _is_port_open(port: int) -> bool:
-    """Check if a port is accepting connections (browser still alive)."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(1.0)
-        try:
-            s.connect(("127.0.0.1", port))
-            return True
-        except (OSError, ConnectionRefusedError):
-            return False
-
-
-# -------------------------------------------------------------------
-# Browser launch + CDP connect
-# -------------------------------------------------------------------
-
-def _launch_browser(profile: BrowserProfile, port: int) -> subprocess.Popen:
-    """Launch Chrome/Edge with remote debugging on the user's real profile."""
-    _cleanup_singleton_lock(profile.profile_dir, profile.profile_name)
-
-    args = [
-        str(profile.exe_path),
-        f"--remote-debugging-port={port}",
-        f"--user-data-dir={profile.profile_dir}",
-        f"--profile-directory={profile.profile_name}",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--disable-background-networking",
-        "--disable-client-side-phishing-detection",
-        "--disable-sync",
-        "--metrics-recording-only",
-        "--no-service-autorun",
-    ]
-
-    kwargs: dict = {}
-    if _SYSTEM == "Windows":
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-
-    proc = subprocess.Popen(
-        args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kwargs
-    )
-    return proc
-
-
-def _wait_for_port(port: int, timeout: float = 15.0) -> bool:
-    """Wait until the CDP port is accepting connections."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if _is_port_open(port):
-            return True
-        time.sleep(0.3)
-    return False
-
-
-def _kill_stale_port_holder(port: int) -> None:
-    """Kill any process holding the CDP port so a fresh launch can bind it.
-
-    Uses stdlib subprocess + netstat/taskkill (Windows) or lsof/kill (POSIX).
-    No third-party dependency required.
+    Playwright stores browsers under PLAYWRIGHT_BROWSERS_PATH (env) or the
+    default ms-playwright cache directory. We search for the chromium-* dir
+    containing the executable.
     """
-    import platform
-    if platform.system() == "Windows":
+    env_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
+    if env_path:
+        candidates = [Path(env_path)]
+    elif _SYSTEM == "Windows":
+        candidates = [
+            Path(os.environ.get("USERPROFILE", "")) / "AppData" / "Local" / "ms-playwright",
+            Path(os.environ.get("LOCALAPPDATA", "")) / "ms-playwright",
+        ]
+    elif _SYSTEM == "Darwin":
+        candidates = [Path.home() / "Library" / "Caches" / "ms-playwright"]
+    else:
+        candidates = [Path.home() / ".cache" / "ms-playwright"]
+
+    for base in candidates:
+        if not base.is_dir():
+            continue
+        for d in sorted(base.iterdir(), reverse=True):
+            if d.is_dir() and d.name.startswith("chromium-"):
+                if _SYSTEM == "Windows":
+                    exe = d / "chrome-win" / "chrome.exe"
+                elif _SYSTEM == "Darwin":
+                    exe = d / "chrome-mac" / "Chromium.app" / "Contents" / "MacOS" / "Chromium"
+                else:
+                    exe = d / "chrome-linux" / "chrome"
+                if exe.exists():
+                    return exe
+    return None
+
+
+def _kill_orphaned_automation_browsers() -> None:
+    """Kill any orphaned Playwright Chromium processes from prior automation runs.
+
+    ONLY targets processes whose exe path is under the ms-playwright cache dir.
+    Never touches the user's real Chrome/Edge/Firefox processes.
+    """
+    pw_exe = _get_playwright_chromium_path()
+    if not pw_exe:
+        return
+    pw_dir_str = str(pw_exe.parent.parent).lower()
+
+    if _SYSTEM == "Windows":
         try:
             out = subprocess.check_output(
-                ["netstat", "-ano"], text=True, stderr=subprocess.DEVNULL
+                ["wmic", "process", "where",
+                 "name='chrome.exe'", "get", "ProcessId,ExecutablePath"],
+                text=True, stderr=subprocess.DEVNULL,
             )
-            for line in out.splitlines():
-                parts = line.split()
-                if len(parts) >= 5 and f":{port}" in parts[1] and parts[3] == "LISTENING":
-                    pid = int(parts[4])
-                    subprocess.run(
-                        ["taskkill", "/F", "/PID", str(pid)],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                    )
-        except (subprocess.SubprocessError, ValueError, OSError):
+            for line in out.splitlines()[1:]:
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    exe_path = " ".join(parts[:-1]).lower()
+                    pid_str = parts[-1]
+                    if pw_dir_str in exe_path:
+                        try:
+                            subprocess.run(
+                                ["taskkill", "/F", "/PID", pid_str],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                            )
+                            _log.info("Killed orphaned automation browser PID %s", pid_str)
+                        except (subprocess.SubprocessError, OSError):
+                            pass
+        except (subprocess.SubprocessError, OSError):
             pass
     else:
         try:
             out = subprocess.check_output(
-                ["lsof", "-ti", f":{port}"], text=True, stderr=subprocess.DEVNULL
+                ["pgrep", "-af", "chrome"], text=True, stderr=subprocess.DEVNULL
             )
-            for pid_str in out.strip().splitlines():
-                try:
-                    os.kill(int(pid_str), 9)
-                except (ProcessLookupError, PermissionError, ValueError):
-                    pass
+            for line in out.strip().splitlines():
+                parts = line.split(None, 1)
+                if len(parts) == 2 and pw_dir_str in parts[1].lower():
+                    try:
+                        os.kill(int(parts[0]), 9)
+                        _log.info("Killed orphaned automation browser PID %s", parts[0])
+                    except (ProcessLookupError, PermissionError, ValueError):
+                        pass
         except (subprocess.SubprocessError, OSError):
             pass
 
@@ -398,115 +318,91 @@ async def browser_session(
     viewport_height: int = 1080,
     reuse_session: bool = True,
 ) -> AsyncIterator[tuple[Browser, Page]]:
-    """Connect to the user's real browser via CDP for SSO preservation.
+    """Launch an isolated Playwright Chromium session for E2E automation.
 
-    Yields (browser, page). On exit: page and context are closed but the
-    browser process is LEFT RUNNING (user's real browser stays open).
+    Uses Playwright's bundled Chromium with a dedicated persistent profile
+    at ~/.testing_toolkit/e2e_profile/. This preserves login cookies across
+    runs while guaranteeing zero interference with the user's open browser
+    windows.
+
+    Yields (browser, page). On exit: browser is terminated (automation-owned).
     Video is saved to output_dir if provided.
 
     Args:
-        profile: BrowserProfile to use. If None, auto-detects (prefers Edge).
+        profile: BrowserProfile (informational, kept for API compat).
+            The actual launch always uses Playwright's bundled Chromium.
         output_dir: Directory for video recordings (optional).
-        headless: Ignored for CDP attach (browser is always visible).
-        viewport_width: Viewport width for new context.
-        viewport_height: Viewport height for new context.
-        reuse_session: Try to reattach to an existing CDP session first.
+        headless: Run headless if True.
+        viewport_width: Viewport width for the automation context.
+        viewport_height: Viewport height for the automation context.
+        reuse_session: Ignored (kept for API compat). Session is always fresh.
     """
     _require_playwright()
+    del profile, reuse_session  # not used for isolated launch
+
     if output_dir:
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Auto-detect profile if not specified
-    if profile is None:
-        profiles = detect_browser_profiles()
-        if not profiles:
-            raise RuntimeError(
-                "No Chrome or Edge browser detected. "
-                "Install Chrome or Edge to use E2E automation."
-            )
-        # Prefer Edge Default, then Chrome Default
-        edge_default = [p for p in profiles
-                        if p.browser == "edge" and p.profile_name == "Default"]
-        chrome_default = [p for p in profiles
-                         if p.browser == "chrome" and p.profile_name == "Default"]
-        profile = (edge_default or chrome_default or profiles)[0]
+    _AUTOMATION_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
 
-    browser: Browser | None = None
-    context: BrowserContext | None = None
-    proc: subprocess.Popen | None = None
+    # Pre-launch cleanup: kill any orphaned automation chromium + remove locks
+    _kill_orphaned_automation_browsers()
+    _cleanup_singleton_lock(_AUTOMATION_PROFILE_DIR)
+
     pw = await async_playwright().start()
+    context: BrowserContext | None = None
 
     try:
-        port: int | None = None
-        connected = False
+        last_err: Exception | None = None
+        for attempt in range(3):
+            try:
+                ctx_opts: dict = {
+                    "viewport": {"width": viewport_width, "height": viewport_height},
+                    "headless": headless,
+                    "args": [
+                        "--no-first-run",
+                        "--no-default-browser-check",
+                        "--disable-background-networking",
+                        "--disable-client-side-phishing-detection",
+                        "--disable-sync",
+                        "--metrics-recording-only",
+                        "--no-service-autorun",
+                    ],
+                }
+                if output_dir:
+                    ctx_opts["record_video_dir"] = str(output_dir)
+                    ctx_opts["record_video_size"] = {
+                        "width": viewport_width,
+                        "height": viewport_height,
+                    }
 
-        # Try reattaching to existing session
-        if reuse_session:
-            existing = _load_session()
-            if (existing and existing.browser == profile.browser
-                    and _is_port_open(existing.port)):
-                port = existing.port
-                try:
-                    browser = await pw.chromium.connect_over_cdp(
-                        f"http://127.0.0.1:{port}"
-                    )
-                    connected = True
-                except Exception:
-                    _clear_session()
-                    connected = False
-
-        # Launch fresh if not connected -- self-healing retry with backoff
-        if not connected:
-            last_err: Exception | None = None
-            for attempt in range(3):
-                port = _find_free_port()
-                proc = _launch_browser(profile, port)
-                if _wait_for_port(port, timeout=20.0):
-                    try:
-                        browser = await pw.chromium.connect_over_cdp(
-                            f"http://127.0.0.1:{port}"
-                        )
-                        last_err = None
-                        break
-                    except Exception as e:
-                        last_err = e
-                else:
-                    last_err = RuntimeError(
-                        f"Browser failed to start CDP on port {port}."
-                    )
-                # Kill stale holder and retry with backoff
-                _kill_stale_port_holder(port)
+                context = await pw.chromium.launch_persistent_context(
+                    str(_AUTOMATION_PROFILE_DIR),
+                    **ctx_opts,
+                )
+                last_err = None
+                break
+            except Exception as e:
+                last_err = e
+                _log.warning(
+                    "Browser launch attempt %d/3 failed: %s", attempt + 1, e
+                )
+                # Aggressive cleanup before retry
+                _kill_orphaned_automation_browsers()
+                _cleanup_singleton_lock(_AUTOMATION_PROFILE_DIR)
                 if attempt < 2:
-                    import asyncio
-                    await asyncio.sleep(2 ** attempt)
-            if last_err is not None:
-                raise RuntimeError(
-                    f"Browser CDP connection failed after 3 attempts. "
-                    "Close any existing browser windows and retry."
-                ) from last_err
-            _save_session(CdpSession(
-                pid=proc.pid,
-                port=port,
-                ws_endpoint=f"http://127.0.0.1:{port}",
-                browser=profile.browser,
-                profile_name=profile.profile_name,
-            ))
+                    await asyncio.sleep(2.0 * (attempt + 1))
 
-        # New context for test isolation (separate from user's main tabs)
-        ctx_opts: dict = {
-            "viewport": {"width": viewport_width, "height": viewport_height},
-        }
-        if output_dir:
-            ctx_opts["record_video_dir"] = str(output_dir)
-            ctx_opts["record_video_size"] = {
-                "width": viewport_width,
-                "height": viewport_height,
-            }
+        if last_err is not None or context is None:
+            raise RuntimeError(
+                "Browser launch failed after 3 attempts. Check that Playwright "
+                "Chromium is installed (playwright install chromium)."
+            ) from last_err
 
-        context = await browser.new_context(**ctx_opts)
-        page = await context.new_page()
+        pages = context.pages
+        page = pages[0] if pages else await context.new_page()
 
-        yield browser, page
+        yield context.browser, page  # type: ignore[arg-type]
 
     finally:
         if context is not None:
@@ -514,16 +410,10 @@ async def browser_session(
                 await context.close()
             except Exception:
                 pass
-        if browser is not None:
-            try:
-                await browser.close()
-            except Exception:
-                pass
         try:
             await pw.stop()
         except Exception:
             pass
-        # NOTE: Browser process left running - it is the user's real browser.
 
 
 def get_default_profile() -> BrowserProfile | None:
