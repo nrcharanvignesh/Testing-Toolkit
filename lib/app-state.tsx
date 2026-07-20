@@ -26,6 +26,7 @@ import {
   type SettingsResponse,
   type WiId,
 } from "./agent-client";
+import { dedupeStoryBoards } from "./board-utils";
 import {
   getPreferences,
   setPanelPref,
@@ -297,19 +298,7 @@ export function AppStateProvider({
       pushLog("INFO", "Loading boards...");
       try {
         const all = await agent.listBoards(project);
-        const stories = all.filter((b) =>
-          (b.name || "").toLowerCase().includes("stories")
-        );
-        const flat = stories.length ? stories : all;
-        const seen = new Set<string>();
-        const deduped: Board[] = [];
-        for (const b of flat) {
-          if (stories.length) {
-            if (seen.has(b.team_name)) continue;
-            seen.add(b.team_name);
-          }
-          deduped.push(b);
-        }
+        const deduped = dedupeStoryBoards(all);
         setBoards(deduped);
         pushLog("SUCCESS", `${deduped.length} board(s) loaded.`);
         if (deduped.length) {

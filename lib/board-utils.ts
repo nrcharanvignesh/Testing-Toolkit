@@ -1,4 +1,4 @@
-import type { BoardColumn, WorkItemRow, WiId } from "./agent-client";
+import type { Board, BoardColumn, WorkItemRow, WiId } from "./agent-client";
 import { sortWiIds } from "./agent-client";
 
 /**
@@ -150,4 +150,28 @@ export function uniqueSorted(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean))).sort((a, b) =>
     a.toLowerCase().localeCompare(b.toLowerCase())
   );
+}
+
+/**
+ * Resolve the boards a project should actually export/display:
+ * prefer Stories-suffixed boards, then dedupe by team_name (ADO can return
+ * multiple Board entries per team - e.g. a stale/duplicate team-board
+ * pairing - and only one is the real one). This mirrors app-state.tsx's
+ * reloadBoards() exactly, so every code path that lists a project's boards
+ * (single-project browsing, All Boards export, All Projects export) resolves
+ * to the identical board set instead of silently diverging.
+ */
+export function dedupeStoryBoards(all: Board[]): Board[] {
+  const stories = all.filter((b) => (b.name || "").toLowerCase().includes("stories"));
+  const flat = stories.length ? stories : all;
+  const seen = new Set<string>();
+  const deduped: Board[] = [];
+  for (const b of flat) {
+    if (stories.length) {
+      if (seen.has(b.team_name)) continue;
+      seen.add(b.team_name);
+    }
+    deduped.push(b);
+  }
+  return deduped;
 }

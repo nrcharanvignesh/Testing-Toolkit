@@ -13,7 +13,7 @@ import { showToast } from "@/lib/toast";
 import { ResizeHandle } from "@/components/ui/resizer";
 import { useAppUpdate } from "@/lib/use-app-update";
 import { SourceLogo } from "@/components/ui/source-logo";
-import { projectSourceType } from "@/lib/board-utils";
+import { projectSourceType, dedupeStoryBoards } from "@/lib/board-utils";
 
 export function NavPanel({ hidden }: { hidden?: boolean } = {}) {
   const {
@@ -91,7 +91,8 @@ export function NavPanel({ hidden }: { hidden?: boolean } = {}) {
         const projName = displayName(proj);
         setExportAllProjectsProgress(`Listing boards: ${projName}`);
         try {
-          const projBoards = await agent.listBoards(proj);
+          const rawBoards = await agent.listBoards(proj);
+          const projBoards = dedupeStoryBoards(rawBoards);
           projectBoardMap.push({ proj, projName, boards: projBoards });
           totalBoards += projBoards.length;
         } catch {
