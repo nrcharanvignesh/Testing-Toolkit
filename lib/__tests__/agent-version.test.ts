@@ -10,8 +10,8 @@ describe("REQUIRED_AGENT_VERSION", () => {
     expect(REQUIRED_AGENT_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  it("equals 3.33.3", () => {
-    expect(REQUIRED_AGENT_VERSION).toBe("3.33.3");
+  it("equals 3.34.0", () => {
+    expect(REQUIRED_AGENT_VERSION).toBe("3.34.0");
   });
 });
 
