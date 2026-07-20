@@ -656,11 +656,13 @@ _TEST_REL_HINTS: Final[tuple[str, ...]] = ("testedby", "tests", "testcase")
 # teams model a test as a child/related work item instead of using a
 # TestedBy relation.
 _LINK_REL_HINTS: Final[tuple[str, ...]] = (
-    "hierarchy", "related", "dependency",
+    "related", "dependency",
 )
-# A linked work item is a test case when its type name contains this token
-# (case-insensitive): "Test Case", "Test", "QA Test", etc.
-_TEST_TYPE_TOKEN: Final[str] = "test"
+# A linked work item is a test case when its normalized type name matches one
+# of these tokens exactly (case-insensitive, after stripping non-alnum).
+# "testcase" matches "Test Case"; "test" alone is too broad (catches "Protest",
+# "Contest", "Testing Task", etc.) so we require the full compound or exact word.
+_TEST_TYPE_TOKENS: Final[tuple[str, ...]] = ("testcase",)
 
 
 def _norm(s: Any) -> str:
@@ -881,7 +883,8 @@ async def _fetch_test_case_counts(
         if all_candidate_ids else {}
     )
     test_typed = frozenset(
-        tid for tid, t in type_map.items() if _TEST_TYPE_TOKEN in _norm(t)
+        tid for tid, t in type_map.items()
+        if any(tok in _norm(t) for tok in _TEST_TYPE_TOKENS)
     )
 
     return _tally_test_counts(

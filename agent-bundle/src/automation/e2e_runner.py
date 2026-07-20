@@ -725,25 +725,74 @@ async def _is_login_page(page: Any) -> bool:
 
 
 async def _is_logged_in(page: Any, login_url: str) -> bool:
-    """Heuristic: true if the page has moved past login (URL changed or app content visible)."""
+    """Heuristic: true if the page has moved past login.
+
+    IMPORTANT: must also confirm the page does NOT show login indicators,
+    because some apps (Appian) have login pages at the same URL path as
+    the authenticated app (e.g. /suite/sites/ihub serves both).
+    """
     try:
+        text = (await page.inner_text("body"))[:3000].lower()
+        # If login indicators are present, this is still a login page
+        if any(ind in text for ind in _LOGIN_INDICATORS):
+            return False
         current = page.url.lower()
         login_host = login_url.split("//")[-1].split("/")[0].lower()
         if login_host in current and "/suite/" in current:
             return True
-        text = (await page.inner_text("body"))[:3000].lower()
         return any(ind in text for ind in _LOGGED_IN_INDICATORS)
     except Exception:
         return False
 
 
+async def _handle_provider_selection(
+    page: Any, ai_instructions: str, log_fn: Callable[[str], None],
+) -> None:
+    """Click a login provider link/button based on ai_instructions.
+
+    Handles pages like Appian's provider chooser (Appian Native Login,
+    Abbott QA SSO, Abbott Entra SSO) by matching the instruction text
+    to visible links or buttons on the page.
+    """
+    instruction_lower = ai_instructions.lower().strip()
+    # Extract the provider name from common instruction patterns
+    # "Use Appian Native Login" -> "appian native login"
+    for prefix in ("use ", "click ", "select ", "choose "):
+        if instruction_lower.startswith(prefix):
+            instruction_lower = instruction_lower[len(prefix):]
+            break
+
+    # Try matching by link text first, then button text
+    strategies = [
+        lambda: page.get_by_role("link", name=instruction_lower),
+        lambda: page.get_by_text(instruction_lower, exact=False),
+        lambda: page.get_by_role("button", name=instruction_lower),
+        lambda: page.locator(f"a:has-text('{ai_instructions.strip()}')").first,
+    ]
+
+    for get_loc in strategies:
+        try:
+            loc = get_loc()
+            await loc.wait_for(state="visible", timeout=5000)
+            await loc.click()
+            log_fn(f"[INFO] Clicked login provider: {ai_instructions.strip()}")
+            await page.wait_for_load_state("domcontentloaded", timeout=15000)
+            return
+        except Exception:
+            continue
+
+    log_fn(f"[WARN] Could not find login provider matching: {ai_instructions.strip()}")
+
+
 async def _perform_login(
     page: Any, login_url: str, username: str, password: str,
-    log_fn: Callable[[str], None],
+    log_fn: Callable[[str], None], ai_instructions: str = "",
 ) -> bool:
     """Navigate to login_url and attempt form-based authentication.
 
-    Tries multiple strategies to find and fill username/password fields.
+    Handles provider selection pages (e.g. Appian Native Login / SSO choices),
+    multi-step login flows, and standard username+password forms.
+    ai_instructions guides provider selection (e.g. "Use Appian Native Login").
     Returns True if login appears successful (page navigated away from login).
     """
     try:
@@ -757,6 +806,15 @@ async def _perform_login(
     if await _is_logged_in(page, login_url):
         log_fn("[INFO] Already authenticated (session persisted).")
         return True
+
+    # Handle login provider selection pages (Appian, Okta chooser, etc.)
+    # Use ai_instructions to pick the correct provider link/button.
+    if ai_instructions:
+        await _handle_provider_selection(page, ai_instructions, log_fn)
+        await page.wait_for_timeout(2000)
+        if await _is_logged_in(page, login_url):
+            log_fn("[INFO] Already authenticated after provider selection.")
+            return True
 
     if not await _is_login_page(page):
         await page.wait_for_timeout(3000)
@@ -915,7 +973,7 @@ async def run_e2e_tests(
     model: str = "",
 ) -> list[TestCaseResult]:
     """Execute a validated suite through one reused CDP/browser session."""
-    del headless, ai_instructions
+    del headless
     results: list[TestCaseResult] = []
     total = len(test_cases)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -928,7 +986,7 @@ async def run_e2e_tests(
     try:
         async with browser_session(profile=profile, output_dir=video_dir) as (_browser, page):
             # Pre-login: authenticate before running any test case
-            login_ok = await _perform_login(page, login_url, username, password, _log)
+            login_ok = await _perform_login(page, login_url, username, password, _log, ai_instructions)
             if not login_ok:
                 _log("[WARN] Pre-login did not confirm success; proceeding anyway (session may be valid).")
 

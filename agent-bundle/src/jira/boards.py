@@ -15,6 +15,25 @@ from core.http_retry import request_with_retry, ssl_exception_types
 from core.runtime_config import RuntimeConfig
 from jira.api import build_auth_header
 
+# Test-case type detection: match issue types that are explicitly test-related.
+# "test case", "test", "test execution", "test set", "xray test" all match.
+# Does NOT match "protest", "contest", "testing notes", "latest", etc.
+_TEST_ISSUE_TYPES = frozenset({
+    "test", "test case", "test execution", "test set", "test plan",
+})
+# Link type names that denote test coverage (JIRA "Tests" / "Tested By" links)
+_TEST_LINK_TYPES = frozenset({"tests", "tested by", "test"})
+
+
+def _is_test_issue_type(type_name: str) -> bool:
+    """True if issue type is a known test type (exact match after lowering)."""
+    return type_name.strip().lower() in _TEST_ISSUE_TYPES
+
+
+def _is_test_link_type(link_name: str) -> bool:
+    """True if link type name denotes test coverage."""
+    return link_name.strip().lower() in _TEST_LINK_TYPES
+
 
 # ------------------------------------------------------------------
 # Data classes
@@ -108,7 +127,7 @@ def _parse_issue(raw: dict[str, Any]) -> JiraIssue:
         linked_type = str(
             ((linked.get("fields") or {}).get("issuetype") or {}).get("name", "")
         ).lower()
-        if "test" in linked_type or "test" in link_type:
+        if _is_test_issue_type(linked_type) or _is_test_link_type(link_type):
             key = str(linked.get("key", ""))
             if not key:
                 _n += 1
@@ -120,7 +139,7 @@ def _parse_issue(raw: dict[str, Any]) -> JiraIssue:
         sub_type = str(
             ((sub.get("fields") or {}).get("issuetype") or {}).get("name", "")
         ).lower()
-        if "test" in sub_type:
+        if _is_test_issue_type(sub_type):
             key = str(sub.get("key", ""))
             if not key:
                 _n += 1
