@@ -1,0 +1,24 @@
+# Dev/build artifacts (parts branch only tracks bundle + manifest)
+.next/
+node_modules/
+package-lock.json
+next-env.d.ts
+tsconfig.tsbuildinfo
+playwright-report/
+test-results/
+
+# Tool/IDE artifacts
+.claude/
+.repowise/
+.vscode/
+.mcp.json
+
+# Local tooling scripts
+*.py
+testing-toolkit-enhanced.zip
+
+# Agent source (tracked on main, not parts)
+agent-bundle/
+
+# Vercel project link (local only)
+.vercel/
