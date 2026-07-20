@@ -844,16 +844,18 @@ def _tally_test_counts(
     candidates: dict[int, set[int]],
     test_typed: frozenset[int],
 ) -> dict[int, int]:
-    """Tally final test-case counts per work item from classified relations."""
+    """Tally final test-case counts per work item from classified relations.
+
+    Only direct test relations (TestedBy/Tests) count toward the grid number.
+    Related/dependency links to test-typed items are excluded from the grid
+    count because they often belong to sibling/child stories and inflate the
+    number. The E2E dialog uses test_steps.fetch_linked_test_cases which does
+    its own deeper discovery for runnable test cases.
+    """
     counts: dict[int, int] = {}
     for wid in relations_by_wi:
         d = direct.get(wid, set())
-        c = candidates.get(wid, set())
-        total = (
-            len(d)
-            + direct_noid.get(wid, 0)
-            + sum(1 for tid in c if tid in test_typed)
-        )
+        total = len(d) + direct_noid.get(wid, 0)
         if total:
             counts[wid] = total
     return counts
