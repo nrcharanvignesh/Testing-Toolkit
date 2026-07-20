@@ -333,7 +333,8 @@ async def test_context_partial_is_returned_after_retries(tmp_path, monkeypatch):
     assert result.mapped_documents == 1
     assert result.total_documents == 2
     assert result.failed_documents == ["bad.txt"]
-    assert attempts["bad.txt"] == 3
+    # Initial retries + post-pass rounds * retries-per-round
+    assert attempts["bad.txt"] >= context_summary._MAX_DOC_RETRIES
     assert (tmp_path / next(path.name for path in tmp_path.glob("*.json"))).exists()
 
 

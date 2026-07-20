@@ -35,6 +35,12 @@ def _workspace_root() -> Path:
     return Path(WORKSPACE).resolve()
 
 
+def _exports_root() -> Path:
+    from core.app_config import EXPORTS_DIR
+
+    return Path(EXPORTS_DIR).resolve()
+
+
 def _describe(path: Path, kind: str) -> dict[str, Any]:
     st = path.stat()
     return {
@@ -54,8 +60,11 @@ def _describe(path: Path, kind: str) -> dict[str, Any]:
 async def download_artifact(path: str = Query(...)) -> FileResponse:
     target = Path(path).resolve()
     root = _workspace_root()
-    # Constrain to the workspace so ?path= cannot escape (path traversal).
-    if root not in target.parents and target != root:
+    exports = _exports_root()
+    # Constrain to workspace or exports dir (path traversal guard).
+    in_workspace = root in target.parents or target == root
+    in_exports = exports in target.parents or target == exports
+    if not (in_workspace or in_exports):
         raise HTTPException(403, "Path outside workspace")
     if not target.exists() or not target.is_file():
         raise HTTPException(404, "Artifact not found")
@@ -68,12 +77,15 @@ async def download_artifact(path: str = Query(...)) -> FileResponse:
 async def delete_artifact(path: str = Query(...)) -> dict[str, Any]:
     """Delete a single generated artifact (desktop 'Delete' button).
 
-    Constrained to the toolkit workspace so a crafted ?path= cannot delete
-    arbitrary files off the user's machine.
+    Constrained to the toolkit workspace or exports dir so a crafted ?path=
+    cannot delete arbitrary files off the user's machine.
     """
     target = Path(path).resolve()
     root = _workspace_root()
-    if root not in target.parents and target != root:
+    exports = _exports_root()
+    in_workspace = root in target.parents or target == root
+    in_exports = exports in target.parents or target == exports
+    if not (in_workspace or in_exports):
         raise HTTPException(403, "Path outside workspace")
     if not target.exists() or not target.is_file():
         raise HTTPException(404, "Artifact not found")
@@ -87,14 +99,14 @@ async def upload_artifact(
     file: UploadFile = File(...),
     project: str = Form(""),
 ) -> dict[str, Any]:
-    """Save an uploaded file (Excel export) to local Downloads/TestingToolkit."""
-    dest_dir = Path.home() / "Downloads" / "TestingToolkit"
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    """Save an uploaded file (Excel export) to Downloads/Testing_Toolkit/."""
+    from core.app_config import EXPORTS_DIR
+
+    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
     filename = file.filename or "export.xlsx"
-    # Sanitize filename
     safe_filename = Path(filename).name.replace("/", "_").replace("\\", "_")
-    dest = dest_dir / safe_filename
+    dest = EXPORTS_DIR / safe_filename
 
     content = await file.read()
     dest.write_bytes(content)
@@ -122,9 +134,10 @@ async def list_artifacts(project: str) -> list[dict[str, Any]]:
             if f.is_file() and not f.name.startswith("_"):
                 out.append(_describe(f, "packets"))
 
-    exports_dir = Path.home() / "Downloads" / "TestingToolkit"
-    if exports_dir.exists():
-        for f in exports_dir.iterdir():
+    from core.app_config import EXPORTS_DIR
+
+    if EXPORTS_DIR.exists():
+        for f in EXPORTS_DIR.iterdir():
             if f.is_file() and not f.name.startswith("."):
                 out.append(_describe(f, "exports"))
 

@@ -777,6 +777,7 @@ export async function exportAllBoards(opts: ExportAllBoardsOpts): Promise<void> 
           filters: { type: "All", assignee: "All", sprint: "All", column: "All", search: "" },
           settings: opts.settings,
         });
+        _addBackToSummaryLink(wb, sheetName);
       } catch {
         ignored.push({ boardName: `${shortName} (build error)` });
       }
@@ -841,6 +842,7 @@ export async function exportAllProjects(opts: ExportAllProjectsOpts): Promise<vo
             filters: { type: "All", assignee: "All", sprint: "All", column: "All", search: "" },
             settings: opts.settings,
           });
+          _addBackToSummaryLink(wb, sheetName);
         } catch {
           ignored.push({ boardName: `${shortName} (build error)`, project: project.projectName });
         }
@@ -864,6 +866,14 @@ export async function exportAllProjects(opts: ExportAllProjectsOpts): Promise<vo
 // ---------------------------------------------------------------------------
 // Sheet naming + Summary helpers
 // ---------------------------------------------------------------------------
+
+function _addBackToSummaryLink(wb: ExcelJS.Workbook, sheetName: string): void {
+  const ws = wb.getWorksheet(sheetName);
+  if (!ws) return;
+  const cell = ws.getRow(1).getCell(3);
+  cell.value = { text: "Back to Summary", hyperlink: "#'Summary'!A1" };
+  cell.font = { color: { argb: "FF0563C1" }, underline: true, size: 11 };
+}
 
 const _INVALID_SHEET_CHARS = /[\\/*?:\[\]]/g;
 

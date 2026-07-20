@@ -612,10 +612,23 @@ def dedup_twins(
 def _raw_scan(kb_dir: Path) -> list[Path]:
     if not kb_dir.exists():
         return []
-    return [
-        p for p in sorted(kb_dir.rglob("*"), key=lambda x: str(x).lower())
-        if p.is_file() and not p.name.startswith(".")
-    ]
+    # Skip files inside dot-prefixed directories (e.g. .context_maps/) and
+    # internal metadata files (context_summary.json, *.partial.json).
+    _INTERNAL_NAMES: frozenset[str] = frozenset({"context_summary.json"})
+    results: list[Path] = []
+    for p in sorted(kb_dir.rglob("*"), key=lambda x: str(x).lower()):
+        if not p.is_file():
+            continue
+        if p.name.startswith("."):
+            continue
+        if p.name in _INTERNAL_NAMES or p.name.endswith(".partial.json"):
+            continue
+        # Skip files in dot-prefixed subdirectories
+        rel = p.relative_to(kb_dir)
+        if any(part.startswith(".") for part in rel.parts[:-1]):
+            continue
+        results.append(p)
+    return results
 
 
 def _scan_sources(kb_dir: Path) -> list[Path]:

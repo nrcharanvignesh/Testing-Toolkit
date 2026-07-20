@@ -15,6 +15,9 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
   Inbox,
   Play,
   CheckCircle2,
@@ -118,6 +121,19 @@ export function BoardGrid() {
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState("");
 
+  // Column sort state: click a header to sort ASC, click again for DESC.
+  const [sortCol, setSortCol] = useState<BoardColumnId | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const handleSort = (col: BoardColumnId) => {
+    if (sortCol === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      setSortDir("asc");
+    }
+  };
+
   const rows = useMemo(() => boardView?.rows ?? [], [boardView?.rows]);
   const columns = useMemo(() => boardView?.columns ?? [], [boardView?.columns]);
 
@@ -195,9 +211,13 @@ export function BoardGrid() {
 
   const groups = useMemo(() => {
     const visible = rows.filter(passes);
-    return groupRowsByColumn(visible, columns);
+    const grouped = groupRowsByColumn(visible, columns);
+    if (!sortCol) return grouped;
+    const dir = sortDir === "asc" ? 1 : -1;
+    const cmp = buildRowComparator(sortCol, dir, testCounts, runStatus);
+    return grouped.map(([lane, laneRows]) => [lane, [...laneRows].sort(cmp)] as const);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, columns, search, fType, fAssignee, fSprint, fColumn, fKpiBucket]);
+  }, [rows, columns, search, fType, fAssignee, fSprint, fColumn, fKpiBucket, sortCol, sortDir, testCounts, runStatus]);
 
   const visibleIds = groups.flatMap(([, rs]) => rs.map((r) => r.wi_id));
 
@@ -415,6 +435,8 @@ export function BoardGrid() {
                       label={c.label}
                       collapsed={colCollapsed(c.id)}
                       currentWidth={colWidth(c.id)}
+                      sortDir={sortCol === c.id ? sortDir : null}
+                      onSort={() => handleSort(c.id)}
                       onResize={(px, commit) =>
                         setColWidth(c.id, px, commit)
                       }
@@ -491,6 +513,52 @@ export function BoardGrid() {
 }
 
 // ---------------------------------------------------------------------------
+// Sort comparator
+// ---------------------------------------------------------------------------
+function buildRowComparator(
+  col: BoardColumnId,
+  dir: number,
+  testCounts: Map<string, number>,
+  runStatus: Map<string, "pass" | "fail">,
+): (a: WorkItemRow, b: WorkItemRow) => number {
+  return (a, b) => {
+    let av: string | number;
+    let bv: string | number;
+    switch (col) {
+      case "id":
+        av = typeof a.wi_id === "number" ? a.wi_id : String(a.wi_id);
+        bv = typeof b.wi_id === "number" ? b.wi_id : String(b.wi_id);
+        if (typeof av === "number" && typeof bv === "number")
+          return (av - bv) * dir;
+        return String(av).localeCompare(String(bv)) * dir;
+      case "title":
+        return (a.title || "").localeCompare(b.title || "", undefined, { sensitivity: "base" }) * dir;
+      case "type":
+        return (a.wi_type || "").localeCompare(b.wi_type || "", undefined, { sensitivity: "base" }) * dir;
+      case "state":
+        return (a.state || "").localeCompare(b.state || "", undefined, { sensitivity: "base" }) * dir;
+      case "assignee":
+        return (a.assigned_to || "").localeCompare(b.assigned_to || "", undefined, { sensitivity: "base" }) * dir;
+      case "sprint":
+        return (a.board_lane || "").localeCompare(b.board_lane || "", undefined, { sensitivity: "base" }) * dir;
+      case "tests":
+        av = testCounts.get(String(a.wi_id)) ?? 0;
+        bv = testCounts.get(String(b.wi_id)) ?? 0;
+        return ((av as number) - (bv as number)) * dir;
+      case "lastRun": {
+        const rank = (s: "pass" | "fail" | undefined): number =>
+          s === "pass" ? 2 : s === "fail" ? 1 : 0;
+        av = rank(runStatus.get(String(a.wi_id)));
+        bv = rank(runStatus.get(String(b.wi_id)));
+        return ((av as number) - (bv as number)) * dir;
+      }
+      default:
+        return 0;
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Resizable / collapsible column header
 // ---------------------------------------------------------------------------
 const TESTS_HINT =
@@ -501,6 +569,8 @@ function ColumnHeader({
   label,
   collapsed,
   currentWidth,
+  sortDir,
+  onSort,
   onResize,
   onToggleCollapsed,
 }: {
@@ -508,6 +578,8 @@ function ColumnHeader({
   label: string;
   collapsed: boolean;
   currentWidth: number;
+  sortDir: "asc" | "desc" | null;
+  onSort: () => void;
   /** commit=false during a live drag, commit=true once on pointer-up. */
   onResize: (px: number, commit: boolean) => void;
   onToggleCollapsed: () => void;
@@ -539,7 +611,7 @@ function ColumnHeader({
 
   return (
     <th
-      className="relative border-b border-[var(--tt-outline)] px-2 py-2 font-semibold"
+      className="group/th relative border-b border-[var(--tt-outline)] px-2 py-2 font-semibold"
       style={collapsed ? { width: COLLAPSED_WIDTH, padding: 0 } : undefined}
       title={collapsed ? `Expand ${label}` : id === "tests" ? TESTS_HINT : label}
     >
@@ -554,7 +626,22 @@ function ColumnHeader({
         </button>
       ) : (
         <div className="flex items-center gap-1">
-          <span className="min-w-0 flex-1 truncate">{label}</span>
+          <button
+            type="button"
+            onClick={onSort}
+            className="flex min-w-0 flex-1 items-center gap-1 truncate hover:text-[var(--tt-text-primary)]"
+            aria-label={`Sort by ${label}${sortDir === "asc" ? " descending" : " ascending"}`}
+            title={`Sort by ${label}`}
+          >
+            <span className="truncate">{label}</span>
+            {sortDir === "asc" ? (
+              <ArrowUp className="h-3 w-3 shrink-0 text-[var(--tt-primary)]" />
+            ) : sortDir === "desc" ? (
+              <ArrowDown className="h-3 w-3 shrink-0 text-[var(--tt-primary)]" />
+            ) : (
+              <ArrowUpDown className="h-3 w-3 shrink-0 opacity-0 group-hover/th:opacity-40" />
+            )}
+          </button>
           <button
             type="button"
             onClick={onToggleCollapsed}

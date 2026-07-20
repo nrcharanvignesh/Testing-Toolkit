@@ -325,14 +325,32 @@ class AnthropicClient:
         _t0 = time.perf_counter()
 
         last_exc: Exception | None = None
+        verify = self.ssl_verify
         async with httpx.AsyncClient(
             headers=self._headers(),
-            verify=self.ssl_verify,
+            verify=verify,
             timeout=httpx.Timeout(effective_timeout),
         ) as client:
             for attempt in range(self.retry_count + 1):
                 try:
                     resp = await client.post(self._url(), json=body)
+                except RecursionError:
+                    # truststore on Windows/Python 3.12 can infinite-recurse
+                    # in verify_mode.__set__. Fall back to default SSL context.
+                    self._log(
+                        "[WARN] TLS recursion (truststore bug); retrying "
+                        "with default SSL context."
+                    )
+                    self.ssl_verify = _ssl.create_default_context()
+                    verify = self.ssl_verify
+                    async with httpx.AsyncClient(
+                        headers=self._headers(),
+                        verify=verify,
+                        timeout=httpx.Timeout(effective_timeout),
+                    ) as fallback_client:
+                        resp = await fallback_client.post(
+                            self._url(), json=body
+                        )
                 except httpx.ConnectError as e:
                     self._report_nw_failure()
                     raise AnthropicConnectionError(
@@ -1031,6 +1049,18 @@ class AnthropicClient:
         ) as client:
             try:
                 resp = await client.post(self._chat_url(), json=body)
+            except RecursionError:
+                self._log(
+                    "[WARN] TLS recursion (truststore bug); retrying "
+                    "with default SSL context."
+                )
+                self.ssl_verify = _ssl.create_default_context()
+                async with httpx.AsyncClient(
+                    headers=self._headers(),
+                    verify=self.ssl_verify,
+                    timeout=httpx.Timeout(self.timeout_sec),
+                ) as fb:
+                    resp = await fb.post(self._chat_url(), json=body)
             except httpx.ConnectError as e:
                 self._report_nw_failure()
                 raise AnthropicConnectionError(

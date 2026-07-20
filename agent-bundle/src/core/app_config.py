@@ -156,6 +156,20 @@ RUNS_DIR:     Final[Path] = WORKSPACE / "runs"
 OUTPUTS_DIR:  Final[Path] = WORKSPACE / "outputs"
 LOGS_DIR:     Final[Path] = WORKSPACE / "logs"
 
+# User-facing export destination (Downloads/Testing_Toolkit/).
+# Override with TT_EXPORTS_DIR env var (absolute path).
+def _resolve_exports_dir() -> Path:
+    override = (os.environ.get("TT_EXPORTS_DIR") or "").strip()
+    if override:
+        try:
+            return Path(override).expanduser()
+        except (OSError, ValueError):
+            pass
+    return Path.home() / "Downloads" / "Testing_Toolkit"
+
+
+EXPORTS_DIR: Final[Path] = _resolve_exports_dir()
+
 UI_PREFS_PATH: Final[Path] = WORKSPACE / "ui_prefs.json"
 
 # --------------------- STABLE CONFIG DIRECTORY ----------------------

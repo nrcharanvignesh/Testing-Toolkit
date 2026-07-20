@@ -910,7 +910,7 @@ Update | Help (Dropdown) | Settings | Project KB | Credentials | Theme | Collaps
 
 ### 9.6 Output Directory
 
-Generated artifacts: `~/Downloads/TestingToolkit/`
+Generated artifacts: `~/Downloads/Testing_Toolkit/`
 
 ---
 
