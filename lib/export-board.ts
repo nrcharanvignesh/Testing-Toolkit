@@ -873,6 +873,15 @@ function _addBackToSummaryLink(wb: ExcelJS.Workbook, sheetName: string): void {
   const cell = ws.getRow(1).getCell(3);
   cell.value = { text: "Back to Summary", hyperlink: "#'Summary'!A1" };
   cell.font = { color: { argb: "FF0563C1" }, underline: true, size: 11 };
+  // Horizontal fit: widen column C only if needed for this label - never shrink
+  // it below whatever autoFitColumns already sized it for (column C holds the
+  // "Type" data column in the body rows below).
+  const col = ws.getColumn(3);
+  const needed = "Back to Summary".length + 2; // same +2 convention as autoFitColumns
+  col.width = Math.max(col.width ?? 10, needed);
+  // Vertical fit: center the link within row 1's height so it isn't clipped
+  // top/bottom (row 1 also holds the Project meta label/value in cols A/B).
+  cell.alignment = { vertical: "middle", horizontal: "left" };
 }
 
 const _INVALID_SHEET_CHARS = /[\\/*?:\[\]]/g;
