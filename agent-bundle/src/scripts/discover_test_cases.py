@@ -86,7 +86,7 @@ async def _discover_ado(project: str, ids: list[int], as_json: bool) -> int:
             ttype = type_map.get(tid, "")
             is_test_rel = boards._is_test_relation(rel)
             is_test_type = bool(
-                ttype and boards._TEST_TYPE_TOKEN in boards._norm(ttype)
+                ttype and any(tok in boards._norm(ttype) for tok in boards._TEST_TYPE_TOKENS)
             )
             reason = ("test-relation" if is_test_rel
                       else "test-type-target" if is_test_type

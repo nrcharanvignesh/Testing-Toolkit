@@ -126,7 +126,7 @@ def _cfg(name: str, default: str = "") -> str:
 # -------------------------- IDENTITY --------------------------
 APP_NAME:    Final[str] = "Testing Toolkit"
 APP_SLUG:    Final[str] = "TestingToolkit"
-APP_VERSION: Final[str] = "3.35.0"
+APP_VERSION: Final[str] = "3.36.0"
 
 # The web build keeps its workspace separate from the desktop app so the
 # two can coexist on the same machine. Everything (projects, KB, runs,

@@ -34,7 +34,7 @@ from ado.boards import (
     _is_test_relation,
     _norm,
     _rel_target_id,
-    _TEST_TYPE_TOKEN,
+    _TEST_TYPE_TOKENS,
     _ssl,
 )
 from core.runtime_config import API_VER_WI, RuntimeConfig
@@ -178,7 +178,7 @@ async def fetch_linked_test_cases(
     valid: set[int] = set(definite)
     for tid in link_only:
         info = fields.get(tid)
-        if info and _TEST_TYPE_TOKEN in _norm(info.get("type", "")):
+        if info and any(tok in _norm(info.get("type", "")) for tok in _TEST_TYPE_TOKENS):
             valid.add(tid)
 
     out: list[dict[str, Any]] = []
