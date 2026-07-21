@@ -1,5 +1,53 @@
 # Changelog
 
+## 3.50.0 — 2026-07-21 (Agentic E2E Architecture)
+
+Complete replacement of the compile-then-execute E2E system with a true
+LLM-in-the-loop agentic architecture.
+
+### Breaking changes
+
+- Plan compilation phase REMOVED. The agent no longer pre-compiles test steps
+  into a rigid DSL. Instead, the LLM drives the browser in real-time.
+- `e2e_plan.compile_test_case()` is no longer called from the E2E route.
+- Parallel execution temporarily sequential (per-WI parallel slots will return
+  once multi-WI agentic isolation is validated).
+
+### New capabilities
+
+- **Agentic loop:** Observe page -> LLM decides -> execute tool -> repeat.
+  Replaces blind execution with live reasoning.
+- **35 browser tools:** Full Playwright MCP parity (navigation, interaction,
+  forms, drag-drop, file upload, dialogs, JS eval, network inspection, console
+  messages, screenshots, resize, wait conditions) plus assertions and control.
+- **Self-healing locator factory:** Agent describes elements in natural language;
+  6-strategy waterfall (role, label, placeholder, text, test_id, CSS) with iframe
+  traversal and shadow DOM fallback resolves elements automatically.
+- **Sonnet + Opus fallback:** Primary execution on Sonnet ($0.46/TC). If agent
+  declares stuck, automatic retry with Opus for superior reasoning ($2.30/TC).
+- **CDP accessibility fallback:** Handles Playwright 1.49+ removal of
+  `page.accessibility.snapshot()` via `Accessibility.getFullAXTree` CDP call.
+- **Console + network capture:** Agent can inspect console errors and XHR
+  failures, catching backend errors invisible in UI.
+- **History compression:** Sliding window keeps recent 8 turns full, compresses
+  older turns to one-line summaries to prevent context blowup.
+
+### New files
+
+- `automation/agentic_tools.py` — 35 tool schemas, LocatorFactory, executor
+- `automation/agentic_prompt.py` — system prompt builder
+- `automation/agentic_runner.py` — the loop, suite orchestrator, slot runner
+
+### Modified
+
+- `agent/routes/e2e.py` — removed compile phase, wired agentic runner
+- `core/model_router.py` — added Task.E2E_AGENTIC + E2E_AGENTIC_FALLBACK
+- `agent/version.py` — 3.45.0 -> 3.50.0
+- `lib/agent-version.ts` — REQUIRED_AGENT_VERSION 3.45.0 -> 3.50.0
+- `public/agent/manifest.json` — version + force update
+
+---
+
 ## 3.44.0 — 2026-07-21 (E2E System Overhaul)
 
 ### Fixes

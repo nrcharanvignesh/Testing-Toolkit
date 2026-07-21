@@ -1,4 +1,10 @@
-# E2E Runner v3.40.0 — Autonomous AI QA Agent
+# E2E Runner v3.40.0 -> v3.50.0 — Autonomous AI QA Agent
+
+> **v3.50 UPDATE:** The architecture shifted from compile-then-execute (Phase 2)
+> to a true LLM-in-the-loop agentic loop (Phase 3 realized). The agent observes
+> page state, decides the next action in real-time, and self-corrects. New core
+> modules: `agentic_tools.py`, `agentic_prompt.py`, `agentic_runner.py`. The old
+> `e2e_plan.py` compile path is no longer invoked.
 
 ## Vision
 Transform the E2E runner from a script executor into a fully autonomous AI QA agent

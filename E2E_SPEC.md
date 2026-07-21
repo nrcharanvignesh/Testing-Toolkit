@@ -22,11 +22,20 @@ with video recordings and Excel audit trail - all without human input
 until final review sign-off.
 
 Grounded in the real modules already in this codebase
-(automation/e2e_plan.py, e2e_runner.py, parallel_runner.py,
-kb_briefing.py, page_observer.py, report_pdf.py, script_generator.py,
-playwright_bridge.py, healing_guardrails.py, report_excel.py). This
-document is the definition of "correct and complete" for that code - not
-a wishlist.
+(automation/agentic_tools.py, agentic_prompt.py, agentic_runner.py,
+e2e_runner.py, parallel_runner.py, kb_briefing.py, page_observer.py,
+report_pdf.py, script_generator.py, playwright_bridge.py,
+healing_guardrails.py, report_excel.py). This document is the definition
+of "correct and complete" for that code - not a wishlist.
+
+**Architecture (v3.50):** The E2E system uses an LLM-in-the-loop agentic
+architecture. The LLM observes page state after each action, decides the
+next action in real-time, and self-corrects. There is NO upfront plan
+compilation. Core modules: agentic_tools.py (35 tools + self-healing
+locator factory), agentic_prompt.py (system prompt builder),
+agentic_runner.py (the loop + suite orchestrator). The old
+compile-then-execute path (e2e_plan.py) is retained for reference but no
+longer invoked by the route.
 
 ---
 

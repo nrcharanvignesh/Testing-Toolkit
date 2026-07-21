@@ -1,10 +1,10 @@
 {
-  "version": "2.30.0",
-  "force": false,
+  "version": "3.50.0",
+  "force": true,
   "files": [],
   "models": [
     { "name": "BAAI/bge-small-en-v1.5", "size_mb": 32 },
     { "name": "Xenova/ms-marco-MiniLM-L-6-v2", "size_mb": 22 }
   ],
-  "release_notes": "Fix KB context infinite polling, reduce timeouts, add circuit breaker"
+  "release_notes": "Agentic E2E: LLM-in-the-loop architecture replaces compile-then-execute. 35 tools, self-healing locator factory, Sonnet+Opus fallback."
 }

@@ -88,6 +88,10 @@ class Task(Enum):
     # OCR / document extraction - needs large context window + vision
     OCR_EXTRACT = "ocr_extract"
 
+    # Agentic E2E - LLM-in-the-loop browser automation
+    E2E_AGENTIC = "e2e_agentic"
+    E2E_AGENTIC_FALLBACK = "e2e_agentic_fallback"
+
 
 _TASK_TIER: Final[dict[Task, Tier]] = {
     # Frontier - where quality directly determines output correctness
@@ -105,6 +109,9 @@ _TASK_TIER: Final[dict[Task, Tier]] = {
     Task.LLM_RERANK: Tier.SMALL,
     # OCR - 128K context, vision-capable
     Task.OCR_EXTRACT: Tier.MEDIUM,
+    # Agentic E2E - Sonnet for speed, Opus fallback for reasoning
+    Task.E2E_AGENTIC: Tier.MEDIUM,
+    Task.E2E_AGENTIC_FALLBACK: Tier.FRONTIER,
 }
 
 # Task-specific model overrides: if configured in .env, bypass tier routing.
@@ -122,6 +129,8 @@ _TASK_OVERRIDE: Final[dict[Task, str]] = {
         Task.DEFECT_PARSE: MODEL_EXTRACT,
         Task.NAVIGATE_CHUNKS: MODEL_CHAT,
         Task.OCR_EXTRACT: MODEL_OCR,
+        Task.E2E_AGENTIC: MODEL_CHAT,
+        Task.E2E_AGENTIC_FALLBACK: MODEL_GENERATE,
     }.items() if v  # only include non-empty overrides
 }
 
