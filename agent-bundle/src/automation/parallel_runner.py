@@ -158,6 +158,8 @@ class ParallelRunner:
 
         if self._maximized and not self._headless:
             ctx_opts["no_viewport"] = True
+            from automation.playwright_bridge import _get_work_area_size
+            ctx_opts["record_video_size"] = _get_work_area_size()
         else:
             ctx_opts["viewport"] = {"width": 1920, "height": 1080}
             ctx_opts["record_video_size"] = {"width": 1920, "height": 1080}

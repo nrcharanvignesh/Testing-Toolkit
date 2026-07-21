@@ -435,8 +435,14 @@ async def _run_generate(job: Job, req: StartRequest) -> None:
                     "steps": tc.get("steps", []),
                     "category": tc.get("category", ""),
                     "priority": tc.get("priority", ""),
-                    "description": tc.get("description", ""),
-                    "acceptance_criteria": tc.get("acceptance_criteria", ""),
+                    "description": (
+                        tc.get("description", "")
+                        or story.get("description", "")
+                    ),
+                    "acceptance_criteria": (
+                        tc.get("acceptance_criteria", "")
+                        or story.get("acceptance_criteria", "")
+                    ),
                 }
                 for story in (payload.get("stories") or [])
                 for tc in (story.get("test_cases") or [])

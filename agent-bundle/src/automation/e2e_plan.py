@@ -91,7 +91,25 @@ _SYSTEM: Final[str] = (
     "reach that page from the current location. Use the project_context to determine "
     "the correct navigation path. Always start with a 'navigate' action to login_url "
     "if no explicit URL is given as the first step. Never assume the user is already "
-    "on the target page -- generate the full click path to get there."
+    "on the target page -- generate the full click path to get there.\n\n"
+    "LITERAL VALUES ONLY (CRITICAL -- violations cause 100%% test failure):\n"
+    "- 'expected' for wait_for_text / assert_text MUST be the EXACT visible text "
+    "string that appears on the page (a heading, button label, cell value, toast). "
+    "WRONG: 'Activities page loaded' 'Contract form is visible' 'Section appears'. "
+    "RIGHT: 'Activities' 'Create Contract Request' 'Request Details'.\n"
+    "- 'expected' for wait_for_url / assert_url MUST be a literal URL substring. "
+    "WRONG: 'iHub login page loads' 'navigate to contracting page'. "
+    "RIGHT: '/suite/sites/ihub' '/contracting' 'appiancloud.com'.\n"
+    "- 'value' for navigate MUST be a complete URL starting with https://. "
+    "WRONG: 'Go to iHub homepage' 'Navigate to Activities'. "
+    "RIGHT: 'https://abbott-test.appiancloud.com/suite/sites/ihub'.\n"
+    "- 'target' for click/fill MUST reference the actual element text visible on the "
+    "page. Use exact labels from project_context SCREENS or page_snapshot.\n"
+    "- When exact text/URL is unknown from project_context or page_snapshot, prefix "
+    "the expected field with '[MANUAL] ' to flag for human review. A flagged step is "
+    "far better than a step with invented descriptions that always fails.\n"
+    "- NEVER echo human step descriptions verbatim into expected or value fields. "
+    "Translate the intent into a concrete page assertion using known labels/URLs."
 )
 
 
@@ -451,7 +469,7 @@ async def compile_test_case(
     if tc.get("environment"):
         source["environment"] = str(tc["environment"])[:500]
     if project_context:
-        source["project_context"] = project_context[:12000]
+        source["project_context"] = project_context[:16000]
     try:
         result = await client.complete_async(
             model=model, system=_SYSTEM, user=json.dumps(source, ensure_ascii=True),

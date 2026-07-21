@@ -313,6 +313,7 @@ async def _compile_with_healing(
     compiler_model: str,
     job: Job,
     kb_brief: Any = None,
+    dom_snapshot: str = "",
 ) -> dict[str, Any]:
     """Compile a single test case plan with retry on failure.
 
@@ -321,19 +322,24 @@ async def _compile_with_healing(
     """
     from automation.e2e_plan import PlanValidationError, compile_test_case
 
-    # Per-TC selective project context, enriched with KB brief
+    # Per-TC project context: combine structured KB + retrieval chunks
     tc_project_ctx = ""
-    if kb_brief:
-        try:
-            tc_project_ctx = kb_brief.to_prompt_section()
-        except Exception:  # noqa: BLE001
-            pass
-    if proj_ctx and not tc_project_ctx:
+    selective_ctx = ""
+    retrieval_ctx = ""
+    if proj_ctx:
         try:
             tc_text = f"{tc.get('title', '')} {' '.join(str(s) for s in tc.get('steps', []))}"
-            tc_project_ctx = proj_ctx.to_prompt_section_selective(tc_text) or ""
+            selective_ctx = proj_ctx.to_prompt_section_selective(tc_text) or ""
         except Exception:  # noqa: BLE001
             pass
+    if kb_brief:
+        try:
+            brief_text = kb_brief.to_prompt_section()
+            if brief_text and kb_brief.raw_context:
+                retrieval_ctx = brief_text
+        except Exception:  # noqa: BLE001
+            pass
+    tc_project_ctx = f"{selective_ctx}\n\n{retrieval_ctx}".strip()
 
     last_error = ""
     for attempt in range(1, MAX_PLAN_COMPILE_RETRIES + 1):
@@ -348,6 +354,7 @@ async def _compile_with_healing(
                 model=compiler_model,
                 on_log=job.log,
                 project_context=tc_project_ctx,
+                dom_snapshot=dom_snapshot,
             )
             if attempt > 1:
                 job.log(
@@ -469,6 +476,39 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
         except Exception:  # noqa: BLE001
             pass
 
+        # === RECONNAISSANCE PHASE ===
+        # Capture the app's home page accessibility tree BEFORE compiling plans.
+        # Gives the compiler real element names instead of guessing.
+        recon_snapshot = ""
+        try:
+            from automation.playwright_bridge import browser_session
+            from automation.e2e_plan import _format_snapshot
+            from automation.e2e_runner import _perform_login
+
+            job.log("[INFO] Reconnaissance: capturing app structure...")
+            async with browser_session(output_dir=None, maximized=True) as (
+                _browser,
+                recon_page,
+            ):
+                await _perform_login(
+                    recon_page,
+                    cred.login_url,
+                    cred.user_id,
+                    cred.password,
+                    job.log,
+                    cred.ai_instructions,
+                )
+                snapshot_raw = await recon_page.accessibility.snapshot()
+                recon_snapshot = _format_snapshot(snapshot_raw) if snapshot_raw else ""
+            if recon_snapshot:
+                job.log(
+                    f"[INFO] Recon: captured {len(recon_snapshot)} chars of app structure."
+                )
+        except Exception as exc:  # noqa: BLE001
+            job.log(
+                f"[WARN] Reconnaissance failed: {exc}. Proceeding without DOM context."
+            )
+
         compiled: list[dict[str, Any]] = []
         for position, tc in enumerate(picked, 1):
             if job.stopped:
@@ -489,6 +529,7 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
                 compiler_model=compiler_model,
                 job=job,
                 kb_brief=_wi_briefs.get(str(tc.get("id", ""))),
+                dom_snapshot=recon_snapshot,
             )
             compiled.append(plan_result)
             if job.stopped:

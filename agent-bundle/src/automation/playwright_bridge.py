@@ -49,6 +49,33 @@ def _require_playwright() -> None:
         )
 
 
+def _get_work_area_size(
+    fallback_w: int = 1920, fallback_h: int = 1080
+) -> dict[str, int]:
+    """Get the OS work area (screen minus taskbar) for video recording size.
+
+    When maximized, the browser viewport = work area, not full screen.
+    Falls back to provided dimensions on non-Windows or on failure.
+    """
+    if _SYSTEM == "Windows":
+        try:
+            import ctypes
+            import ctypes.wintypes
+
+            rect = ctypes.wintypes.RECT()
+            # SPI_GETWORKAREA = 0x0030
+            ctypes.windll.user32.SystemParametersInfoW(
+                0x0030, 0, ctypes.byref(rect), 0
+            )
+            w = rect.right - rect.left
+            h = rect.bottom - rect.top
+            if w > 0 and h > 0:
+                return {"width": w, "height": h}
+        except Exception:
+            pass
+    return {"width": fallback_w, "height": fallback_h}
+
+
 # -------------------------------------------------------------------
 # Browser profile detection (informational only -- not used for launch)
 # -------------------------------------------------------------------
@@ -387,7 +414,11 @@ async def browser_session(
                     }
                 if output_dir:
                     ctx_opts["record_video_dir"] = str(output_dir)
-                    if not use_maximized:
+                    if use_maximized:
+                        ctx_opts["record_video_size"] = _get_work_area_size(
+                            viewport_width, viewport_height
+                        )
+                    else:
                         ctx_opts["record_video_size"] = {
                             "width": viewport_width,
                             "height": viewport_height,
