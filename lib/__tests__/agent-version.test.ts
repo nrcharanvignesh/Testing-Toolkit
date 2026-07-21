@@ -10,8 +10,8 @@ describe("REQUIRED_AGENT_VERSION", () => {
     expect(REQUIRED_AGENT_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  it("equals 3.33.3", () => {
-    expect(REQUIRED_AGENT_VERSION).toBe("3.33.3");
+  it("equals 3.41.0", () => {
+    expect(REQUIRED_AGENT_VERSION).toBe("3.41.0");
   });
 });
 
@@ -197,18 +197,18 @@ describe("isAgentOutdated", () => {
       expect(isAgentOutdated(REQUIRED_AGENT_VERSION)).toBe(false);
     });
 
-    it("returns false for 3.33.3", () => {
-      expect(isAgentOutdated("3.33.3")).toBe(false);
+    it("returns false for 3.41.0", () => {
+      expect(isAgentOutdated("3.41.0")).toBe(false);
     });
   });
 
   describe("version above required -> false", () => {
-    it("returns false for 3.0.2 (patch above)", () => {
-      expect(isAgentOutdated("3.0.2")).toBe(false);
+    it("returns false for 3.41.1 (patch above)", () => {
+      expect(isAgentOutdated("3.41.1")).toBe(false);
     });
 
-    it("returns false for 3.1.0 (minor above)", () => {
-      expect(isAgentOutdated("3.1.0")).toBe(false);
+    it("returns false for 3.42.0 (minor above)", () => {
+      expect(isAgentOutdated("3.42.0")).toBe(false);
     });
 
     it("returns false for 4.0.0 (major above)", () => {
@@ -221,12 +221,12 @@ describe("isAgentOutdated", () => {
   });
 
   describe("version with extra parts", () => {
-    it("returns false for 3.33.3.1 (extra patch part, still >= required)", () => {
-      expect(isAgentOutdated("3.33.3.1")).toBe(false);
+    it("returns false for 3.41.0.1 (extra patch part, still >= required)", () => {
+      expect(isAgentOutdated("3.41.0.1")).toBe(false);
     });
 
-    it("returns false for 3.33.3.0 (extra zero part)", () => {
-      expect(isAgentOutdated("3.33.3.0")).toBe(false);
+    it("returns false for 3.41.0.0 (extra zero part)", () => {
+      expect(isAgentOutdated("3.41.0.0")).toBe(false);
     });
 
     it("returns true for 2.99.9.99 (still below despite extra part)", () => {
@@ -250,7 +250,7 @@ describe("edge cases", () => {
     });
 
     it("isAgentOutdated trims whitespace on valid version", () => {
-      expect(isAgentOutdated("  3.33.3  ")).toBe(false);
+      expect(isAgentOutdated("  3.41.0  ")).toBe(false);
     });
 
     it("isAgentOutdated trims whitespace on outdated version", () => {

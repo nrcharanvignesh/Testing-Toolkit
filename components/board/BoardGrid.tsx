@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -82,7 +83,13 @@ export function BoardGrid() {
     isCollapsed: colCollapsed,
     setWidth: setColWidth,
     toggleCollapsed: toggleColCollapsed,
+    autofit,
   } = useBoardColumns();
+
+  const gridRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (gridRef.current) autofit(gridRef.current.clientWidth);
+  }, [autofit]);
 
   // Persisted collapsed state for row groups (swim lanes). Clicking a lane
   // header hides its rows; restored automatically on next launch.
@@ -386,6 +393,7 @@ export function BoardGrid() {
 
         {/* Grid */}
         <div
+          ref={gridRef}
           className="min-h-0 flex-1 overflow-auto rounded-[10px] border border-[var(--tt-outline)] bg-[var(--tt-surface-base)]"
           onClick={clearOnEmptyClick}
         >

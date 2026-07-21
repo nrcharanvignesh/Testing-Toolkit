@@ -129,6 +129,27 @@ export function columnWidth(state: ColumnState, id: BoardColumnId): number {
   return state.widths[id] ?? META_BY_ID.get(id)?.width ?? 120;
 }
 
+/**
+ * Auto-fit column widths to fill the container on first launch (no persisted
+ * widths). Distributes extra space proportionally across all columns so the
+ * grid uses the full viewport width instead of leaving a gap on the right.
+ * Only runs once -- after any manual resize, localStorage takes over.
+ */
+export function autofitColumns(containerWidth: number): void {
+  ensureLoaded();
+  if (Object.keys(cache.widths).length > 0) return;
+  const CHECKBOX_COL = 32;
+  const available = containerWidth - CHECKBOX_COL;
+  const defaultTotal = BOARD_COLUMNS.reduce((s, c) => s + c.width, 0);
+  if (available <= defaultTotal) return;
+  const scale = available / defaultTotal;
+  const widths: Partial<Record<BoardColumnId, number>> = {};
+  for (const c of BOARD_COLUMNS) {
+    widths[c.id] = Math.max(c.min, Math.round(c.width * scale));
+  }
+  persist({ ...cache, widths }, true);
+}
+
 /** Non-hook setter for a column width. Pass write=false during a live drag. */
 function setColumnWidth(id: BoardColumnId, px: number, write = true) {
   ensureLoaded();
@@ -178,5 +199,6 @@ export function useBoardColumns() {
     setWidth: setColumnWidth,
     toggleCollapsed: toggleColumnCollapsed,
     reset: resetBoardColumns,
+    autofit: autofitColumns,
   };
 }

@@ -20,9 +20,9 @@ describe("board-columns constants", () => {
     installLocalStorage();
   });
 
-  it("BOARD_COLUMNS has 8 entries each with id, label, and min width", async () => {
+  it("BOARD_COLUMNS has 7 entries each with id, label, and min width", async () => {
     const { BOARD_COLUMNS } = await import("../board-columns");
-    expect(BOARD_COLUMNS).toHaveLength(8);
+    expect(BOARD_COLUMNS).toHaveLength(7);
     for (const col of BOARD_COLUMNS) {
       expect(typeof col.id).toBe("string");
       expect(col.id.length).toBeGreaterThan(0);
