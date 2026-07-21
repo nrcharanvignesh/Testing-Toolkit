@@ -320,6 +320,7 @@ async def browser_session(
     headless: bool = False,
     viewport_width: int = 1920,
     viewport_height: int = 1080,
+    maximized: bool = True,
     reuse_session: bool = True,
 ) -> AsyncIterator[tuple[Browser, Page]]:
     """Launch an isolated Playwright Chromium session for E2E automation.
@@ -339,10 +340,14 @@ async def browser_session(
         headless: Run headless if True.
         viewport_width: Viewport width for the automation context.
         viewport_height: Viewport height for the automation context.
+        maximized: Launch browser window maximized (default True).
         reuse_session: Ignored (kept for API compat). Session is always fresh.
     """
     _require_playwright()
     del profile, reuse_session  # not used for isolated launch
+    # When maximized, let the OS window dictate size (no_viewport=True).
+    # Headless mode cannot maximize so falls back to fixed viewport.
+    use_maximized = maximized and not headless
 
     if output_dir:
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -361,7 +366,6 @@ async def browser_session(
         for attempt in range(3):
             try:
                 ctx_opts: dict = {
-                    "viewport": {"width": viewport_width, "height": viewport_height},
                     "headless": headless,
                     "args": [
                         "--no-first-run",
@@ -373,11 +377,19 @@ async def browser_session(
                         "--no-service-autorun",
                     ],
                 }
+                if use_maximized:
+                    ctx_opts["args"].append("--start-maximized")
+                    ctx_opts["no_viewport"] = True
+                else:
+                    ctx_opts["viewport"] = {
+                        "width": viewport_width,
+                        "height": viewport_height,
+                    }
                 if output_dir:
                     ctx_opts["record_video_dir"] = str(output_dir)
                     ctx_opts["record_video_size"] = {
-                        "width": viewport_width,
-                        "height": viewport_height,
+                        "width": 1920 if use_maximized else viewport_width,
+                        "height": 1080 if use_maximized else viewport_height,
                     }
 
                 context = await pw.chromium.launch_persistent_context(

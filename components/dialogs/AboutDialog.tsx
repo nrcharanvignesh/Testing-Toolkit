@@ -42,28 +42,31 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
           </p>
 
           <p className="mt-4 text-sm leading-relaxed text-foreground">
-            A unified Azure DevOps and Jira testing toolkit.
+            An autonomous AI QA platform for Azure DevOps and Jira.
           </p>
           <p className="mt-3 text-sm leading-relaxed text-foreground">
-            Browse boards, select work items, generate Test Cases with a
-            Recursive Language Model over the project knowledge base, export
-            boards as a full audit workbook to Excel, download WI-level PDFs,
-            or package work items as PDFs.
+            The AI agent studies your project knowledge base, discovers test
+            cases via work item hierarchy, executes up to 3 user stories in
+            parallel with fully isolated browser contexts, observes page state
+            after every action, and produces PDF reports with video recordings.
           </p>
 
           <p className="mt-4 text-sm font-semibold text-foreground">Features:</p>
           <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm leading-relaxed text-foreground">
+            <li>Autonomous E2E testing with KB-driven step discovery</li>
+            <li>Up to 3 user stories in parallel (isolated browser contexts)</li>
+            <li>Per-WI artifacts: PDF report, video recording, Excel append</li>
+            <li>Self-healing locator waterfall (6 strategies + LLM recompile)</li>
+            <li>Page observation with a11y tree analysis and confidence scoring</li>
+            <li>Human review flow with per-TC approve/reject and sign-off</li>
+            <li>Per-WI cancellation mid-run</li>
             <li>Board-driven work item selection with hyperlinked IDs</li>
-            <li>Export board to Excel with audit sheets (coverage, traceability, defect density, pivot data, execution results)</li>
-            <li>Export all boards as a multi-sheet workbook</li>
-            <li>WI-level PDF download from detail pane</li>
-            <li>Conditional formatting (red/amber/green) on coverage and test status</li>
+            <li>Export board to Excel with audit sheets (coverage, traceability, defect density)</li>
             <li>Recursive Language Model test case generation</li>
-            <li>Per-client template support</li>
+            <li>Dense + lexical hybrid retrieval (BM25 + embeddings + reranker)</li>
+            <li>Parent-child WI hierarchy TC discovery</li>
             <li>PDF packaging with KB-ready bundles</li>
-            <li>Dense + lexical hybrid retrieval</li>
             <li>OCR for scanned documents</li>
-            <li>Offline-first architecture</li>
           </ul>
 
           <p className="mt-4 text-xs leading-relaxed text-muted-foreground">

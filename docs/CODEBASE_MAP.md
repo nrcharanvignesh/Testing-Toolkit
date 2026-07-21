@@ -1,6 +1,6 @@
 # CODEBASE_MAP.md — Testing Toolkit
 
-> Generated 2026-07-20 from commit 70e6f11 (overnight/auto-fixes branch)
+> Generated 2026-07-21 from commit 638ba62 (v3.40.0 — Autonomous AI QA Agent)
 
 ---
 
@@ -40,7 +40,7 @@
 | `components/board/ActionBar.tsx` | Generate / Publish / Tools action groups |
 | `components/board/DetailPane.tsx` | Work-item property grid + comments |
 | `components/board/LogPanel.tsx` | Timestamped level-colored log feed |
-| `components/dialogs/E2EDialog.tsx` | E2E flagship dialog: TC list, run control, progress |
+| `components/dialogs/E2EDialog.tsx` | E2E flagship dialog: TC list, run control, progress, ReviewPanel (approve/reject/sign-off) |
 | `components/dialogs/GenerateDialog.tsx` | Test-case generation dialog |
 | `components/dialogs/ProjectKbDialog.tsx` | KB document management + indexing progress |
 | `components/dialogs/SettingsDialog.tsx` | Connection, preferences, diagnostics |
@@ -99,18 +99,22 @@
 
 | Path | Responsibility |
 |------|----------------|
-| `automation/e2e_runner.py` | Self-healing Playwright E2E engine; `run_e2e_tests` (line 682) |
+| `automation/parallel_runner.py` | **NEW v3.40** — 1 Browser -> N isolated BrowserContexts (max 3), per-WI cancel |
+| `automation/kb_briefing.py` | **NEW v3.40** — KB-driven TestBrief builder (screens, preconditions, business rules) |
+| `automation/page_observer.py` | **NEW v3.40** — Post-action a11y tree analysis, confidence scoring, ObservationDelta |
+| `automation/report_pdf.py` | **NEW v3.40** — Per-WI PDF report generation (reportlab) |
+| `automation/e2e_runner.py` | Self-healing Playwright E2E engine; `run_e2e_tests` + `run_e2e_slot` (parallel) |
 | `automation/e2e_plan.py` | LLM-compiled execution plan; `compile_test_case` (line 390), `validate_plan`, `CompiledPlan` |
 | `automation/script_generator.py` | `generate_playwright_script` (line 187), `generate_mcp_replay_script` (line 518), `save_mcp_replay_script` (line 631) |
-| `automation/playwright_bridge.py` | Browser lifecycle management (launch, context, video recording) |
-| `automation/report_excel.py` | `write_e2e_report` (line 83) — openpyxl E2E report |
-| `automation/artifact_collector.py` | Per-TC screenshot/video/script artifact tree |
+| `automation/playwright_bridge.py` | Browser lifecycle management (launch maximized, context, video recording) |
+| `automation/report_excel.py` | `write_e2e_report` (line 83) — openpyxl E2E report (append mode) |
+| `automation/artifact_collector.py` | Per-TC artifact tree |
 | `automation/credential_vault.py` | OS-level credential vault for E2E passwords |
 | `automation/execution_store.py` | Persistent execution state |
 | `automation/bug_tracker.py` | Defect auto-filing from E2E failures |
 | `automation/dashboard_report.py` | Dashboard-level reporting |
-| `automation/healing_guardrails.py` | Self-healing safety limits |
-| `automation/screenshot_annotator.py` | Screenshot annotation for reports |
+| `automation/healing_guardrails.py` | Self-healing locator waterfall (6 strategies) |
+| `automation/screenshot_annotator.py` | Screenshot annotation (legacy, replaced by video in v3.40) |
 
 ### Shared backend agent — `agent-bundle/src/testgen/`
 

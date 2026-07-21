@@ -1,6 +1,6 @@
 # Testing Toolkit — Feature Reference
 
-> Web v3.0.1 / Agent v3.0.1 — July 2026
+> Web v3.40.0 / Agent v3.40.0 — July 2026
 
 This document is the complete feature reference for the Testing Toolkit
 platform: what every feature does, how to use it, workspace layout, runtime
@@ -17,7 +17,7 @@ dependencies, and known constraints.
 5. [Workspace layout](#5-workspace-layout)
 6. [Settings reference](#6-settings-reference)
 7. [AI stack](#7-ai-stack)
-8. [E2E automation engine](#8-e2e-automation-engine)
+8. [E2E automation engine (Autonomous AI QA Agent)](#8-e2e-automation-engine-autonomous-ai-qa-agent--v3400)
 9. [Knowledge base management](#9-knowledge-base-management)
 10. [Hardware utilization](#10-hardware-utilization)
 11. [Runtime dependencies](#11-runtime-dependencies)
@@ -439,7 +439,24 @@ Configure credentials in **Settings** to enable ADO and JIRA MCP tools.
 
 ---
 
-## 8. E2E automation engine
+## 8. E2E automation engine (Autonomous AI QA Agent — v3.40.0)
+
+The E2E runner is a fully autonomous AI QA agent that studies the project
+knowledge base, discovers test cases via parent-child WI hierarchy, executes
+up to 3 user stories in parallel with fully isolated browser contexts, observes
+page state after every action, and produces per-WI artifacts (PDF + video +
+Excel).
+
+### Pipeline
+
+1. **TC Discovery:** parent-child WI hierarchy traversal (or TestedBy/Tests links)
+2. **KB Briefing:** builds TestBrief per-WI (screens, preconditions, business rules)
+3. **Plan Compilation:** brief feeds into LLM plan compiler
+4. **Parallel Execution:** up to 3 WIs in isolated BrowserContexts (maximized)
+5. **Self-Healing:** 6-strategy locator waterfall on element not found
+6. **Page Observation:** a11y tree capture + confidence scoring after every action
+7. **Artifacts:** per-WI PDF report + video recording + Excel row append
+8. **Human Review:** per-TC approve/reject, sign-off workflow
 
 ### Script generator
 
@@ -476,6 +493,43 @@ Additional reliability features:
 - Post-click wait: navigation clicks use `waitUntil: "commit"`, in-page
   clicks skip to avoid false network-idle waits
 - `[HEAL]` log entries record which strategy succeeded for audit
+- PageObserver integration: captures before/after a11y state per action
+
+### Parallel execution
+
+- ONE shared Chromium process, up to 3 independent BrowserContexts
+- Each context: own cookies, own storage state, own video directory
+- Per-WI cancellation: `POST /e2e/stop/{job_id}?wi_id=X`
+- Sequential fallback when only 1 WI selected (zero regression risk)
+- Browser launches maximized (`--start-maximized` + `no_viewport=True`)
+
+### KB briefing
+
+- Queries HybridRetriever + ProjectContext before plan compilation
+- Produces TestBrief: screens, preconditions, business_rules, navigation_hints
+- Brief is authoritative context for the plan compiler
+- Falls back gracefully when KB has no indexed content
+
+### Page observation
+
+- Captures a11y tree, URL, error/success/loading signals after every action
+- Confidence scoring (0.0-1.0) based on signal clarity
+- ObservationDelta detects new errors between before/after states
+- Feeds findings into PDF report as AI observations
+
+### Artifacts per WI
+
+- **PDF report** (reportlab): header, summary, step results table, AI
+  observations, video reference
+- **Video** (Playwright context-level): continuous recording, replaces screenshots
+- **Excel append**: row per TC to project's `e2e_results.xlsx`
+
+### Human review flow
+
+- ReviewPanel in E2EDialog: per-TC approve/reject buttons
+- Video link per TC for playback
+- Sign-off button (enabled only when all TCs reviewed)
+- Review is optional — does not block autonomous execution
 
 ---
 

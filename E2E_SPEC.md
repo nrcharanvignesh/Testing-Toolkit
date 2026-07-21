@@ -1,4 +1,4 @@
-# E2E SPEC: Run E2E - AI-Driven, Human-Like Automated Testing (BINDING)
+# E2E SPEC: Autonomous AI QA Agent (BINDING)
 
 ## AUTHORITY AND PRECEDENCE
 
@@ -13,19 +13,20 @@ behavior ONLY.
 ## 0. What this feature is, in one sentence
 
 Given a set of work items (from ANY supported source - Section 1.1 of
-MASTER_SPEC.md) or manually authored test cases, the system WILL compile
-test steps into an executable plan, generate and run Playwright
-automation behaving the way a careful human tester would, self-heal when
-the target UI has drifted since the test was written, and produce an
-honest, evidence-backed pass/fail report - all without ever touching the
-user's own open browser session, on any OS, against any target
-application.
+MASTER_SPEC.md) or manually authored test cases, the autonomous AI QA
+agent WILL study the project knowledge base, discover test cases via
+parent-child WI hierarchy, execute up to 3 user stories in parallel with
+fully isolated browser contexts, observe page state after every action,
+self-heal when the target UI has drifted, and produce per-WI PDF reports
+with video recordings and Excel audit trail - all without human input
+until final review sign-off.
 
 Grounded in the real modules already in this codebase
-(automation/e2e_plan.py, e2e_runner.py, script_generator.py,
-playwright_bridge.py, healing_guardrails.py, report_excel.py,
-artifact_collector.py, screenshot_annotator.py). This document is the
-definition of "correct and complete" for that code - not a wishlist.
+(automation/e2e_plan.py, e2e_runner.py, parallel_runner.py,
+kb_briefing.py, page_observer.py, report_pdf.py, script_generator.py,
+playwright_bridge.py, healing_guardrails.py, report_excel.py). This
+document is the definition of "correct and complete" for that code - not
+a wishlist.
 
 ---
 
@@ -42,6 +43,9 @@ definition of "correct and complete" for that code - not a wishlist.
 4. Existing template/pattern library, when the project has run E2E
    before - the system WILL learn from prior successful selectors/flows
    rather than regenerating from zero every run.
+5. Parent-child WI hierarchy: when the selected WI is a User Story,
+   Feature, or Epic, the system WILL traverse child links to discover
+   associated Test Case work items automatically (R6).
 
 ## 2. Pipeline stages - EVERY REQUIREMENT BELOW IS MANDATORY
 
@@ -126,16 +130,55 @@ feature:
 
 ### Stage E - Artifact collection and reporting
 
-- Every run produces: a screenshot per step (minimum: per failure), a
-  plain-language pass/fail per step, total duration, and a final
-  report.
-- Failure screenshots MUST be annotated to highlight the expected
-  element/region.
+- Every run produces, per work item:
+  - One PDF report (steps + AI observations + confidence scores)
+  - One video recording (Playwright context-level, full session)
+  - Excel row append to the project's E2E results workbook
+- Video is the sole visual artifact - per-step screenshots are replaced
+  by continuous video recording.
 - The report MUST distinguish, per test case: PASSED / PASSED VIA
   FALLBACK / FAILED (with reason and evidence) / BLOCKED
   (environment/setup issue, distinct from a genuine test failure).
 - Output path: single, deterministic location. Duplication across two
   folders is FORBIDDEN (Section 4.3 of MASTER_SPEC.md).
+
+### Stage F - Parallel execution (parallel_runner.py)
+
+- ONE shared Browser process, up to 3 independent BrowserContexts.
+- Each context: own cookies, own storage state, own video directory.
+- Work items execute in parallel; test cases within a WI execute
+  sequentially (shared login state).
+- Per-WI cancellation: any single WI can be stopped mid-run without
+  affecting other slots.
+- Sequential fallback: if N=1, use the existing single-context path
+  (zero regression risk).
+- Error isolation: one context crash does not kill others.
+
+### Stage G - KB Briefing (kb_briefing.py)
+
+- Before plan compilation, the KB Briefing Engine builds a TestBrief:
+  - Screens (from ProjectContext.screens)
+  - Preconditions (test_data_needs + actors)
+  - Business rules
+  - Navigation hints (workflows)
+- The brief is authoritative context for the plan compiler (preferred
+  over selective KB retrieval).
+- Falls back gracefully when KB has no results for the query.
+
+### Stage H - Page observation (page_observer.py)
+
+- After every significant action, captures full page state via a11y tree.
+- Detects: error signals, loading states, success indicators.
+- Produces ObservationDelta (what changed between before/after).
+- Confidence scoring (0.0-1.0) based on signal clarity.
+- Feeds anomalies into the PDF report as AI observations.
+
+### Stage I - Human review flow (E2EDialog ReviewPanel)
+
+- Post-execution: per-TC approve/reject controls with visual state.
+- Video playback alongside AI observations panel.
+- Sign-off button (enabled only when all TCs reviewed).
+- Review is optional - does not block autonomous execution.
 
 ## 3. Reliability requirements - "RUNS NO MATTER WHAT" IS LITERAL
 

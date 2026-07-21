@@ -1,6 +1,6 @@
 # Testing Toolkit — Architecture
 
-> Web v3.0.1 / Agent v3.0.1 — July 2026
+> Web v3.40.0 / Agent v3.40.0 — July 2026
 
 This document describes the end-to-end architecture: what problem the platform
 solves, how the pieces fit together, and how data and secrets flow through the
@@ -32,11 +32,11 @@ GenAI gateway when an AI operation requires it.
 The system is split into two cooperating halves plus a distribution channel:
 
 ```
-Browser (Vercel web app — web 3.0.1)
+Browser (Vercel web app — web 3.40.0)
     |
     | HTTP (CORS, loopback only)
     v
-Local compute agent (FastAPI @ 127.0.0.1:7842 — agent 3.0.1)
+Local compute agent (FastAPI @ 127.0.0.1:7842 — agent 3.40.0)
     |-- OS secret store  (PAT, LLM API key)
     |-- ~/TestingToolkit workspace  (projects, runs, outputs, logs)
     |-- LanceDB embedded vector store  (local, per-project)
@@ -128,7 +128,7 @@ FastAPI app bound to `127.0.0.1:7842`. Responsibilities:
 | `testgen/` | Phase/type definitions, RLM pipeline, template analysis, Excel writers |
 | `defects/` | Bulk defect parsing, review workbook, ADO upload |
 | `tools/` | PDF packaging, Office/Visio conversion |
-| `automation/` | E2E script generator, self-healing Playwright runner |
+| `automation/` | Autonomous AI QA agent: parallel runner, KB briefing, page observer, PDF reports, self-healing Playwright runner |
 | `core/` | Config (`app_config.py`), settings store, secret store, LLM client (Anthropic + OpenAI transport), OpenAI transport layer, orchestrator, logging, hardware detection |
 
 ---
@@ -200,26 +200,81 @@ Upload approved test cases to ADO
 
 ---
 
-## 6. E2E automation engine (agent 3.0.1)
+## 6. E2E automation engine (agent 3.40.0) — Autonomous AI QA Agent
 
-The `automation/` module generates Playwright Python scripts from test case steps
-and executes them via a self-healing runner:
+The `automation/` module is a fully autonomous AI QA agent that studies the
+project KB, discovers test cases via WI hierarchy, executes up to 3 user stories
+in parallel, observes page state after every action, and produces per-WI
+artifacts.
 
-**Script generator (`script_generator.py`):**
-- Translates 20 action types to Playwright async Python
-- Uses `await expect(page).to_have_url(re.compile(...))` for URL assertions
-- Injects `E2E_PASSWORD` env var for sensitive fields — no plaintext passwords
+### Intelligence layers
 
-**Self-healing runner (`e2e_runner.py`):**
+```
+Layer 5: REASONING    -- Business rule validation against KB
+Layer 4: OBSERVATION  -- Full page state analysis after every action
+Layer 3: NAVIGATION   -- Autonomous pathfinding from KB app map
+Layer 2: INTERACTION  -- Self-healing locator waterfall + LLM recompile
+Layer 1: BROWSER      -- Playwright contexts, video, maximized, isolated
+```
+
+### Modules
+
+| Module | Purpose |
+|--------|---------|
+| `parallel_runner.py` | 1 Browser -> up to 3 isolated BrowserContexts per run |
+| `kb_briefing.py` | Builds TestBrief from KB: screens, preconditions, business rules |
+| `page_observer.py` | Post-action a11y tree capture + confidence scoring |
+| `report_pdf.py` | Per-WI PDF report with AI observations |
+| `e2e_runner.py` | Self-healing runner with `run_e2e_slot()` for parallel slots |
+| `script_generator.py` | Translates 20 action types to Playwright async Python |
+| `playwright_bridge.py` | Browser launch (maximized), CDP, session lifecycle |
+| `healing_guardrails.py` | 6-strategy locator waterfall |
+| `e2e_plan.py` | LLM-based plan compilation |
+
+### Self-healing runner (`e2e_runner.py`)
 - 6-strategy locator waterfall: role -> label -> placeholder -> text -> test_id -> CSS
 - Auto-retry with exponential backoff (3 attempts, 600ms base)
 - iframe traversal 1 level deep
 - Shadow DOM pierce via CSS `>>` combinator
 - Element stability guard (bounding-box convergence before interact)
 - Smart post-click wait: navigation clicks wait `commit`, in-page clicks skip
-- Configurable soft assertions (`assert_*` don't abort the flow)
+- PageObserver integration: captures before/after state, detects new errors
 - `stop_fn` propagation checked at TC boundary and inside each step
 - `locator_strategy` field on `StepResult` records which strategy won (`[HEAL]` log entries)
+
+### Parallel execution (`parallel_runner.py`)
+- ONE shared Chromium process (avoids 3x cold start + 3x GPU memory)
+- Up to 3 independent BrowserContexts (own cookies, storage, video)
+- Per-WI cancellation via asyncio.Event (others continue unaffected)
+- Batch execution: processes wi_ids in groups of MAX_PARALLEL (3)
+- Storage state persistence per-WI for login preservation
+
+### KB briefing (`kb_briefing.py`)
+- Queries HybridRetriever + ProjectContext before plan compilation
+- Produces TestBrief: screens, preconditions, business_rules, navigation_hints
+- Brief feeds into plan compiler as authoritative context
+- Falls back to selective context when retriever has no results
+
+### Page observation (`page_observer.py`)
+- Captures a11y tree, URL, error/success/loading signals after every action
+- Produces ObservationDelta (what changed between before/after)
+- Confidence scoring heuristic (0.0-1.0)
+- Feeds anomalies into PDF report as AI observations
+
+### Artifacts per WI
+- PDF report (reportlab): header, summary table, step results, AI observations
+- Video recording (Playwright context-level, continuous)
+- Excel append to project workbook (running audit trail)
+
+### TC discovery
+- Parent-child WI hierarchy traversal ("child" in `_LINK_REL_HINTS`)
+- Priority: TestedBy/Tests (direct) > Child test cases > Related links
+- 1-level depth (configurable)
+
+### Human review flow
+- Per-TC approve/reject buttons in E2EDialog ReviewPanel
+- Sign-off button (enabled only when all TCs reviewed)
+- Video link per TC for playback
 
 ---
 

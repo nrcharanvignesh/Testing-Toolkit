@@ -590,7 +590,133 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
             items={downloadItems}
           />
         )}
+
+        {/* Human Review Panel — shown after run completes */}
+        {result && !running && (
+          <ReviewPanel result={result} onClose={onClose} />
+        )}
       </div>
     </Modal>
+  );
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Human Review Panel (Phase 6)
+   Displays per-TC results with video links and approve/reject actions.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+type ReviewVerdict = "approved" | "rejected" | "pending";
+
+function ReviewPanel({
+  result,
+  onClose,
+}: {
+  result: E2ERunResult;
+  onClose: () => void;
+}) {
+  const [verdicts, setVerdicts] = useState<Record<string, ReviewVerdict>>({});
+  const [signedOff, setSignedOff] = useState(false);
+
+  const allReviewed =
+    result.results.length > 0 &&
+    result.results.every((r) => verdicts[r.tc_id] != null);
+
+  const setVerdict = (tcId: string, v: ReviewVerdict) =>
+    setVerdicts((prev) => ({ ...prev, [tcId]: v }));
+
+  const handleSignOff = () => {
+    setSignedOff(true);
+    // Future: persist sign-off to execution_store
+  };
+
+  if (signedOff) {
+    return (
+      <div className="rounded-lg border border-[var(--tt-success)] bg-[var(--tt-surface-high)] p-4 text-center">
+        <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-[var(--tt-success)]" />
+        <p className="text-sm font-medium text-[var(--tt-success)]">
+          Review signed off. {Object.values(verdicts).filter((v) => v === "approved").length} approved,{" "}
+          {Object.values(verdicts).filter((v) => v === "rejected").length} rejected.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-[var(--tt-outline)] p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wide text-[var(--tt-text-muted)]">
+          Human Review
+        </span>
+        <span className="text-xs text-[var(--tt-text-faint)]">
+          {Object.keys(verdicts).length}/{result.results.length} reviewed
+        </span>
+      </div>
+
+      <div className="max-h-48 overflow-auto divide-y divide-[var(--tt-outline)]">
+        {result.results.map((r) => {
+          const verdict = verdicts[r.tc_id] || "pending";
+          return (
+            <div
+              key={r.tc_id}
+              className="flex items-center gap-2 py-2 text-sm"
+            >
+              <span className="shrink-0">
+                {r.status === "pass" ? (
+                  <CheckCircle2 className="h-4 w-4 text-[var(--tt-success)]" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-[var(--tt-danger)]" />
+                )}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[var(--tt-text-secondary)]">
+                {r.title}
+              </span>
+              {r.video_path && (
+                <a
+                  href={`/api/artifact?path=${encodeURIComponent(r.video_path)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="shrink-0 text-xs text-[var(--tt-primary-soft)] hover:underline"
+                >
+                  Video
+                </a>
+              )}
+              <div className="flex shrink-0 gap-1">
+                <button
+                  className={`rounded px-2 py-0.5 text-xs transition-colors ${
+                    verdict === "approved"
+                      ? "bg-[var(--tt-success)] text-white"
+                      : "bg-[var(--tt-surface-high)] text-[var(--tt-text-muted)] hover:bg-[var(--tt-success)] hover:text-white"
+                  }`}
+                  onClick={() => setVerdict(r.tc_id, "approved")}
+                >
+                  Approve
+                </button>
+                <button
+                  className={`rounded px-2 py-0.5 text-xs transition-colors ${
+                    verdict === "rejected"
+                      ? "bg-[var(--tt-danger)] text-white"
+                      : "bg-[var(--tt-surface-high)] text-[var(--tt-text-muted)] hover:bg-[var(--tt-danger)] hover:text-white"
+                  }`}
+                  onClick={() => setVerdict(r.tc_id, "rejected")}
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          className="tt-btn-primary text-xs"
+          disabled={!allReviewed}
+          onClick={handleSignOff}
+          title={allReviewed ? "Sign off on this review" : "Review all test cases first"}
+        >
+          Sign Off Review
+        </button>
+      </div>
+    </div>
   );
 }

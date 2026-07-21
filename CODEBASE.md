@@ -1,9 +1,9 @@
 # Testing Toolkit -- Complete Codebase Documentation
 
-**Web App Version:** 3.9.0  
-**Agent Version:** 2.30.0  
-**Generated:** 2026-07-19  
-**Commit:** dae6cd1
+**Web App Version:** 3.40.0  
+**Agent Version:** 3.40.0  
+**Generated:** 2026-07-21  
+**Commit:** 638ba62
 
 ---
 
@@ -339,7 +339,7 @@ Every method on the `agent` object in `lib/agent-client.ts`:
 | `/generate` | generate | RLM test case generation |
 | `/defects` | defects | Defect parse/upload |
 | `/credentials` | credentials | Encrypted test credentials |
-| `/e2e` | e2e | Playwright browser automation |
+| `/e2e` | e2e | Autonomous AI QA agent (parallel, KB-driven, per-WI cancel) |
 | `/jobs` | jobs | Job poll/stop |
 | `/tools` | tools | PDF packaging, log access |
 | `/artifacts` | artifacts | Generated file management |
@@ -420,7 +420,37 @@ Every method on the `agent` object in `lib/agent-client.ts`:
 - Expiry: 45-min stale sweep, 24h TTL, 200K log lines max
 - Cooperative cancellation via `stop_event`
 
-### 4.8 Installer
+### 4.8 E2E Automation (v3.40.0 - Autonomous AI QA Agent)
+
+| Module | Purpose |
+|--------|---------|
+| `automation/e2e_runner.py` | Self-healing runner with slot-based execution (`run_e2e_slot()`) |
+| `automation/parallel_runner.py` | 1 Browser -> N isolated BrowserContexts (max 3), per-WI cancel |
+| `automation/kb_briefing.py` | KB-driven test brief builder (screens, preconditions, business rules) |
+| `automation/page_observer.py` | Post-action a11y tree analysis, confidence scoring, delta detection |
+| `automation/report_pdf.py` | Per-WI PDF report generation (reportlab) |
+| `automation/playwright_bridge.py` | Browser launch (maximized), CDP management, session lifecycle |
+| `automation/e2e_plan.py` | LLM-based plan compilation (action/target/expected triples) |
+| `automation/script_generator.py` | Playwright action generation from compiled plan |
+| `automation/healing_guardrails.py` | Self-healing locator waterfall (6 strategies) |
+| `automation/report_excel.py` | E2E results Excel workbook (append-mode) |
+
+**E2E Pipeline (v3.40.0):**
+1. TC Discovery: parent-child WI hierarchy traversal (`ado/boards.py`)
+2. KB Briefing: build TestBrief per-WI (screens, preconditions, rules)
+3. Plan Compilation: brief feeds into LLM plan compiler
+4. Parallel Execution: up to 3 WIs in isolated BrowserContexts
+5. Observation: page_observer captures a11y state after every action
+6. Self-Healing: 6-strategy locator waterfall on failure
+7. Artifacts: per-WI PDF + video + Excel append
+8. Human Review: approve/reject per-TC, sign-off
+
+**Key constants:**
+- `MAX_PARALLEL = 3` (concurrent BrowserContexts)
+- Per-WI storage state: `~/.testing_toolkit/e2e_profiles/{wi_id}/state.json`
+- Video output: context-level recording (Playwright native)
+
+### 4.9 Installer
 
 **File:** `agent-bundle/install.py`
 

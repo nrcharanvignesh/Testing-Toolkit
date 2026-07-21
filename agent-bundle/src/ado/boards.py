@@ -656,7 +656,7 @@ _TEST_REL_HINTS: Final[tuple[str, ...]] = ("testedby", "tests")
 # teams model a test as a child/related work item instead of using a
 # TestedBy relation.
 _LINK_REL_HINTS: Final[tuple[str, ...]] = (
-    "related", "dependency",
+    "child", "related", "dependency",
 )
 # A linked work item is a test case when its normalized type name matches one
 # of these tokens exactly (case-insensitive, after stripping non-alnum).

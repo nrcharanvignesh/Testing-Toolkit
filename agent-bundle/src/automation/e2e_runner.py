@@ -1130,3 +1130,144 @@ async def run_e2e_tests(
         on_progress(len(results), total)
     _log(f"[INFO] Run complete. {len(results)}/{total} test cases executed.")
     return results
+
+
+# ---------------------------------------------------------------------------
+# Slot-based execution for ParallelRunner (Phase 1c)
+# ---------------------------------------------------------------------------
+
+async def run_e2e_slot(
+    page: Any,
+    test_cases: list[dict[str, Any]],
+    login_url: str,
+    username: str,
+    password: str,
+    output_dir: Path,
+    *,
+    ai_instructions: str = "",
+    stop_fn: Callable[[], bool] | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
+    on_log: Callable[[str], None] | None = None,
+    on_screenshot: Callable[[Path, int, str], None] | None = None,
+    on_tc_done: Callable[[str, str], None] | None = None,
+    client: Any | None = None,
+    model: str = "",
+) -> list[TestCaseResult]:
+    """Execute test cases on an already-created page (from ParallelRunner slot).
+
+    Same logic as run_e2e_tests but skips browser_session creation since the
+    page is provided by the ParallelRunner's ExecutionSlot. Each slot has its
+    own isolated BrowserContext with independent cookies and storage.
+    """
+    results: list[TestCaseResult] = []
+    total = len(test_cases)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    def _log(message: str) -> None:
+        if on_log:
+            on_log(message)
+
+    try:
+        from .page_observer import PageObserver
+        observer = PageObserver(on_log=_log)
+
+        login_ok = await _perform_login(page, login_url, username, password, _log, ai_instructions)
+        if not login_ok:
+            _log("[WARN] Pre-login did not confirm success; proceeding anyway.")
+
+        # Initial observation after login
+        await observer.observe(page)
+
+        for tc_index, tc in enumerate(test_cases):
+            if stop_fn and stop_fn():
+                _log("[WARN] Stop signal received. Aborting remaining test cases.")
+                break
+            tc_id = str(tc.get("id", f"TC_{tc_index + 1:03d}"))
+            title = str(tc.get("title", "Untitled"))
+            steps = tc.get("steps") if isinstance(tc.get("steps"), list) else []
+            collector = ArtifactCollector(output_dir, tc_id, title=title)
+            started = time.perf_counter_ns()
+            step_results: list[StepResult] = []
+            _log(f"[INFO] ({tc_index + 1}/{total}) Starting: {tc_id} - {title}")
+            if on_progress:
+                on_progress(tc_index, total)
+
+            if not steps:
+                step_results.append(StepResult(
+                    step_num=0, action="plan", expected="Executable plan",
+                    actual=str(tc.get("plan_error", "Plan has no executable steps")),
+                    status="error",
+                ))
+            else:
+                exec_steps = [s for s in steps if not (login_ok and _is_auth_step(s))]
+                if not exec_steps:
+                    exec_steps = steps
+                first_action = str(exec_steps[0].get("action", "")).lower()
+                if first_action != "navigate":
+                    await page.goto(login_url, wait_until="domcontentloaded", timeout=NAVIGATE_TIMEOUT_MS)
+                for step_num, step in enumerate(exec_steps, 1):
+                    if stop_fn and stop_fn():
+                        break
+                    before_obs = observer.last
+                    step_result = await _execute_step(
+                        page, step, username, password, collector.screenshot_dir,
+                        step_num, stop_fn=stop_fn,
+                        client=client, model=model, login_url=login_url,
+                    )
+                    if stop_fn and stop_fn():
+                        break
+                    # Post-step observation for autonomous intelligence
+                    after_obs = await observer.observe(page)
+                    if before_obs and after_obs:
+                        delta = observer.compare(before_obs, after_obs)
+                        if delta.new_errors and step_result.status == "pass":
+                            step_result.actual += f" [OBS: {delta.summary}]"
+                    step_results.append(step_result)
+                    if step_result.screenshot_path and on_screenshot:
+                        on_screenshot(step_result.screenshot_path, step_num, step_result.status)
+                    _log(
+                        f"  [{step_result.status.upper()}] Step {step_num}: "
+                        f"{step_result.action} -> {step_result.actual}"
+                    )
+                    if step_result.status in ("error", "fail") and step_result.action not in _SOFT_ACTIONS:
+                        break
+
+            if stop_fn and stop_fn():
+                _log(f"[WARN] Stopped during {tc_id}; partial result discarded.")
+                break
+
+            statuses = {item.status for item in step_results}
+            executed = sum(item.status in ("pass", "fail", "error") for item in step_results)
+            overall = (
+                "error" if executed == 0 or "error" in statuses
+                else "fail" if "fail" in statuses
+                else "pass"
+            )
+            script = generate_playwright_script(
+                tc_id=tc_id, title=title, steps=steps,
+                login_url=login_url, username=username,
+            )
+            result = TestCaseResult(
+                tc_id=tc_id, title=title, steps=step_results,
+                script_path=collector.save_script(script, tc_id),
+                overall_status=overall,
+                duration_ms=int((time.perf_counter_ns() - started) / 1_000_000),
+            )
+            results.append(result)
+            if on_tc_done:
+                on_tc_done(tc_id, overall)
+            _log(f"[{overall.upper()}] {tc_id} finished in {result.duration_ms}ms")
+    except Exception as exc:
+        message = _scrub(str(exc)[:300], password)
+        _log(f"[ERROR] Slot execution failed: {message}")
+        if not results:
+            results.append(TestCaseResult(
+                tc_id="slot_error", title="Slot execution setup",
+                steps=[StepResult(0, "setup", "Slot execution started", message, "error")],
+                overall_status="error",
+            ))
+
+    if on_progress:
+        on_progress(len(results), total)
+    _log(f"[INFO] Slot complete. {len(results)}/{total} test cases executed.")
+    return results

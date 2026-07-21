@@ -5,17 +5,20 @@ Steps to follow when pushing changes that affect the agent bundle.
 ## Pre-deploy
 
 1. Bump `AGENT_VERSION` in `agent-bundle/src/agent/version.py`
-   - Patch (2.x.Y) for bug fixes, config changes, minor tweaks
-   - Minor (2.X.0) for new features, prompt rewrites, behavior changes
+   - Patch (X.Y.Z) for bug fixes, config changes, minor tweaks
+   - Minor (X.Y.0) for new features, prompt rewrites, behavior changes
+   - Major (X.0.0) for architectural overhauls (e.g. 3.0.1 -> 3.40.0)
 2. Bump `REQUIRED_AGENT_VERSION` in `lib/agent-version.ts` to match
    (forces the web app to show the update screen for users on older agents)
+   **CRITICAL: NEVER bump until the installer succeeds end-to-end.** Premature
+   bumps block the entire app for all users.
 3. Bump `"version"` in `package.json` (web app version shown in footer)
 4. Commit all version bumps together
 
 ## Deploy
 
-5. `git push origin main`
-6. `npx vercel --prod --yes` (deploys the web app)
+5. `git push origin main` (Vercel git integration auto-deploys)
+6. Do NOT use `npx vercel --prod` locally (causes EBUSY errors on Windows)
 
 ## Update the agent manifest (`parts` branch)
 
