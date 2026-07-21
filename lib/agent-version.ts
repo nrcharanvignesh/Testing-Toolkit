@@ -13,7 +13,7 @@
  * endpoint, response shape, behavior). Keep it equal to the lowest agent
  * AGENT_VERSION that this web build is known to work with.
  */
-export const REQUIRED_AGENT_VERSION = "3.44.0";
+export const REQUIRED_AGENT_VERSION = "3.45.0";
 
 /** Parse a dotted version ("1.7.0") into numeric parts. Missing/garbage -> 0s. */
 function parseVersion(v: string | null | undefined): number[] {
