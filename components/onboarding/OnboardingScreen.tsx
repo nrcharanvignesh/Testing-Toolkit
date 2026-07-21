@@ -57,39 +57,36 @@ export function OnboardingScreen({
     setOS(getOS());
   }, []);
 
-  // Fast-poll: once the installer is downloaded, poll health every 2s so we
-  // catch the brief offline window even though the normal connected cadence is
-  // 30s. Without this, a fast agent restart is invisible to the poller.
+  // Fast-poll: during a reinstall, poll health every 2s so we catch the agent
+  // restart quickly. Activates as soon as the screen mounts (not gated on
+  // download) because the user may run the installer independently.
   useEffect(() => {
-    if (!reinstall || !downloaded) return;
+    if (!reinstall) return;
     const id = window.setInterval(() => retry(), 2000);
     return () => window.clearInterval(id);
-  }, [reinstall, downloaded, retry]);
+  }, [reinstall, retry]);
 
-  // Reinstall completion: once the user has downloaded the new installer, watch
-  // for the agent going offline (installer replacing/restarting it) and then
-  // coming back connected — that round-trip means the fresh agent is live.
+  // Reinstall completion: watch for the agent going offline then coming back.
   useEffect(() => {
-    if (!reinstall || !downloaded) return;
+    if (!reinstall) return;
     if (status === "offline" || status === "connecting") {
       sawDrop.current = true;
     } else if (status === "connected" && sawDrop.current) {
-      onReinstallComplete?.();
+      if (!isAgentOutdated(agentVersion)) {
+        onReinstallComplete?.();
+      }
     }
-  }, [reinstall, downloaded, status, onReinstallComplete]);
+  }, [reinstall, status, agentVersion, onReinstallComplete]);
 
-  // Version-aware fallback: if the agent restarts faster than the polling can
-  // detect the drop (sawDrop never fires), dismiss once the connected agent
-  // reports a DIFFERENT version than at download time. For same-version
-  // reinstalls, only sawDrop can dismiss (requires seeing the offline state).
+  // Version-aware fallback: dismiss as soon as a non-outdated agent connects,
+  // even if we never saw the drop (fast restart or user ran installer manually).
   useEffect(() => {
-    if (!reinstall || !downloaded) return;
+    if (!reinstall) return;
     if (status !== "connected" || !agentVersion) return;
-    if (agentVersion === versionAtDownload.current) return;
     if (!isAgentOutdated(agentVersion)) {
       onReinstallComplete?.();
     }
-  }, [reinstall, downloaded, status, agentVersion, onReinstallComplete]);
+  }, [reinstall, status, agentVersion, onReinstallComplete]);
 
   const installer = INSTALLER_MAP[os];
 
