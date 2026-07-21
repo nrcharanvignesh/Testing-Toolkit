@@ -1,6 +1,6 @@
 # Testing Toolkit
 
-> **Web v3.40.0 — Agent v3.40.0**
+> **Web v3.44.0 — Agent v3.44.0**
 
 An autonomous AI QA platform that turns **Azure DevOps** and **JIRA** work items
 into fully executed end-to-end tests, LLM-generated test cases, requirement PDF
@@ -19,8 +19,8 @@ credentials remain agent-side and are never returned by its API.
 | Capability | Description |
 |---|---|
 | **Autonomous E2E Testing** | AI QA agent studies the project KB, discovers test cases via parent-child WI hierarchy, executes up to 3 user stories in parallel with isolated browser contexts, observes page state after every action, and produces per-WI PDF reports + video recordings + Excel audit trail |
-| **Browse ADO / JIRA boards** | Pick a project and board from Azure DevOps or JIRA; view work items in a swim-lane grid with clickable WI ID hyperlinks and a full detail pane (description, acceptance criteria, comments, attachments, links) |
-| **Export to Excel** | Export the current board as a full audit workbook: board sheet (filtered state, KPIs, hyperlinked IDs), test coverage, traceability matrix (WI x TC x pass/fail), defect density by column/sprint, pivot-ready flat data, and E2E execution results. Conditional formatting (red/amber/green) on coverage and status cells. Export all boards as a multi-sheet workbook with a summary page |
+| **Browse ADO / JIRA boards** | Pick a project and board from Azure DevOps or JIRA; view work items in a responsive swim-lane grid with clickable WI ID hyperlinks, responsive autofit columns (ResizeObserver-driven), right-click column header to remap data source to any row field, and a full detail pane (description, acceptance criteria, comments, attachments, links) |
+| **Export to Excel** | Export the current board as a full audit workbook: board sheet (filtered state, KPIs, hyperlinked IDs), test coverage, traceability matrix (WI x TC x pass/fail), defect density by column/sprint, pivot-ready flat data, and E2E execution results. Sorted by WI type then created date descending. Conditional formatting (red/amber/green) on coverage and status cells. Export all boards as a multi-sheet workbook with a summary page |
 | **WI-level PDF** | Download any work item as a standalone PDF from the detail pane (ADO only) |
 | **Generate test cases** | Select work items and a phase (Implementation / SIT / UAT); the RLM pipeline reads the work items + project KB and produces a reviewable Excel workbook |
 | **E2E automation** | Self-healing Playwright execution with a 6-strategy locator waterfall, auto-retry, iframe/shadow-DOM traversal, KB-driven step discovery, and full per-TC result history |
@@ -57,7 +57,7 @@ Browser (Vercel web app)  ──HTTP──>  Local agent (FastAPI @ 127.0.0.1:78
                                               |-> Page Observer (a11y analysis)
 ```
 
-### E2E Intelligence Layers (v3.40.0)
+### E2E Intelligence Layers
 
 ```
 Layer 5: REASONING    -- Business rule validation against KB
@@ -201,7 +201,7 @@ path; default is `anthropic` (also supported by the LiteLLM proxy).
 
 ## Design system
 
-Web v3.40.0 ships a complete CXO-level design system:
+Web v3.44.0 ships a complete CXO-level design system:
 
 - **Token set**: work-item type colors (story/bug/task/epic/feature), state
   badge colors, elevation shadows (sm/md/lg), teal brand accent

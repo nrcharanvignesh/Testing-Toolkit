@@ -119,11 +119,11 @@ _ALLOWED_EXTENSIONS: set[str] = {".xlsx", ".pdf", ".mkv"}
 @router.get("/{project}")
 @trace
 async def list_artifacts(project: str) -> list[dict[str, Any]]:
-    from core.app_config import EXPORTS_DIR
+    from core.app_config import EXPORTS_DIR, OUTPUTS_DIR
 
     out: list[dict[str, Any]] = []
 
-    # All user-facing outputs live under EXPORTS_DIR (~/Downloads/Testing_Toolkit)
+    # User-facing outputs under EXPORTS_DIR (~/Downloads/Testing_Toolkit)
     if EXPORTS_DIR.exists():
         for f in EXPORTS_DIR.rglob("*"):
             if not f.is_file() or f.name.startswith("."):
@@ -133,9 +133,22 @@ async def list_artifacts(project: str) -> list[dict[str, Any]]:
             kind = (
                 "recording" if f.suffix.lower() == ".mkv"
                 else "report" if f.suffix.lower() == ".xlsx"
+                else "e2e_report" if "e2e_report" in f.name.lower()
                 else "packets"
             )
             out.append(_describe(f, kind))
+
+    # Packaged PDFs under OUTPUTS_DIR (workspace/outputs/<project>/packets)
+    from core.project_store import _safe_name
+    safe_project = _safe_name(project)
+    packets_dir = OUTPUTS_DIR / safe_project / "packets"
+    if packets_dir.exists():
+        for f in packets_dir.rglob("*"):
+            if not f.is_file() or f.name.startswith("."):
+                continue
+            if f.suffix.lower() not in _ALLOWED_EXTENSIONS:
+                continue
+            out.append(_describe(f, "packets"))
 
     out.sort(key=lambda r: r["modified"], reverse=True)
     return out

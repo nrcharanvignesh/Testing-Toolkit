@@ -125,7 +125,7 @@ export function Modal({
             <X className="h-4 w-4" />
           </button>
         </header>
-        <div className="flex-1 overflow-auto px-6 py-5">{children}</div>
+        <div className={`flex-1 px-6 py-5 ${maximized ? "flex flex-col overflow-hidden" : "overflow-auto"}`}>{children}</div>
         {footer && (
           <footer className="flex items-center justify-end gap-2 border-t border-[var(--tt-outline-soft)] px-6 py-4">
             {footer}

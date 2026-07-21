@@ -1,5 +1,55 @@
 # Changelog
 
+## 3.44.0 — 2026-07-21 (E2E System Overhaul)
+
+### Fixes
+
+- **PDF Packager regression:** Detail View PDF button now correctly downloads the
+  WI-packaged PDF instead of the E2E test report. Root cause: artifact listing
+  only scanned EXPORTS_DIR; now also scans OUTPUTS_DIR/packets with distinct
+  `kind` tagging.
+- **E2E Dialog overlay:** fixed unbounded grid growth causing TC list, log panel,
+  and review panel to overlap. Proper flex height chain with `min-h-0` + bounded
+  overflow on maximized modals.
+- **PDF report truncation:** removed hard 20/30/40-char truncation. Table cells
+  now use reportlab Paragraph wrapping with expanded column widths (18.1cm full
+  A4 usable width).
+- **Video letterboxing:** removed hardcoded 1920x1080 `record_video_size` when
+  maximized. Playwright now auto-detects actual viewport dimensions.
+- **KB navigation depth:** raised raw_context limit (4000->8000), plan compiler
+  context (6000->12000), added project_context to cache key (KB changes
+  invalidate stale plans), added NAVIGATION INFERENCE instruction to compiler
+  prompt, included description/acceptance_criteria in TC sidecar.
+
+---
+
+## 3.43.0 — 2026-07-21 (Responsive Grid + Export Sort)
+
+### New capabilities
+
+- **Responsive grid autofit:** columns fill the available viewport width via
+  ResizeObserver, responding dynamically to nav panel, log panel, detail pane,
+  and window resize events. Manually drag-resized columns retain their width.
+- **Column data-source switching:** right-click any column header to remap its
+  data source to any WorkItemRow field (board column, board lane, iteration path,
+  area path, tags, created date, etc.). Persisted per user in localStorage.
+- **Excel export sort by created date:** within the same WI type group, rows are
+  now sorted by created date descending (newest first), then by WI ID ascending
+  as a tiebreaker.
+- **Created date field:** `System.CreatedDate` (ADO) and `fields.created` (JIRA)
+  now flow through the full stack — backend dataclass, route serializer, frontend
+  interface, column field picker, and export sort logic.
+- **TC count fix (v3.41-3.42):** `testCaseCountsByWorkItem()` now only counts
+  linked test cases from tracker relations (ADO TestedBy / JIRA test links);
+  sidecar-generated TCs no longer inflate the count.
+
+### Fixes
+
+- Board columns now include `fieldMap` in persisted state (test + type fixes).
+- `_GRID_FIELDS` includes `System.CreatedDate` for ADO batch fetch.
+
+---
+
 ## 3.40.0 — 2026-07-21 (Autonomous AI QA Agent)
 
 Major overhaul transforming the E2E runner from a script executor into a fully

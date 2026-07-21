@@ -125,7 +125,7 @@ export function DetailPane({ activeWiId }: DetailPaneProps) {
       const artifacts = await agent.listArtifacts(currentProject);
       const wiStr = String(detail.wi_id);
       const pdf = artifacts.find(
-        (a) => a.name.endsWith(".pdf") && a.name.includes(wiStr)
+        (a) => a.kind === "packets" && a.name.endsWith(".pdf") && a.name.includes(wiStr)
       );
       if (pdf) {
         const url = agent.artifactDownloadUrl(pdf.path);

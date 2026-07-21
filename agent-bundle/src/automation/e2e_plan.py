@@ -84,7 +84,14 @@ _SYSTEM: Final[str] = (
     "Prefer exact matches over partial when the text is known.\n\n"
     "LOCATOR GUIDANCE: When exact element names are unknown, use text locator with "
     "partial match from the test step description. Prefer get_by_role with accessible "
-    "names from the knowledge base over inventing CSS selectors."
+    "names from the knowledge base over inventing CSS selectors.\n\n"
+    "NAVIGATION INFERENCE (CRITICAL): If a test step references a page, screen, or "
+    "feature without an explicit navigation step preceding it, you MUST generate the "
+    "intermediate navigation steps (clicks, menu selections, link follows) needed to "
+    "reach that page from the current location. Use the project_context to determine "
+    "the correct navigation path. Always start with a 'navigate' action to login_url "
+    "if no explicit URL is given as the first step. Never assume the user is already "
+    "on the target page -- generate the full click path to get there."
 )
 
 
@@ -204,12 +211,16 @@ class CompiledPlan:
     model: str = ""
 
 
-def _cache_key(tc: dict[str, Any], login_url: str, ai_instructions: str) -> str:
+def _cache_key(
+    tc: dict[str, Any], login_url: str, ai_instructions: str,
+    project_context: str = "",
+) -> str:
     payload = {
         "schema": SCHEMA_VERSION,
         "test_case": tc,
         "login_url": login_url,
         "ai_instructions": ai_instructions,
+        "ctx_hash": hashlib.md5(project_context.encode()).hexdigest() if project_context else "",
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
 
@@ -399,7 +410,7 @@ async def compile_test_case(
         log(f"[DEBUG] E2E plan structured fast path: {len(plan['steps'])} step(s)")
         return CompiledPlan(plan, cache_hit=False)
 
-    key = _cache_key(tc, login_url, ai_instructions)
+    key = _cache_key(tc, login_url, ai_instructions, project_context)
     cache_path = cache_dir / f"{key}.json"
     cached = _read_cache(cache_path)
     if cached is not None:
@@ -440,7 +451,7 @@ async def compile_test_case(
     if tc.get("environment"):
         source["environment"] = str(tc["environment"])[:500]
     if project_context:
-        source["project_context"] = project_context[:6000]
+        source["project_context"] = project_context[:12000]
     try:
         result = await client.complete_async(
             model=model, system=_SYSTEM, user=json.dumps(source, ensure_ascii=True),

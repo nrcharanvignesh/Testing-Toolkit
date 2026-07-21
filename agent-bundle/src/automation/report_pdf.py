@@ -48,6 +48,10 @@ class E2EReportData:
             self.observations = []
 
 
+_CELL_STYLE = ParagraphStyle(
+    "CellWrap", fontSize=7, leading=9, wordWrap="CJK",
+)
+
 _STATUS_COLORS: dict[str, colors.Color] = {
     "pass": colors.Color(0.2, 0.7, 0.2),
     "pass_fallback": colors.Color(0.6, 0.8, 0.2),
@@ -137,14 +141,14 @@ def generate_e2e_pdf(data: E2EReportData, output_path: Path) -> Path:
             for step in steps:
                 step_data.append([
                     str(getattr(step, "step_num", "")),
-                    _truncate(getattr(step, "action", ""), 20),
-                    _truncate(getattr(step, "expected", ""), 30),
-                    _truncate(getattr(step, "actual", ""), 40),
+                    Paragraph(_safe(getattr(step, "action", "")), _CELL_STYLE),
+                    Paragraph(_safe(getattr(step, "expected", "")), _CELL_STYLE),
+                    Paragraph(_safe(getattr(step, "actual", "")), _CELL_STYLE),
                     getattr(step, "status", "").upper(),
                 ])
             step_table = Table(
                 step_data,
-                colWidths=[1 * cm, 2.5 * cm, 4 * cm, 5.5 * cm, 2 * cm],
+                colWidths=[1 * cm, 4 * cm, 5 * cm, 5.6 * cm, 2.5 * cm],
             )
             step_table.setStyle(TableStyle([
                 ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.85, 0.85, 0.85)),
@@ -187,12 +191,6 @@ def _safe(text: str) -> str:
     )
 
 
-def _truncate(text: str, max_len: int) -> str:
-    """Truncate text for table cells."""
-    text = text.replace("\n", " ").strip()
-    if len(text) > max_len:
-        return text[:max_len - 3] + "..."
-    return text
 
 
 def _format_time(ts: float) -> str:

@@ -60,8 +60,8 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
             <li>Page observation with a11y tree analysis and confidence scoring</li>
             <li>Human review flow with per-TC approve/reject and sign-off</li>
             <li>Per-WI cancellation mid-run</li>
-            <li>Board-driven work item selection with hyperlinked IDs</li>
-            <li>Export board to Excel with audit sheets (coverage, traceability, defect density)</li>
+            <li>Responsive grid with autofit columns and data-source switching</li>
+            <li>Export board to Excel (sorted by type + created date descending)</li>
             <li>Recursive Language Model test case generation</li>
             <li>Dense + lexical hybrid retrieval (BM25 + embeddings + reranker)</li>
             <li>Parent-child WI hierarchy TC discovery</li>

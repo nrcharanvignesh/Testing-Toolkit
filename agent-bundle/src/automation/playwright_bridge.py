@@ -387,10 +387,11 @@ async def browser_session(
                     }
                 if output_dir:
                     ctx_opts["record_video_dir"] = str(output_dir)
-                    ctx_opts["record_video_size"] = {
-                        "width": 1920 if use_maximized else viewport_width,
-                        "height": 1080 if use_maximized else viewport_height,
-                    }
+                    if not use_maximized:
+                        ctx_opts["record_video_size"] = {
+                            "width": viewport_width,
+                            "height": viewport_height,
+                        }
 
                 context = await pw.chromium.launch_persistent_context(
                     str(_AUTOMATION_PROFILE_DIR),

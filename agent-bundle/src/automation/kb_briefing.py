@@ -96,7 +96,7 @@ class TestBrief:
                 parts.append(f"- {r.name}: {r.description}")
         if self.raw_context:
             parts.append("\n## RAW KB CONTEXT")
-            parts.append(self.raw_context[:4000])
+            parts.append(self.raw_context[:8000])
         parts.append("=== END TEST BRIEF ===")
         return "\n".join(parts)
 
@@ -180,7 +180,7 @@ class KBBriefingEngine:
             try:
                 selective = self._context.to_prompt_section_selective(story_text)
                 if selective:
-                    brief.raw_context = selective[:4000]
+                    brief.raw_context = selective[:8000]
             except Exception:  # noqa: BLE001
                 pass
 

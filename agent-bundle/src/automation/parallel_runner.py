@@ -154,13 +154,13 @@ class ParallelRunner:
 
         ctx_opts: dict[str, Any] = {
             "record_video_dir": str(video_dir),
-            "record_video_size": {"width": 1920, "height": 1080},
         }
 
         if self._maximized and not self._headless:
             ctx_opts["no_viewport"] = True
         else:
             ctx_opts["viewport"] = {"width": 1920, "height": 1080}
+            ctx_opts["record_video_size"] = {"width": 1920, "height": 1080}
 
         # Load storage state if exists (preserves login across runs)
         state_file = storage_dir / "state.json"
