@@ -78,15 +78,17 @@ export function OnboardingScreen({
     }
   }, [reinstall, status, agentVersion, onReinstallComplete]);
 
-  // Version-aware fallback: dismiss as soon as a non-outdated agent connects,
-  // even if we never saw the drop (fast restart or user ran installer manually).
+  // Version-aware fallback: dismiss after the user has downloaded the installer
+  // and the agent is connected with a valid version. The download gate keeps
+  // the screen visible until the user acts.
   useEffect(() => {
     if (!reinstall) return;
+    if (!downloaded) return;
     if (status !== "connected" || !agentVersion) return;
     if (!isAgentOutdated(agentVersion)) {
       onReinstallComplete?.();
     }
-  }, [reinstall, status, agentVersion, onReinstallComplete]);
+  }, [reinstall, downloaded, status, agentVersion, onReinstallComplete]);
 
   const installer = INSTALLER_MAP[os];
 
