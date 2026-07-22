@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { RefreshCw, AlertTriangle, RotateCcw } from "lucide-react";
+import { AlertTriangle, RotateCcw } from "lucide-react";
 import { agent, type UpdateStatus } from "@/lib/agent-client";
 import { useAppUpdate } from "@/lib/use-app-update";
 import { useAppState } from "@/lib/app-state";
@@ -14,7 +14,7 @@ import { requestReinstall } from "@/lib/reinstall";
  */
 export function InstallationSection() {
   const { pushLog } = useAppState();
-  const { check, busy } = useAppUpdate(pushLog);
+  const { busy } = useAppUpdate(pushLog);
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [checking, setChecking] = useState(true);
   const [confirmReinstall, setConfirmReinstall] = useState(false);
@@ -33,11 +33,6 @@ export function InstallationSection() {
   useEffect(() => {
     void refresh();
   }, []);
-
-  const onCheck = async () => {
-    const next = await check();
-    if (next) setStatus(next);
-  };
 
   const onReinstall = () => {
     setConfirmReinstall(false);
@@ -100,24 +95,6 @@ export function InstallationSection() {
         )}
       </div>
 
-      <div className="mt-2 flex items-center gap-2">
-        <button
-          className="tt-btn-primary flex items-center gap-2"
-          onClick={onCheck}
-          disabled={busy || checking}
-        >
-          <RefreshCw
-            className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`}
-            strokeWidth={2}
-          />
-          {busy ? "Checking..." : "Check for updates"}
-        </button>
-      </div>
-
-      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-        Version checks are read-only. When a newer agent is available, this app
-        offers the installer instead of changing or restarting the live agent.
-      </p>
 
       <div className="mt-4 border-t border-border pt-4">
         <div className="flex items-center justify-between gap-3">

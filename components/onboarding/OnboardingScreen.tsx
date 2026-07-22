@@ -69,7 +69,7 @@ export function OnboardingScreen({
   // Reinstall completion: watch for the agent going offline then coming back.
   useEffect(() => {
     if (!reinstall) return;
-    if (status === "offline" || status === "connecting") {
+    if (status === "offline") {
       sawDrop.current = true;
     } else if (status === "connected" && sawDrop.current) {
       if (!isAgentOutdated(agentVersion)) {
@@ -78,12 +78,12 @@ export function OnboardingScreen({
     }
   }, [reinstall, status, agentVersion, onReinstallComplete]);
 
-  // Version-aware fallback: dismiss after the user has downloaded the installer
-  // and the agent is connected with a valid version. The download gate keeps
-  // the screen visible until the user acts.
+  // Version-aware fallback: dismiss after the user has downloaded the installer,
+  // the agent actually dropped (sawDrop), and reconnected with a valid version.
   useEffect(() => {
     if (!reinstall) return;
     if (!downloaded) return;
+    if (!sawDrop.current) return;
     if (status !== "connected" || !agentVersion) return;
     if (!isAgentOutdated(agentVersion)) {
       onReinstallComplete?.();
