@@ -67,10 +67,9 @@ export function OnboardingScreen({
   }, [reinstall, retry]);
 
   // Reinstall completion: watch for the agent going offline then coming back.
-  // Only "offline" counts as a drop — "connecting" on initial page load does NOT.
   useEffect(() => {
     if (!reinstall) return;
-    if (status === "offline") {
+    if (status === "offline" || status === "connecting") {
       sawDrop.current = true;
     } else if (status === "connected" && sawDrop.current) {
       if (!isAgentOutdated(agentVersion)) {
@@ -79,17 +78,15 @@ export function OnboardingScreen({
     }
   }, [reinstall, status, agentVersion, onReinstallComplete]);
 
-  // Fallback dismiss: if we never caught the agent going offline (fast restart
-  // between polls), dismiss once the user has downloaded AND the agent is
-  // connected with a valid version. The download gate prevents instant dismiss.
+  // Version-aware fallback: dismiss as soon as a non-outdated agent connects,
+  // even if we never saw the drop (fast restart or user ran installer manually).
   useEffect(() => {
     if (!reinstall) return;
-    if (!downloaded) return;
     if (status !== "connected" || !agentVersion) return;
     if (!isAgentOutdated(agentVersion)) {
       onReinstallComplete?.();
     }
-  }, [reinstall, downloaded, status, agentVersion, onReinstallComplete]);
+  }, [reinstall, status, agentVersion, onReinstallComplete]);
 
   const installer = INSTALLER_MAP[os];
 

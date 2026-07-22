@@ -12,7 +12,7 @@ import type { ReinstallReason } from "@/lib/reinstall";
 
 export default function Home() {
   const { status } = useAgent();
-  const [reinstalling, setReinstalling] = useState<boolean | null>(null);
+  const [reinstalling, setReinstalling] = useState(false);
   const [reason, setReason] = useState<ReinstallReason>("reinstall");
   useEffect(() => {
     const prefs = getPreferences();
@@ -20,9 +20,9 @@ export default function Home() {
     if (prefs.pendingReinstall) setReason(getReinstallReason());
   }, []);
 
-  // Block all rendering until we know whether a reinstall is pending.
-  // Without this, the connected-app path renders before the effect fires.
-  if (reinstalling === null) return <LoadingScreen label="" />;
+  // No page-level auto-dismiss — the OnboardingScreen owns the full
+  // lifecycle (download → sawDrop → reconnect → onReinstallComplete). The
+  // page only clears the flag when OnboardingScreen fires its callback.
 
   if (reinstalling) {
     return (
