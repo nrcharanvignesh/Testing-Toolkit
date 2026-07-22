@@ -671,7 +671,7 @@
   ],
   "installer": {
     "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/install.py?ref=fb5fbd1",
-    "hash": "6d15649219fd61a2274ca0428b23304fc27d2952d9572f6f1f6996bc9a64f2b8"
+    "hash": "bd947ae7e274c2d96c3c0caa06272ed981b2b8e2fbc92c6a9545d9dd37089e09"
   },
   "requirements": {
     "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/requirements.txt?ref=fb5fbd1",
