@@ -92,6 +92,11 @@ class Task(Enum):
     E2E_AGENTIC = "e2e_agentic"
     E2E_AGENTIC_FALLBACK = "e2e_agentic_fallback"
 
+    # Sub-agents for multi-agent E2E orchestration
+    E2E_PLANNER = "e2e_planner"
+    E2E_KB_CONSULTANT = "e2e_kb_consultant"
+    E2E_REPORT_SYNTH = "e2e_report_synth"
+
 
 _TASK_TIER: Final[dict[Task, Tier]] = {
     # Frontier - where quality directly determines output correctness
@@ -112,6 +117,10 @@ _TASK_TIER: Final[dict[Task, Tier]] = {
     # Agentic E2E - Sonnet for speed, Opus fallback for reasoning
     Task.E2E_AGENTIC: Tier.MEDIUM,
     Task.E2E_AGENTIC_FALLBACK: Tier.FRONTIER,
+    # Sub-agents - small for cheap/fast, medium for reasoning
+    Task.E2E_PLANNER: Tier.SMALL,
+    Task.E2E_KB_CONSULTANT: Tier.MEDIUM,
+    Task.E2E_REPORT_SYNTH: Tier.MEDIUM,
 }
 
 # Task-specific model overrides: if configured in .env, bypass tier routing.
@@ -131,6 +140,9 @@ _TASK_OVERRIDE: Final[dict[Task, str]] = {
         Task.OCR_EXTRACT: MODEL_OCR,
         Task.E2E_AGENTIC: MODEL_CHAT,
         Task.E2E_AGENTIC_FALLBACK: MODEL_GENERATE,
+        Task.E2E_PLANNER: MODEL_SMALL,
+        Task.E2E_KB_CONSULTANT: MODEL_CHAT,
+        Task.E2E_REPORT_SYNTH: MODEL_CHAT,
     }.items() if v  # only include non-empty overrides
 }
 

@@ -281,6 +281,27 @@ class KBBriefingEngine:
 
         return results
 
+    def query_for_stuck_agent(self, failure_query: str, top_k: int = 5) -> str:
+        """Direct KB query for the KB Consultant sub-agent.
+
+        Returns formatted KB chunks relevant to the failure context.
+        Used when the executor is stuck and needs additional guidance.
+        """
+        self._ensure_loaded()
+        if not self._retriever:
+            return ""
+        try:
+            chunks = self._retriever.retrieve(failure_query, top_k=top_k)
+            if not chunks:
+                return ""
+            parts: list[str] = []
+            for chunk in chunks[:4]:
+                header = f"[{chunk.title}]" if chunk.title else "[KB]"
+                parts.append(f"{header}\n{chunk.text[:600]}")
+            return "\n---\n".join(parts)
+        except Exception:  # noqa: BLE001
+            return ""
+
     def _extract_navigation(self, story_text: str) -> list[str]:
         """Extract navigation hints from workflows."""
         if not self._context:

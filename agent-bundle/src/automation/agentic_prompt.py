@@ -21,6 +21,7 @@ def build_system_prompt(
     project_context: str,
     *,
     login_done: bool = True,
+    strategy: Any | None = None,
 ) -> str:
     """Build the full system prompt for one test case execution."""
     sections: list[str] = []
@@ -34,13 +35,17 @@ def build_system_prompt(
     # 3. Test case
     sections.append(_build_test_case_section(test_case))
 
-    # 4. KB briefing
+    # 4. Strategic guidance from Planner (if available)
+    if strategy:
+        sections.append(_build_strategy_section(strategy))
+
+    # 5. KB briefing
     sections.append(_build_kb_section(brief))
 
-    # 5. Project context
+    # 6. Project context
     sections.append(_build_context_section(project_context))
 
-    # 6. Behavioral rules
+    # 7. Behavioral rules
     sections.append(_RULES_SECTION)
 
     return "\n\n".join(sections)
@@ -214,3 +219,250 @@ def build_observation_message(
         f"[Step {step_num}] Tool '{tool_name}' result:\n{tool_result}\n\n"
         f"Current page state:\n{page_observation}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Strategy section (from Planner Sub-Agent)
+# ---------------------------------------------------------------------------
+
+
+def _build_strategy_section(strategy: Any) -> str:
+    """Render the TestStrategy from the planner as a prompt section."""
+    lines = ["STRATEGIC GUIDANCE (from planning analysis):"]
+    if hasattr(strategy, "approach") and strategy.approach:
+        lines.append(f"Approach: {strategy.approach}")
+    if hasattr(strategy, "navigation_hints") and strategy.navigation_hints:
+        lines.append("Navigation path:")
+        for hint in strategy.navigation_hints:
+            lines.append(f"  - {hint}")
+    if hasattr(strategy, "risk_areas") and strategy.risk_areas:
+        lines.append("Potential blockers to watch for:")
+        for risk in strategy.risk_areas:
+            lines.append(f"  - {risk}")
+    if hasattr(strategy, "precondition_checks") and strategy.precondition_checks:
+        lines.append("Verify these preconditions first:")
+        for check in strategy.precondition_checks:
+            lines.append(f"  - {check}")
+    if hasattr(strategy, "key_assertions") and strategy.key_assertions:
+        lines.append("Critical verification points (do NOT skip):")
+        for assertion in strategy.key_assertions:
+            lines.append(f"  - {assertion}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Sub-Agent Prompt Templates
+# ---------------------------------------------------------------------------
+
+
+PLANNER_SYSTEM_PROMPT = """\
+ROLE:
+You are a QA Test Strategist. Given a test case and domain knowledge, produce a
+concise execution strategy for an autonomous browser testing agent.
+
+Your output will guide the agent's test execution. Be specific and actionable.
+
+OUTPUT FORMAT (respond with ONLY this JSON, no other text):
+{
+  "approach": "Brief description of the overall approach",
+  "navigation_hints": ["Step 1: Navigate to...", "Step 2: Click..."],
+  "risk_areas": ["The form may have dynamic loading", "..."],
+  "precondition_checks": ["Verify user has admin role", "..."],
+  "key_assertions": ["Dashboard count matches expected", "..."],
+  "estimated_complexity": "simple|moderate|complex"
+}
+
+RULES:
+- Be concise. Each hint should be one sentence.
+- Focus on NAVIGATION PATH (how to reach the target area)
+- Identify potential blockers (loading states, permissions, popups)
+- Note key verification points the agent should NOT skip
+- If KB provides screen info or workflows, use them for navigation hints"""
+
+
+KB_CONSULTANT_SYSTEM_PROMPT = """\
+ROLE:
+You are a Senior QA Subject Matter Expert (SME) being consulted by a junior
+automated test agent that is stuck. The agent has been trying to execute a test
+step but keeps failing.
+
+Your job:
+1. Analyze what went wrong based on the failure context
+2. Use the domain knowledge provided to suggest ALTERNATIVE approaches
+3. Provide specific, actionable guidance the agent can immediately try
+
+RULES:
+- Be specific: "Click the hamburger menu icon in the top-left" not "try the menu"
+- Consider that the agent may be on the WRONG page -- suggest navigation corrections
+- If the KB shows a different path to the same goal, describe it
+- Mention if a precondition might not be met (data not created, wrong role, etc.)
+- Keep advice to 3-5 numbered action items maximum
+- NEVER suggest giving up. Always provide something to try next.
+- Focus on what is DIFFERENT from what was already tried"""
+
+
+SIGNOUT_SYSTEM_PROMPT = """\
+ROLE:
+You are a browser automation agent with ONE job: sign out of the application.
+
+PROCEDURE:
+1. Look for sign-out/logout options: user menu, profile dropdown, settings
+2. Common locations: top-right avatar/icon, hamburger menu, sidebar footer
+3. Click the sign-out/logout button/link
+4. Verify you are on a login page or signed-out state
+
+RULES:
+- You have a maximum of 10 actions. Be efficient.
+- If you cannot find a sign-out option within 5 actions, call declare_done with
+  status="fail" and evidence="Could not locate sign-out button"
+- Do NOT navigate to arbitrary URLs. Only interact with visible UI elements.
+- After clicking logout, wait briefly for the page to load.
+- Once on a login/signed-out page, call declare_done with status="pass"
+- NEVER type credentials. You are ONLY signing out."""
+
+
+REPORT_SYNTHESIZER_SYSTEM_PROMPT = """\
+ROLE:
+You are a QA Report Writer. Given raw execution data (steps taken, reasoning,
+outcomes), produce a clear, human-readable narrative report.
+
+Your audience is a human QA manager or product owner who wants to understand:
+- What happened during each test case execution
+- Whether the application behaved correctly
+- What issues were found and their business impact
+- Any patterns across multiple test cases
+
+OUTPUT FORMAT (respond with ONLY this JSON, no other text):
+{
+  "executive_summary": "One paragraph summarizing the entire test run...",
+  "patterns_observed": ["Pattern 1...", "Pattern 2..."],
+  "recommendations": ["Recommendation 1...", "Recommendation 2..."],
+  "tc_narratives": [
+    {
+      "tc_id": "...",
+      "tc_title": "...",
+      "summary": "2-3 sentence summary of what happened...",
+      "approach_taken": "What strategy was used...",
+      "key_findings": ["Finding 1", "Finding 2"],
+      "challenges_encountered": ["Challenge 1"],
+      "verdict_reasoning": "Why this test passed/failed..."
+    }
+  ]
+}
+
+RULES:
+- Write for a NON-TECHNICAL audience. No element locators or CSS selectors.
+- Use business language: "the user profile page" not "div.profile-container"
+- Be honest about failures and their likely root cause
+- Keep each TC narrative to 4-6 sentences
+- The executive summary should be 3-5 sentences max
+- Patterns should be cross-cutting observations (not TC-specific)"""
+
+
+# ---------------------------------------------------------------------------
+# Sub-Agent message builders
+# ---------------------------------------------------------------------------
+
+
+def build_planner_user_message(
+    test_case: dict[str, Any],
+    brief: Any | None,
+    project_context: str,
+) -> str:
+    """Build the user prompt for the planner sub-agent."""
+    parts = [
+        f"TEST CASE: {test_case.get('title', '')}",
+        f"ID: {test_case.get('tc_id', '')}",
+        "",
+        "STEPS:",
+    ]
+    for i, step in enumerate(test_case.get("steps", []), 1):
+        if isinstance(step, str):
+            parts.append(f"  {i}. {step}")
+        elif isinstance(step, dict):
+            parts.append(f"  {i}. {step.get('step', step.get('description', ''))}")
+    parts.append("")
+    if brief is not None:
+        try:
+            parts.append(f"DOMAIN KNOWLEDGE:\n{brief.to_prompt_section()[:3000]}")
+        except Exception:
+            pass
+    if project_context:
+        parts.append(f"\nAPPLICATION CONTEXT:\n{project_context[:2000]}")
+    parts.append("\nProduce the JSON strategy now.")
+    return "\n".join(parts)
+
+
+def build_consultant_user_message(
+    current_goal: str,
+    test_step_text: str,
+    failures: list[str],
+    actions_tried: list[str],
+    page_state: str,
+    kb_chunks: str,
+    tc_title: str,
+) -> str:
+    """Build the user prompt for the KB Consultant."""
+    parts = [
+        f"TEST CASE: {tc_title}",
+        f"CURRENT GOAL: {current_goal}",
+        f"TEST STEP: {test_step_text}",
+        "",
+        "WHAT WAS TRIED (all failed):",
+    ]
+    for a in actions_tried[-5:]:
+        parts.append(f"  - {a}")
+    parts.append("")
+    parts.append("FAILURE DETAILS:")
+    for f in failures[-3:]:
+        parts.append(f"  - {f[:300]}")
+    parts.append("")
+    parts.append(f"CURRENT PAGE STATE (truncated):\n{page_state[:4000]}")
+    if kb_chunks:
+        parts.append(f"\nRELEVANT DOMAIN KNOWLEDGE:\n{kb_chunks}")
+    parts.append("\nWhat should the agent try next? Be specific and actionable.")
+    return "\n".join(parts)
+
+
+def build_synthesizer_user_message(
+    results: list[Any],
+    total_duration_ms: int,
+) -> str:
+    """Build the user prompt for the Report Synthesizer."""
+    parts = [
+        f"E2E TEST RUN RESULTS ({len(results)} test cases, "
+        f"{total_duration_ms / 1000:.0f}s total)",
+        "",
+    ]
+    for r in results:
+        tc_id = getattr(r, "tc_id", "?")
+        title = getattr(r, "title", "Untitled")
+        status = getattr(r, "overall_status", "?")
+        steps = getattr(r, "steps", [])
+        duration = getattr(r, "duration_ms", 0)
+        thoughts = getattr(r, "thoughts", [])
+        escalations = getattr(r, "escalation_count", 0)
+
+        parts.append(f"--- TC: {tc_id} - {title} [{status.upper()}] ({duration}ms) ---")
+
+        # Include key reasoning from thoughts (max 5 per TC)
+        if thoughts:
+            parts.append("Agent reasoning highlights:")
+            for t in thoughts[-5:]:
+                reasoning = getattr(t, "reasoning_text", "")[:200]
+                tool = getattr(t, "tool_chosen", "")
+                if reasoning:
+                    parts.append(f"  [{tool}] {reasoning}")
+            parts.append("")
+
+        # Step summary
+        passed = sum(1 for s in steps if getattr(s, "status", "") == "pass")
+        failed = sum(1 for s in steps if getattr(s, "status", "") in ("fail", "error"))
+        parts.append(f"  Steps: {len(steps)} total, {passed} passed, {failed} failed")
+
+        if escalations:
+            parts.append(f"  KB consultations needed: {escalations}")
+        parts.append("")
+
+    parts.append("Produce the JSON narrative report now.")
+    return "\n".join(parts)

@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Final
 
@@ -90,6 +90,7 @@ class StepResult:
     locator_history: list[str] | None = None  # all strategies attempted (on failure)
     screenshot_path: Path | None = None
     duration_ms: int = 0
+    reasoning: str = ""    # chain-of-thought from LLM for this step
 
 
 @dataclass(slots=True)
@@ -101,6 +102,10 @@ class TestCaseResult:
     script_path: Path | None = None
     overall_status: str = "pass"   # "pass" | "pass_fallback" | "fail" | "error" | "blocked"
     duration_ms: int = 0
+    thoughts: list[Any] = field(default_factory=list)  # list[ThoughtRecord]
+    strategy: Any | None = None    # TestStrategy from planner
+    sign_out_success: bool = False
+    escalation_count: int = 0
 
 
 # ---------------------------------------------------------------------------

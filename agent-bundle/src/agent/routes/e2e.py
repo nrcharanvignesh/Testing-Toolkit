@@ -427,6 +427,9 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
             await page.goto(cred.login_url, timeout=30000)
             await page.wait_for_load_state("domcontentloaded")
 
+            # Pass KB engine for live KB consultation when agent gets stuck
+            _kb_engine_ref = locals().get("_kb_engine")
+
             results = await run_agentic_suite(
                 test_cases=prepared,
                 credentials=cred,
@@ -443,6 +446,7 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
                 on_progress=lambda cur, tot: job.set_progress("running", cur, tot),
                 on_log=job.log,
                 on_tc_done=_on_tc_done,
+                kb_engine=_kb_engine_ref,
             )
 
         if job.stopped:
@@ -479,7 +483,33 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
         except Exception as e:  # noqa: BLE001
             job.log(f"[WARN] Report generation failed: {type(e).__name__}: {e}")
 
-        # Per-WI PDF reports (steps + AI observations)
+        # Report Synthesizer Sub-Agent: produce human-readable narrative
+        narrative_report = None
+        try:
+            from automation.agentic_prompt import (
+                REPORT_SYNTHESIZER_SYSTEM_PROMPT,
+                build_synthesizer_user_message,
+            )
+            from automation.sub_agents import parse_narrative_report
+            from core.model_router import Task, route
+
+            synth_model = route(Task.E2E_REPORT_SYNTH)
+            total_duration = sum(getattr(r, "duration_ms", 0) for r in results)
+            synth_msg = build_synthesizer_user_message(results, total_duration)
+            synth_result = await llm_client.complete_async(
+                model=synth_model,
+                system=REPORT_SYNTHESIZER_SYSTEM_PROMPT,
+                user=synth_msg,
+                max_tokens=4096,
+                temperature=0.3,
+            )
+            narrative_report = parse_narrative_report(synth_result)
+            if narrative_report:
+                job.log("[INFO] Report narrative synthesized.")
+        except Exception as e:  # noqa: BLE001
+            job.log(f"[WARN] Report synthesis failed (non-fatal): {e}")
+
+        # Per-WI PDF reports (with narrative sections)
         pdf_paths: list[str] = []
         try:
             from automation.report_pdf import E2EReportData, generate_e2e_pdf
@@ -503,6 +533,7 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
                     started_at=job.created_at,
                     finished_at=time.time(),
                     results=wi_res,
+                    narrative=narrative_report,
                 )
                 pdf_path = output_dir / f"e2e_report_WI_{wid}.pdf"
                 await asyncio.to_thread(generate_e2e_pdf, pdf_data, pdf_path)
