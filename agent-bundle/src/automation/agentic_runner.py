@@ -952,7 +952,7 @@ async def run_agentic_test_case(
                             "type": "image",
                             "source": {
                                 "type": "base64",
-                                "media_type": "image/png",
+                                "media_type": "image/jpeg",
                                 "data": base64.b64encode(img_bytes).decode("ascii"),
                             },
                         })

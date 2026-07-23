@@ -85,6 +85,7 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
   const [notes, setNotes] = useState("");
   const [preRunGuidance, setPreRunGuidance] = useState("");
   const [userMsg, setUserMsg] = useState("");
+  const guidanceInputRef = useRef<HTMLTextAreaElement>(null);
   const [logCopied, setLogCopied] = useState(false);
   const [guidanceAttachments, setGuidanceAttachments] = useState<Attachment[]>([]);
   const [notesAttachments, setNotesAttachments] = useState<Attachment[]>([]);
@@ -574,23 +575,26 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
             )}
             <div className="flex gap-2 items-end">
               <textarea
+                ref={guidanceInputRef}
                 className="tt-input flex-1 resize-none text-xs"
                 placeholder="Send guidance to the running agent..."
-                value={userMsg}
+                defaultValue=""
                 rows={2}
                 onFocus={() => { guidanceFocusedRef.current = true; }}
                 onBlur={() => { guidanceFocusedRef.current = false; }}
                 onChange={(e) => setUserMsg(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && (userMsg.trim() || guidanceAttachments.length > 0) && jobIdRef.current) {
+                  if (e.key === "Enter" && !e.shiftKey && ((guidanceInputRef.current?.value.trim()) || guidanceAttachments.length > 0) && jobIdRef.current) {
                     e.preventDefault();
-                    let msg = userMsg.trim();
+                    const raw = guidanceInputRef.current?.value.trim() || "";
+                    let msg = raw;
                     if (guidanceAttachments.length > 0) {
                       msg += "\n\n=== ATTACHED REFERENCE FILES ===\n";
                       msg += guidanceAttachments.map((a) => `--- ${a.name} ---\n${a.text}`).join("\n\n");
                     }
                     agent.sendJobMessage(jobIdRef.current, msg);
-                    pushLog("INFO", `You: ${userMsg.trim()}${guidanceAttachments.length > 0 ? ` [+${guidanceAttachments.length} files]` : ""}`);
+                    pushLog("INFO", `You: ${raw}${guidanceAttachments.length > 0 ? ` [+${guidanceAttachments.length} files]` : ""}`);
+                    guidanceInputRef.current!.value = "";
                     setUserMsg("");
                     setGuidanceAttachments([]);
                   }
@@ -617,14 +621,16 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
                 className="tt-btn-primary !px-3 !py-1.5 text-xs"
                 disabled={(!userMsg.trim() && guidanceAttachments.length === 0) || !jobIdRef.current}
                 onClick={() => {
-                  if ((userMsg.trim() || guidanceAttachments.length > 0) && jobIdRef.current) {
-                    let msg = userMsg.trim();
+                  const raw = guidanceInputRef.current?.value.trim() || "";
+                  if ((raw || guidanceAttachments.length > 0) && jobIdRef.current) {
+                    let msg = raw;
                     if (guidanceAttachments.length > 0) {
                       msg += "\n\n=== ATTACHED REFERENCE FILES ===\n";
                       msg += guidanceAttachments.map((a) => `--- ${a.name} ---\n${a.text}`).join("\n\n");
                     }
                     agent.sendJobMessage(jobIdRef.current, msg);
-                    pushLog("INFO", `You: ${userMsg.trim()}${guidanceAttachments.length > 0 ? ` [+${guidanceAttachments.length} files]` : ""}`);
+                    pushLog("INFO", `You: ${raw}${guidanceAttachments.length > 0 ? ` [+${guidanceAttachments.length} files]` : ""}`);
+                    guidanceInputRef.current!.value = "";
                     setUserMsg("");
                     setGuidanceAttachments([]);
                   }
