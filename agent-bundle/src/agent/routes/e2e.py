@@ -355,17 +355,15 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
         model = route(Task.E2E_AGENTIC)
         fallback_model = route(Task.E2E_AGENTIC_FALLBACK)
 
-        # Load project context for system prompt grounding
+        # Load project context for system prompt grounding (full structured dump)
         project_context = ""
         try:
             from core.project_store import read_context_summary
             _proj_ctx = read_context_summary(req.project)
             if _proj_ctx:
-                project_context = _proj_ctx.to_prompt_section_selective(
-                    " ".join(tc.get("title", "") for tc in picked)
-                ) or ""
+                project_context = _proj_ctx.to_prompt_section() or ""
                 if project_context:
-                    job.log("[INFO] Project KB context loaded.")
+                    job.log(f"[INFO] Project KB context loaded ({len(project_context):,} chars).")
         except Exception:  # noqa: BLE001
             pass
 
@@ -376,21 +374,33 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
             )
             job.log("[INFO] User notes attached to run context.")
 
-        # KB Briefing Engine: build per-WI test briefs
+        # KB Briefing Engine: build per-WI test briefs (budget-aware)
         _wi_briefs: dict[str, Any] = {}
         try:
             from automation.kb_briefing import KBBriefingEngine
+            from automation.agentic_prompt import kb_budget_chars
+            from automation.agentic_runner import AgenticConfig as _AgCfg
+
             _kb_engine = KBBriefingEngine(req.project, on_log=job.log)
+            _budget = kb_budget_chars(_AgCfg())
+            _kb_size = _kb_engine.get_full_kb_size_chars()
+            _tier = "tier1-full" if _kb_size <= _budget else "tier2-retrieval"
+            job.log(
+                f"[INFO] KB budget: {_budget:,} chars, "
+                f"KB size: {_kb_size:,} chars, mode: {_tier}"
+            )
+
             wi_ids_set = {str(tc.get("id", "")) for tc in picked if tc.get("id")}
             for wi_id in wi_ids_set:
                 wi_tcs = [tc for tc in picked if str(tc.get("id", "")) == wi_id]
                 if wi_tcs:
                     first = wi_tcs[0]
-                    brief = _kb_engine.build_brief(
+                    brief = _kb_engine.build_full_brief(
                         wi_id=wi_id,
                         title=str(first.get("title", "")),
                         description=str(first.get("description", "")),
                         acceptance_criteria=str(first.get("acceptance_criteria", "")),
+                        budget_chars=_budget,
                     )
                     _wi_briefs[wi_id] = brief
             if _wi_briefs:

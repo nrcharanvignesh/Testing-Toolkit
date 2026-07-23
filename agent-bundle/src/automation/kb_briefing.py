@@ -67,7 +67,7 @@ class TestBrief:
     raw_context: str = ""  # Full text for LLM consumption
     retrieval_chunks: int = 0
 
-    def to_prompt_section(self) -> str:
+    def to_prompt_section(self, budget_chars: int = 175_000) -> str:
         """Render the brief as a prompt section for the E2E agent."""
         parts: list[str] = []
         parts.append("=== TEST BRIEF (from Knowledge Base) ===")
@@ -96,7 +96,7 @@ class TestBrief:
                 parts.append(f"- {r.name}: {r.description}")
         if self.raw_context:
             parts.append("\n## RAW KB CONTEXT")
-            parts.append(self.raw_context[:8000])
+            parts.append(self.raw_context[:budget_chars])
         parts.append("=== END TEST BRIEF ===")
         return "\n".join(parts)
 
@@ -150,6 +150,7 @@ class KBBriefingEngine:
         title: str,
         description: str = "",
         acceptance_criteria: str = "",
+        budget_chars: int = 175_000,
     ) -> TestBrief:
         """Build a test brief from the KB for a single work item."""
         self._ensure_loaded()
@@ -164,15 +165,20 @@ class KBBriefingEngine:
             brief.business_rules = self._extract_business_rules(story_text)
             brief.navigation_hints = self._extract_navigation(story_text)
 
-        # 2. Retriever-based chunk retrieval (semantic + lexical)
+        # 2. Retriever-based chunk retrieval (aggressive: top-50)
         if self._retriever:
-            chunks = self._retriever.retrieve(story_text, top_k=8)
+            chunks = self._retriever.retrieve(story_text, top_k=50)
             brief.retrieval_chunks = len(chunks)
             if chunks:
                 raw_parts: list[str] = []
-                for chunk in chunks[:6]:
+                char_count = 0
+                for chunk in chunks:
                     header = f"[{chunk.title}]" if chunk.title else ""
-                    raw_parts.append(f"{header}\n{chunk.text}")
+                    text = f"{header}\n{chunk.text}"
+                    if char_count + len(text) > budget_chars:
+                        break
+                    raw_parts.append(text)
+                    char_count += len(text)
                 brief.raw_context = "\n---\n".join(raw_parts)
 
         # 3. Selective context summary as fallback
@@ -180,11 +186,96 @@ class KBBriefingEngine:
             try:
                 selective = self._context.to_prompt_section_selective(story_text)
                 if selective:
-                    brief.raw_context = selective[:8000]
+                    brief.raw_context = selective[:budget_chars]
             except Exception:  # noqa: BLE001
                 pass
 
         return brief
+
+    def build_full_brief(
+        self,
+        wi_id: str,
+        title: str,
+        description: str = "",
+        acceptance_criteria: str = "",
+        budget_chars: int = 175_000,
+    ) -> TestBrief:
+        """Build a comprehensive brief using the full KB budget.
+
+        Tiered delivery:
+          Tier 1: KB fits in budget -> inject ALL KB text
+          Tier 2: KB exceeds budget -> structured summary + top-50 retrieval
+        """
+        self._ensure_loaded()
+        full_kb_size = self.get_full_kb_size_chars()
+
+        if full_kb_size > 0 and full_kb_size <= budget_chars:
+            # Tier 1: inject everything
+            brief = self.build_brief(
+                wi_id, title, description, acceptance_criteria,
+                budget_chars=budget_chars,
+            )
+            brief.raw_context = self._assemble_full_kb(budget_chars)
+            return brief
+
+        # Tier 2: structured context + aggressive retrieval
+        brief = self.build_brief(
+            wi_id, title, description, acceptance_criteria,
+            budget_chars=budget_chars,
+        )
+        # Prepend full structured context if available
+        if self._context:
+            try:
+                full_ctx = self._context.to_prompt_section()
+                if full_ctx and brief.raw_context:
+                    brief.raw_context = (
+                        full_ctx[:budget_chars // 3]
+                        + "\n\n--- RETRIEVAL CHUNKS ---\n\n"
+                        + brief.raw_context
+                    )
+                elif full_ctx:
+                    brief.raw_context = full_ctx[:budget_chars]
+            except Exception:  # noqa: BLE001
+                pass
+        return brief
+
+    def get_full_kb_size_chars(self) -> int:
+        """Return total character count of all indexed KB chunks."""
+        self._ensure_loaded()
+        if not self._retriever:
+            return 0
+        try:
+            chunks = self._retriever.retrieve("", top_k=9999)
+            return sum(len(c.text) for c in chunks) if chunks else 0
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _assemble_full_kb(self, budget_chars: int) -> str:
+        """Assemble all KB chunks grouped by source document."""
+        if not self._retriever:
+            return ""
+        try:
+            chunks = self._retriever.retrieve("", top_k=9999)
+            if not chunks:
+                return ""
+            by_source: dict[str, list[str]] = {}
+            for chunk in chunks:
+                src = chunk.title or "(untitled)"
+                by_source.setdefault(src, []).append(chunk.text)
+            parts: list[str] = []
+            char_count = 0
+            for src, texts in by_source.items():
+                section = f"## {src}\n" + "\n".join(texts)
+                if char_count + len(section) > budget_chars:
+                    remaining = budget_chars - char_count
+                    if remaining > 200:
+                        parts.append(section[:remaining])
+                    break
+                parts.append(section)
+                char_count += len(section)
+            return "\n\n".join(parts)
+        except Exception:  # noqa: BLE001
+            return ""
 
     def _extract_screens(self, story_text: str) -> list[ScreenInfo]:
         """Find screens/pages relevant to the story from ProjectContext."""
@@ -281,11 +372,17 @@ class KBBriefingEngine:
 
         return results
 
-    def query_for_stuck_agent(self, failure_query: str, top_k: int = 5) -> str:
+    def query_for_stuck_agent(
+        self,
+        failure_query: str,
+        top_k: int = 20,
+        max_chunk_chars: int = 0,
+    ) -> str:
         """Direct KB query for the KB Consultant sub-agent.
 
         Returns formatted KB chunks relevant to the failure context.
         Used when the executor is stuck and needs additional guidance.
+        max_chunk_chars=0 means uncapped (full chunk text).
         """
         self._ensure_loaded()
         if not self._retriever:
@@ -295,9 +392,10 @@ class KBBriefingEngine:
             if not chunks:
                 return ""
             parts: list[str] = []
-            for chunk in chunks[:4]:
+            for chunk in chunks:
                 header = f"[{chunk.title}]" if chunk.title else "[KB]"
-                parts.append(f"{header}\n{chunk.text[:600]}")
+                text = chunk.text if max_chunk_chars == 0 else chunk.text[:max_chunk_chars]
+                parts.append(f"{header}\n{text}")
             return "\n---\n".join(parts)
         except Exception:  # noqa: BLE001
             return ""

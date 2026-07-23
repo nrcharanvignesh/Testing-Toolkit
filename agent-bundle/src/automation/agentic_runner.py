@@ -58,11 +58,14 @@ class AgenticConfig:
     """Tuning knobs for the agentic loop."""
 
     max_consecutive_fails: int = 3      # triggers KB escalation
-    history_window: int = 12            # full messages kept in context
+    history_window: int = 16            # full messages kept in context
     screenshot_every_action: bool = True
     observation_max_chars: int = 8000   # a11y tree truncation
     temperature: float = 0.2           # low temp for deterministic actions
     max_tokens: int = 16384            # per-turn output limit (uncapped)
+    kb_budget_tokens: int = 50_000     # ~175k chars for KB content injection
+    stuck_agent_retrieval_k: int = 20  # chunks retrieved when stuck
+    stuck_agent_chunk_chars: int = 0   # 0 = uncapped per-chunk length
 
 
 # ---------------------------------------------------------------------------
@@ -208,10 +211,16 @@ def _compress_history(
     recent = messages[split:]
 
     summary_lines: list[str] = []
+    kb_advice_lines: list[str] = []
     step_num = 0
     i = 0
     while i < len(old):
         msg = old[i]
+        # Preserve KB consultant advice in compression (critical domain knowledge)
+        if msg.get("role") == "user":
+            content = msg.get("content", "")
+            if isinstance(content, str) and "[KB CONSULTANT ADVICE]" in content:
+                kb_advice_lines.append(content[:1000])
         if msg.get("role") == "assistant":
             content = msg.get("content", [])
             if isinstance(content, list):
@@ -246,9 +255,13 @@ def _compress_history(
     if not summary_lines:
         return messages
 
+    parts = ["Previous actions summary:\n" + "\n".join(summary_lines)]
+    if kb_advice_lines:
+        parts.append("\nPrior KB consultant advice (preserved):\n" + "\n---\n".join(kb_advice_lines))
+
     compressed_msg: dict[str, Any] = {
         "role": "user",
-        "content": "Previous actions summary:\n" + "\n".join(summary_lines),
+        "content": "\n".join(parts),
     }
     return [compressed_msg] + recent
 
@@ -306,6 +319,7 @@ async def _consult_kb(
     log: LogFn,
     *,
     current_step_idx: int = 0,
+    project_context: str = "",
 ) -> str | None:
     """KB Consultant Sub-Agent: query KB with failure context, get advice."""
     from core.model_router import Task, route
@@ -318,7 +332,7 @@ async def _consult_kb(
     failures = [t.reasoning_text[:300] for t in recent_thoughts[-3:] if t.reasoning_text]
     actions_tried = [t.tool_chosen for t in recent_thoughts[-5:]]
 
-    # Query KB with a failure-specific question
+    # Query KB with a failure-specific question (uncapped retrieval)
     kb_chunks_text = ""
     if kb_engine:
         try:
@@ -327,7 +341,11 @@ async def _consult_kb(
                 f"Agent is stuck. Tried: {', '.join(actions_tried[-3:])}. "
                 f"Current page shows: {page_obs[:500]}"
             )
-            kb_chunks_text = kb_engine.query_for_stuck_agent(query, top_k=5)
+            kb_chunks_text = kb_engine.query_for_stuck_agent(
+                query,
+                top_k=cfg.stuck_agent_retrieval_k,
+                max_chunk_chars=cfg.stuck_agent_chunk_chars,
+            )
         except Exception:
             pass
 
@@ -350,6 +368,7 @@ async def _consult_kb(
         page_state=page_obs,
         kb_chunks=kb_chunks_text,
         tc_title=tc_title,
+        project_context=project_context,
     )
 
     try:
@@ -654,7 +673,9 @@ async def run_agentic_test_case(
                     if kb_engine:
                         try:
                             kb_answer = kb_engine.query_for_stuck_agent(
-                                guide_query, top_k=5,
+                                guide_query,
+                                top_k=cfg.stuck_agent_retrieval_k,
+                                max_chunk_chars=cfg.stuck_agent_chunk_chars,
                             )
                         except Exception:
                             pass
@@ -798,6 +819,7 @@ async def run_agentic_test_case(
                             llm_client, kb_engine, test_case,
                             thoughts, page, cfg, log,
                             current_step_idx=completed_steps,
+                            project_context=project_context,
                         )
                         if advice:
                             messages.append({
@@ -858,6 +880,7 @@ async def run_agentic_test_case(
                             llm_client, kb_engine, test_case,
                             thoughts, page, cfg, log,
                             current_step_idx=completed_steps,
+                            project_context=project_context,
                         )
                         if advice:
                             messages.append({

@@ -11,7 +11,17 @@ Composes the system prompt from:
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .agentic_runner import AgenticConfig
+
+_CHARS_PER_TOKEN = 3.5
+
+
+def kb_budget_chars(cfg: "AgenticConfig") -> int:
+    """Convert token budget to char budget."""
+    return int(cfg.kb_budget_tokens * _CHARS_PER_TOKEN)
 
 
 def build_system_prompt(
@@ -401,11 +411,11 @@ def build_planner_user_message(
     parts.append("")
     if brief is not None:
         try:
-            parts.append(f"DOMAIN KNOWLEDGE:\n{brief.to_prompt_section()[:3000]}")
+            parts.append(f"DOMAIN KNOWLEDGE:\n{brief.to_prompt_section()[:12000]}")
         except Exception:
             pass
     if project_context:
-        parts.append(f"\nAPPLICATION CONTEXT:\n{project_context[:2000]}")
+        parts.append(f"\nAPPLICATION CONTEXT:\n{project_context[:8000]}")
     parts.append("\nProduce the JSON strategy now.")
     return "\n".join(parts)
 
@@ -418,6 +428,7 @@ def build_consultant_user_message(
     page_state: str,
     kb_chunks: str,
     tc_title: str,
+    project_context: str = "",
 ) -> str:
     """Build the user prompt for the KB Consultant."""
     parts = [
@@ -437,6 +448,8 @@ def build_consultant_user_message(
     parts.append(f"CURRENT PAGE STATE (truncated):\n{page_state[:4000]}")
     if kb_chunks:
         parts.append(f"\nRELEVANT DOMAIN KNOWLEDGE:\n{kb_chunks}")
+    if project_context:
+        parts.append(f"\nFULL APPLICATION CONTEXT:\n{project_context[:60000]}")
     parts.append("\nWhat should the agent try next? Be specific and actionable.")
     return "\n".join(parts)
 
