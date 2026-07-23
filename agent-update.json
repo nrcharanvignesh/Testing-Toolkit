@@ -1,7 +1,7 @@
 {
-  "version": "3.73.0",
-  "ref": "53cc807",
-  "generatedAt": "2026-07-23T13:00:00Z",
+  "version": "3.74.0",
+  "ref": "361aa79",
+  "generatedAt": "2026-07-23T19:00:00Z",
   "files": [
     {
       "path": "agent-bundle/src/.env.enc",
@@ -81,7 +81,7 @@
     },
     {
       "path": "agent-bundle/src/agent/routes/e2e.py",
-      "sha256": "1062a383b4fcf70dcd6921be7c981452b3511f03e4713f673fe937fd498c8f59"
+      "sha256": "b8dc6b493c6e455eafce010e39f8793bb68c8d36882d6a53c200014941fe933b"
     },
     {
       "path": "agent-bundle/src/agent/routes/events.py",
@@ -137,7 +137,7 @@
     },
     {
       "path": "agent-bundle/src/agent/version.py",
-      "sha256": "d0adef4bf093e280f44ef1104c44a4cea250f85c6852219be98ec09f29def7f3"
+      "sha256": "f3ff70d659701e1872749c7f9bef97b056f372eabd23ac0506ec3ed2fa29845e"
     },
     {
       "path": "agent-bundle/src/automation/__init__.py",
@@ -145,11 +145,11 @@
     },
     {
       "path": "agent-bundle/src/automation/agentic_prompt.py",
-      "sha256": "462a5d606dc5a31b5933688d5a4293bc47151ee8cdaeb4c0e27d9b416bc41031"
+      "sha256": "d9271c4bd8fde5475b60d12e046a1ce521e16bf1c49be75d1c1c3cead54adea9"
     },
     {
       "path": "agent-bundle/src/automation/agentic_runner.py",
-      "sha256": "465d2c9161d0a345beb55525b47244f7257f859d7f1a30d043818e353c45a715"
+      "sha256": "012a9d550ac8107e66f52e70f988a9b28ebad122bfc966582e4924e0f2beef2d"
     },
     {
       "path": "agent-bundle/src/automation/agentic_tools.py",
@@ -189,7 +189,7 @@
     },
     {
       "path": "agent-bundle/src/automation/kb_briefing.py",
-      "sha256": "7c79518696a00946abeedabf3e4e76c05c3fbd2cb86ee5fa43924a3271894bf5"
+      "sha256": "c4a5141fcdd1b54d3759368d65338c2e33d35ba2663512a6b4d6f75aea376dc4"
     },
     {
       "path": "agent-bundle/src/automation/page_observer.py",
@@ -544,175 +544,7 @@
       "sha256": "ea45c8d8f0092291c402afff7e277415efe3f829fb80dd45b266765f9664e53c"
     }
   ],
-  "installer": {
-    "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/install.py?ref=571e384",
-    "hash": "bd947ae7e274c2d96c3c0caa06272ed981b2b8e2fbc92c6a9545d9dd37089e09"
-  },
-  "requirements": {
-    "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/requirements.txt?ref=571e384",
-    "hash": "738af0ad94455d8ac6d9cefb3efad1267f8fe6ab151e5cdd6cae5775d7da1f83"
-  },
-  "extraWheels": [
-    {
-      "name": "cffi-2.1.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/extra-wheels/cffi-2.1.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "1e9f50d192a3e525b15a75ab5114e442d83d657b7ec29182a991bc9a88fd3a66"
-    },
-    {
-      "name": "cffi-2.1.0-cp312-cp312-win_amd64.whl",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/extra-wheels/cffi-2.1.0-cp312-cp312-win_amd64.whl?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "c97f080ea627e2863524c5af3836e2270b5f5dfff1f104392b959f8df0c5d384"
-    },
-    {
-      "name": "cryptography-49.0.0-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/extra-wheels/cryptography-49.0.0-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "0e959b578856a3924bc0cbb710fc12c387b9412a951389f3ca61704a9e25f325"
-    },
-    {
-      "name": "cryptography-49.0.0-cp311-abi3-win_amd64.whl",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/extra-wheels/cryptography-49.0.0-cp311-abi3-win_amd64.whl?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "e5dfc1e64de5677cec922ffa8da89c546d0415bf6efdf081842e5d44c84e1f0e"
-    },
-    {
-      "name": "pycparser-3.0-py3-none-any.whl",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/extra-wheels/pycparser-3.0-py3-none-any.whl?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"
-    },
-    {
-      "name": "python_multipart-0.0.32-py3-none-any.whl",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/extra-wheels/python_multipart-0.0.32-py3-none-any.whl?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23"
-    }
-  ],
-  "mcpFiles": [
-    {
-      "name": "node-bins.json",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node-bins.json?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "e09085ddd9bc0b14a4dd7c51a01a395db5ab86da1306a670d04986a7d2575cb6"
-    },
-    {
-      "name": "node-bins/darwin-arm64/node-darwin-arm64.tar.gz.000",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node-bins/darwin-arm64/node-darwin-arm64.tar.gz.000?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "9aa3484331a3c3fb39b28f370a0811dd9d30ef6bda5e5d16ffbd2bc36666a360",
-      "platforms": [
-        "darwin-arm64"
-      ]
-    },
-    {
-      "name": "node-bins/darwin-arm64/node-darwin-arm64.tar.gz.001",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node-bins/darwin-arm64/node-darwin-arm64.tar.gz.001?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "42b3c38529cce35b7407d6507860047de5e4c72849446797a6ed0cb6ccaf031d",
-      "platforms": [
-        "darwin-arm64"
-      ]
-    },
-    {
-      "name": "node-bins/darwin-arm64/node-darwin-arm64.tar.gz.002",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node-bins/darwin-arm64/node-darwin-arm64.tar.gz.002?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "a66f47d0467325885942018e24062e026408b1d8496fb0e02b062eaa499ddf0f",
-      "platforms": [
-        "darwin-arm64"
-      ]
-    },
-    {
-      "name": "node-bins/darwin-arm64/node-darwin-arm64.tar.gz.003",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node-bins/darwin-arm64/node-darwin-arm64.tar.gz.003?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "3a99ff8920eb62afa4877cac8f075750d26ee35c9bdbfa43c28e4a4a9d4850cd",
-      "platforms": [
-        "darwin-arm64"
-      ]
-    },
-    {
-      "name": "node-bins/darwin-arm64/node-darwin-arm64.tar.gz.004",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node-bins/darwin-arm64/node-darwin-arm64.tar.gz.004?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "d947548a54e43e737092ab09cc37219ed85aee07585329dff047ca8f073f3479",
-      "platforms": [
-        "darwin-arm64"
-      ]
-    },
-    {
-      "name": "node-bins/linux-x64/node-linux-x64.tar.gz.000",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node-bins/linux-x64/node-linux-x64.tar.gz.000?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "baee0e850afb34d931b9e0e36a3a02cccc674209810386a5997a04b5fb825721",
-      "platforms": [
-        "linux-x64"
-      ]
-    },
-    {
-      "name": "node-bins/linux-x64/node-linux-x64.tar.gz.001",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node-bins/linux-x64/node-linux-x64.tar.gz.001?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "f73c27b22d464afc61ef17b2ea75c4edf7d5d2e71b08fbeafc20bf093d30506e",
-      "platforms": [
-        "linux-x64"
-      ]
-    },
-    {
-      "name": "node-bins/linux-x64/node-linux-x64.tar.gz.002",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node-bins/linux-x64/node-linux-x64.tar.gz.002?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "493681d7988730b7ed0bb65f0165ecffca404d76d912016094d92e9903cf0bb8",
-      "platforms": [
-        "linux-x64"
-      ]
-    },
-    {
-      "name": "node-bins/linux-x64/node-linux-x64.tar.gz.003",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node-bins/linux-x64/node-linux-x64.tar.gz.003?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "1cf7bf5ea374d2c2957119aa58b9bf618eacee29eb1114a5c3257538591b6904",
-      "platforms": [
-        "linux-x64"
-      ]
-    },
-    {
-      "name": "node-bins/linux-x64/node-linux-x64.tar.gz.004",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node-bins/linux-x64/node-linux-x64.tar.gz.004?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "64a7fe1d0911b21f8fda89bcbcb75e250437781552817728595265a89da00bb9",
-      "platforms": [
-        "linux-x64"
-      ]
-    },
-    {
-      "name": "node-bins/win-x64/node-win-x64.zip.000",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node-bins/win-x64/node-win-x64.zip.000?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "bb9c229eb10201e4d643853acc35d79b582734674c13f5494a185f1cd0b927ce",
-      "platforms": [
-        "win32-x64"
-      ]
-    },
-    {
-      "name": "node-bins/win-x64/node-win-x64.zip.001",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node-bins/win-x64/node-win-x64.zip.001?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "96a05b652b39f63530ba9076f5deef2a2ff964ad54e7cac08203934d45b6ed82",
-      "platforms": [
-        "win32-x64"
-      ]
-    },
-    {
-      "name": "node-bins/win-x64/node-win-x64.zip.002",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node-bins/win-x64/node-win-x64.zip.002?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "bf4410d8d2eb0d76738d27ff183d3afac3eec7de1cf015ee0658bc49709144ac",
-      "platforms": [
-        "win32-x64"
-      ]
-    },
-    {
-      "name": "node_modules_bundle/node_modules.tar.gz.000",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node_modules_bundle/node_modules.tar.gz.000?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "2a3a56f05a151f3c38db467e284c178588d61e0ec5fd6b0fd78113bf025eca0a"
-    },
-    {
-      "name": "node_modules_bundle/node_modules.tar.gz.001",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/node_modules_bundle/node_modules.tar.gz.001?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "708d17f805cb655213e03633613bd9ccb1d47507d281e80fd0335c34bef59efe"
-    },
-    {
-      "name": "package-lock.json",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/package-lock.json?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "09c4996203607cf7dffa4450053df3314d118c6496346657e9ea6983d32ee47e"
-    },
-    {
-      "name": "package.json",
-      "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/mcp_servers/package.json?ref=9b84fbe6db2a63503b460678c58cf56136c92256",
-      "hash": "98973445d319f15bfcf0623d93dd7cda8de111ac135dbaac2f39d3d93b4bb3e0"
-    }
-  ]
+  "totalFiles": 135,
+  "checksum": "e3b68e5a1e3cc3a429e41044ba6fea20c87eabf45676bdc1fd2fb5429d66388a",
+  "buildCommand": "pip install -r requirements.txt"
 }
