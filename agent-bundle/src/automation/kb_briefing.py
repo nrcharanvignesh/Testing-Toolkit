@@ -245,8 +245,8 @@ class KBBriefingEngine:
         if not self._retriever:
             return 0
         try:
-            chunks = self._retriever.retrieve("", top_k=9999)
-            return sum(len(c.text) for c in chunks) if chunks else 0
+            chunks = self._retriever._chunks
+            return sum(len(c.text) for c in chunks.values()) if chunks else 0
         except Exception:  # noqa: BLE001
             return 0
 
@@ -255,7 +255,7 @@ class KBBriefingEngine:
         if not self._retriever:
             return ""
         try:
-            chunks = self._retriever.retrieve("", top_k=9999)
+            chunks = self._retriever._chunks.values()
             if not chunks:
                 return ""
             by_source: dict[str, list[str]] = {}

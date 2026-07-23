@@ -15,6 +15,7 @@ executor (agentic_tools.py). This module only passes them through.
 from __future__ import annotations
 
 import asyncio
+import base64
 import gc
 import logging
 import time
@@ -66,6 +67,8 @@ class AgenticConfig:
     kb_budget_tokens: int = 50_000     # ~175k chars for KB content injection
     stuck_agent_retrieval_k: int = 20  # chunks retrieved when stuck
     stuck_agent_chunk_chars: int = 0   # 0 = uncapped per-chunk length
+    vision_every_n: int = 2            # send screenshot to LLM every N steps
+    allow_parallel_tools: bool = True  # parallel exec when LLM returns >1 tool
 
 
 # ---------------------------------------------------------------------------
@@ -502,10 +505,15 @@ async def run_agentic_test_case(
     on_step: Callable[[StepResult], None] | None = None,
     kb_engine: Any | None = None,
     input_queue: Callable[[], list[str]] | None = None,
+    precomputed_strategy: TestStrategy | None = None,
 ) -> TestCaseResult:
     """Execute a single test case using the multi-agent architecture.
 
     Flow: Planner -> Executor loop (with KB escalation) -> Sign-Out
+
+    If precomputed_strategy is provided, skips the internal planner call
+    (used by suite orchestrator when model was already selected based on
+    complexity).
     """
     from core.anthropic_client import AnthropicError
 
@@ -522,9 +530,12 @@ async def run_agentic_test_case(
     screenshot_dir.mkdir(parents=True, exist_ok=True)
 
     # --- PHASE 1: PLANNER SUB-AGENT ---
-    strategy = await _run_planner_agent(
-        llm_client, test_case, brief, project_context, log,
-    )
+    if precomputed_strategy is not None:
+        strategy = precomputed_strategy
+    else:
+        strategy = await _run_planner_agent(
+            llm_client, test_case, brief, project_context, log,
+        )
 
     # Build system prompt (with strategy if available)
     cred_dict: dict[str, str] = {
@@ -604,6 +615,157 @@ async def run_agentic_test_case(
                 log(f"[THOUGHT] {cot_text}")
 
             if result.has_tool_use:
+                # --- PARALLEL TOOL EXECUTION BRANCH ---
+                _CONTROL_TOOLS = {"declare_done", "declare_stuck", "ask_guide"}
+                _has_control = any(
+                    tc.get("name", "") in _CONTROL_TOOLS
+                    for tc in result.tool_calls
+                )
+                _use_parallel = (
+                    len(result.tool_calls) > 1
+                    and cfg.allow_parallel_tools
+                    and not _has_control
+                )
+
+                if _use_parallel:
+                    log(
+                        f"[INFO] Parallel exec: "
+                        f"{len(result.tool_calls)} tools"
+                    )
+                    step_start = time.perf_counter()
+
+                    async def _exec_one(
+                        tc: dict[str, Any], sn: int,
+                    ) -> tuple[dict[str, Any], str, StepResult | None]:
+                        t_name = tc.get("name", "")
+                        t_input = tc.get("input", {})
+                        try:
+                            obs, sr = await executor.execute(
+                                t_name, t_input, sn,
+                            )
+                        except Exception as exc:
+                            obs = f"Tool execution error: {exc}"
+                            sr = StepResult(
+                                step_num=sn,
+                                action=t_name,
+                                expected="Successful execution",
+                                actual=f"Error: {exc}",
+                                status="error",
+                                duration_ms=0,
+                            )
+                        return tc, obs, sr
+
+                    tasks = [
+                        _exec_one(tc, step_num + 1 + i)
+                        for i, tc in enumerate(result.tool_calls)
+                    ]
+                    par_results = await asyncio.gather(
+                        *tasks, return_exceptions=True,
+                    )
+
+                    # Build combined tool_result blocks
+                    tool_result_blocks: list[dict[str, Any]] = []
+                    combined_obs_parts: list[str] = []
+                    par_had_fail = False
+
+                    for idx, pr in enumerate(par_results):
+                        if isinstance(pr, Exception):
+                            par_had_fail = True
+                            tc_item = result.tool_calls[idx]
+                            tool_result_blocks.append({
+                                "type": "tool_result",
+                                "tool_use_id": tc_item.get("id", ""),
+                                "content": f"Parallel exec error: {pr}",
+                            })
+                            continue
+
+                        tc_item, obs_text, step_res = pr
+                        sn = step_num + 1 + idx
+                        if step_res:
+                            step_res.duration_ms = int(
+                                (time.perf_counter() - step_start) * 1000
+                            )
+                            step_res.reasoning = cot_text
+                            steps.append(step_res)
+                            if on_step:
+                                on_step(step_res)
+                            if step_res.status == "error":
+                                par_had_fail = True
+
+                        combined_obs_parts.append(
+                            f"[{tc_item.get('name', '')}]: {obs_text}"
+                        )
+                        tool_result_blocks.append({
+                            "type": "tool_result",
+                            "tool_use_id": tc_item.get("id", ""),
+                            "content": obs_text,
+                        })
+
+                        # Record thought
+                        thoughts.append(ThoughtRecord(
+                            step_num=sn,
+                            reasoning_text=cot_text if idx == 0 else "",
+                            tool_chosen=tc_item.get("name", ""),
+                            tool_input_summary=summarize_tool_input(
+                                tc_item.get("input", {}),
+                            ),
+                        ))
+
+                    step_num += len(result.tool_calls)
+
+                    if par_had_fail:
+                        consecutive_fails += 1
+                    else:
+                        consecutive_fails = 0
+
+                    # Get fresh page observation after parallel batch
+                    try:
+                        page_obs = await get_accessibility_tree(
+                            page, max_chars=cfg.observation_max_chars,
+                        )
+                    except Exception:
+                        page_obs = "(Page observation unavailable)"
+
+                    # Append page obs to last tool_result block
+                    if tool_result_blocks:
+                        last_block = tool_result_blocks[-1]
+                        last_block["content"] = (
+                            f"{last_block['content']}\n\n"
+                            f"[PAGE STATE]\n{page_obs}"
+                        )
+
+                    messages.append(
+                        {"role": "assistant", "content": result.content}
+                    )
+                    messages.append({
+                        "role": "user",
+                        "content": tool_result_blocks,
+                    })
+
+                    # Progress tracking
+                    try:
+                        current_url = page.url
+                    except Exception:
+                        current_url = ""
+                    page_hash = hash(page_obs[:2000])
+                    last_tc = result.tool_calls[-1]
+                    progress.record_turn(
+                        current_url, page_hash, cot_text,
+                        last_tc.get("name", ""),
+                        last_tc.get("input", {}).get(
+                            "element",
+                            last_tc.get("input", {}).get("url", ""),
+                        ),
+                    )
+
+                    # History management
+                    if len(messages) > cfg.history_window * 2:
+                        messages = _compress_history(
+                            messages, cfg.history_window,
+                        )
+                    continue
+
+                # --- SEQUENTIAL (single tool) PATH ---
                 tool_call = result.tool_calls[0]
                 tool_name: str = tool_call.get("name", "")
                 tool_input: dict[str, Any] = tool_call.get("input", {})
@@ -768,6 +930,37 @@ async def run_agentic_test_case(
                     tool_name, observation_text, page_obs, step_num,
                 )
 
+                # Build tool_result content (text + optional vision)
+                obs_content: list[dict[str, Any]] = []
+
+                # Compute page_hash early so vision gating can use it
+                page_hash = hash(page_obs[:2000])
+
+                # Add screenshot as image for multimodal context
+                send_vision = (
+                    step_num % cfg.vision_every_n == 0
+                    or page_hash != (progress._page_hash_history[-1]
+                                     if len(progress._page_hash_history) >= 1
+                                     else None)
+                )
+                if (send_vision
+                        and step_result.screenshot_path
+                        and Path(step_result.screenshot_path).exists()):
+                    try:
+                        img_bytes = Path(step_result.screenshot_path).read_bytes()
+                        obs_content.append({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": base64.b64encode(img_bytes).decode("ascii"),
+                            },
+                        })
+                    except Exception:
+                        pass
+
+                obs_content.append({"type": "text", "text": obs_msg})
+
                 # Append assistant response and tool result to messages
                 messages.append({"role": "assistant", "content": result.content})
                 messages.append({
@@ -776,7 +969,7 @@ async def run_agentic_test_case(
                         {
                             "type": "tool_result",
                             "tool_use_id": tool_id,
-                            "content": obs_msg,
+                            "content": obs_content,
                         }
                     ],
                 })
@@ -787,7 +980,6 @@ async def run_agentic_test_case(
                         current_url = page.url
                     except Exception:
                         current_url = ""
-                    page_hash = hash(page_obs[:2000])
                     target_desc = tool_input.get(
                         "element", tool_input.get("url", ""),
                     )
@@ -996,12 +1188,27 @@ async def run_agentic_suite(
         tc_output = output_dir / tc_id
         tc_output.mkdir(parents=True, exist_ok=True)
 
+        # Pre-run planner to determine complexity-based model selection
+        strategy = await _run_planner_agent(
+            llm_client, tc, brief, project_context, log,
+        )
+
+        # Dynamic model upgrade: complex TCs get the frontier model
+        tc_model = model
+        if strategy and strategy.estimated_complexity == "complex":
+            tc_model = fallback_model
+        complexity = (
+            strategy.estimated_complexity if strategy else "unknown"
+        )
+        log(f"[INFO] TC complexity: {complexity} -> using {tc_model}")
+
         # Primary attempt
         result = await run_agentic_test_case(
             page, context, tc, credentials, brief, project_context,
-            llm_client, model, tc_output, config=cfg,
+            llm_client, tc_model, tc_output, config=cfg,
             stop_fn=stop_fn, on_log=log, on_step=on_step,
             kb_engine=kb_engine, input_queue=input_queue,
+            precomputed_strategy=strategy,
         )
 
         # KB-first retry: same model, aggressive KB consultation
@@ -1028,15 +1235,16 @@ async def run_agentic_suite(
             )
             result = await run_agentic_test_case(
                 page, context, tc, credentials, brief, project_context,
-                llm_client, model, kb_retry_output, config=kb_cfg,
+                llm_client, tc_model, kb_retry_output, config=kb_cfg,
                 stop_fn=stop_fn, on_log=log, on_step=on_step,
                 kb_engine=kb_engine, input_queue=input_queue,
+                precomputed_strategy=strategy,
             )
             if result.overall_status != "error":
                 log(f"[SUCCESS] KB-retry succeeded for '{title}'")
 
         # Fallback retry if still stuck and a different model is available
-        if result.overall_status == "error" and fallback_model != model:
+        if result.overall_status == "error" and fallback_model != tc_model:
             log(
                 f"[INFO] Retrying TC '{title}' with advanced reasoning model"
             )
@@ -1056,6 +1264,7 @@ async def run_agentic_suite(
                 llm_client, fallback_model, retry_output, config=cfg,
                 stop_fn=stop_fn, on_log=log, on_step=on_step,
                 kb_engine=kb_engine, input_queue=input_queue,
+                precomputed_strategy=strategy,
             )
             if result.overall_status != "error":
                 log(f"[SUCCESS] Fallback retry succeeded for '{title}'")

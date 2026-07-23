@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import threading
 import time
 import uuid
@@ -37,6 +38,12 @@ from core.project_store import ensure_project
 
 router = APIRouter()
 _VAULT = CredentialVault()
+
+
+def _safe_title(title: str, max_len: int = 50) -> str:
+    """Replace non-alphanumeric chars with underscore, truncate to max_len."""
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", title).strip("_")
+    return slug[:max_len].rstrip("_") if slug else "untitled"
 
 # ponytail: compile retries removed in v3.50 (agentic architecture)
 # MAX_PLAN_COMPILE_RETRIES, MAX_TC_RETRIES, MAX_SUITE_RECOVERY no longer used
@@ -367,12 +374,15 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
         except Exception:  # noqa: BLE001
             pass
 
-        # Append user-provided pre-run notes to project context
+        # Append user-provided pre-run notes/guidance to project context.
+        # The frontend may prefix with [PRE-RUN GUIDANCE]: for agent-directed
+        # instructions; the rest is general notes. Both flow into the system
+        # prompt and planner via project_context.
         if req.notes.strip():
             project_context += (
-                f"\n\n[USER NOTES]: {req.notes.strip()}"
+                f"\n\n[USER NOTES / PRE-RUN GUIDANCE]:\n{req.notes.strip()}"
             )
-            job.log("[INFO] User notes attached to run context.")
+            job.log("[INFO] User notes/guidance attached to run context.")
 
         # KB Briefing Engine: build per-WI test briefs (budget-aware)
         _wi_briefs: dict[str, Any] = {}
@@ -510,7 +520,14 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
             if results:
                 try:
                     from automation.report_excel import write_e2e_report
-                    rp = output_dir / f"{req.project}_e2e_report_partial_{int(time.time())}.xlsx"
+                    # Name by single WI or project for batch
+                    _wi_ids_unique = list({str(tc.get("id", "")) for tc in picked if tc.get("id")})
+                    if len(_wi_ids_unique) == 1:
+                        _first_tc = picked[0]
+                        _st = _safe_title(str(_first_tc.get("title", "")))
+                        rp = output_dir / f"{_wi_ids_unique[0]}_{_st}_e2e_report.xlsx"
+                    else:
+                        rp = output_dir / f"{req.project}_e2e_report.xlsx"
                     await asyncio.to_thread(write_e2e_report, results, rp)
                     job.log(f"[INFO] Partial report saved: {rp.name}")
                     run_id = _persist_run(req.project, results, job.created_at, job.user_messages)
@@ -531,7 +548,13 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
         report_path = ""
         try:
             from automation.report_excel import write_e2e_report
-            rp = output_dir / f"{req.project}_e2e_report_{int(time.time())}.xlsx"
+            _wi_ids_unique = list({str(tc.get("id", "")) for tc in picked if tc.get("id")})
+            if len(_wi_ids_unique) == 1:
+                _first_tc = picked[0]
+                _st = _safe_title(str(_first_tc.get("title", "")))
+                rp = output_dir / f"{_wi_ids_unique[0]}_{_st}_e2e_report.xlsx"
+            else:
+                rp = output_dir / f"{req.project}_e2e_report.xlsx"
             await asyncio.to_thread(write_e2e_report, results, rp)
             report_path = str(rp)
             job.log(f"[INFO] Report saved: {rp.name}")

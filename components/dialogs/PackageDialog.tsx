@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FolderOpen } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import {
   DownloadLinks,
@@ -22,6 +23,7 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
     (id): id is number => typeof id === "number"
   );
   const [manualIds, setManualIds] = useState("");
+  const [combinePdf, setCombinePdf] = useState(true);
   const [paperSize, setPaperSize] = useState<"A4" | "Letter">("A4");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -53,7 +55,7 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
     pushLog("INFO", `Packaging ${ids.length} work item(s) into PDFs...`);
     try {
       const res = await agent.packagePdfs(
-        { project: currentProject, wi_ids: ids, paper_size: paperSize },
+        { project: currentProject, wi_ids: ids, paper_size: paperSize, combine: combinePdf },
         {
           onLog: (line) => pushLog(agentLogLevel(line), line),
           onProgress: (p) => setProgress(p),
@@ -178,12 +180,34 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
+        {parseIds().length > 1 && (
+          <label className="flex items-center gap-2 text-sm text-[var(--tt-text-secondary)]">
+            <input
+              type="checkbox"
+              className="tt-input h-4 w-4"
+              checked={combinePdf}
+              onChange={(e) => setCombinePdf(e.target.checked)}
+              disabled={busy}
+            />
+            Combined PDF (merge all work items into one file)
+          </label>
+        )}
+
         {result && (
           <div className="rounded-lg border border-[var(--tt-success)]/40 bg-[var(--tt-success-bg)] p-3 text-sm">
             <p className="text-[var(--tt-success-hover)]">
               Packaged {result.n} work item(s). PDFs written to:
             </p>
             <code className="break-all text-xs text-[var(--tt-text-secondary)]">{result.dir}</code>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                className="tt-btn-ghost !px-3 !py-1.5 text-xs inline-flex items-center gap-1.5"
+                onClick={() => agent.openOutputsFolder(currentProject!)}
+              >
+                <FolderOpen className="h-3.5 w-3.5" /> Open Folder
+              </button>
+            </div>
             {downloads.length === 0 && (
               <p className="mt-1 text-xs text-muted-foreground">
                 Open the Outputs tab on a work item to download the packets.

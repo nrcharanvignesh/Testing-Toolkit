@@ -40,6 +40,7 @@ class PackageRequest(BaseModel):
     project: str
     wi_ids: list[int]
     paper_size: str = "A4"
+    combine: bool = True
 
 
 async def _run_package(
@@ -77,6 +78,7 @@ async def _run_package(
         result = await run_pipeline(
             cfg,
             on_progress=lambda stage, c, t: job.set_progress(stage, c, t),
+            combined=req.combine,
         )
 
         rows = list(getattr(result, "package_rows", []) or [])

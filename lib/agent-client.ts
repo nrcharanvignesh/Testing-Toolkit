@@ -1840,7 +1840,7 @@ export const agent = {
 
   // -- Tools: PDF packaging (async job) --
   async packagePdfs(
-    payload: { project: string; wi_ids: WiId[]; paper_size?: string },
+    payload: { project: string; wi_ids: WiId[]; paper_size?: string; combine?: boolean },
     handlers: JobHandlers = {}
   ): Promise<{
     output_dir: string;
@@ -1856,6 +1856,7 @@ export const agent = {
         project: payload.project,
         wi_ids: ids,
         paper_size: payload.paper_size ?? "A4",
+        combine: payload.combine ?? true,
       }),
     });
     const snap = await pollJob(job_id, handlers);

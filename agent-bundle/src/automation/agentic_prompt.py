@@ -411,11 +411,11 @@ def build_planner_user_message(
     parts.append("")
     if brief is not None:
         try:
-            parts.append(f"DOMAIN KNOWLEDGE:\n{brief.to_prompt_section()[:12000]}")
+            parts.append(f"DOMAIN KNOWLEDGE:\n{brief.to_prompt_section()[:50000]}")
         except Exception:
             pass
     if project_context:
-        parts.append(f"\nAPPLICATION CONTEXT:\n{project_context[:8000]}")
+        parts.append(f"\nAPPLICATION CONTEXT:\n{project_context[:20000]}")
     parts.append("\nProduce the JSON strategy now.")
     return "\n".join(parts)
 

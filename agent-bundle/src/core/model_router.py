@@ -118,7 +118,7 @@ _TASK_TIER: Final[dict[Task, Tier]] = {
     Task.E2E_AGENTIC: Tier.MEDIUM,
     Task.E2E_AGENTIC_FALLBACK: Tier.FRONTIER,
     # Sub-agents - small for cheap/fast, medium for reasoning
-    Task.E2E_PLANNER: Tier.SMALL,
+    Task.E2E_PLANNER: Tier.MEDIUM,
     Task.E2E_KB_CONSULTANT: Tier.MEDIUM,
     Task.E2E_REPORT_SYNTH: Tier.MEDIUM,
 }
@@ -140,7 +140,7 @@ _TASK_OVERRIDE: Final[dict[Task, str]] = {
         Task.OCR_EXTRACT: MODEL_OCR,
         Task.E2E_AGENTIC: MODEL_CHAT,
         Task.E2E_AGENTIC_FALLBACK: MODEL_GENERATE,
-        Task.E2E_PLANNER: MODEL_SMALL,
+        Task.E2E_PLANNER: MODEL_CHAT,
         Task.E2E_KB_CONSULTANT: MODEL_CHAT,
         Task.E2E_REPORT_SYNTH: MODEL_CHAT,
     }.items() if v  # only include non-empty overrides

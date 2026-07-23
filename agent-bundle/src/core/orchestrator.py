@@ -241,6 +241,9 @@ async def run_pipeline(
     # ---- Cleanup intermediates ----
     if cfg.work_dir.exists():
         shutil.rmtree(cfg.work_dir, ignore_errors=True)
+    work_artifacts = cfg.output_dir / "_work"
+    if work_artifacts.exists():
+        shutil.rmtree(work_artifacts, ignore_errors=True)
     manifest.unlink(missing_ok=True)
     kb_dir = cfg.output_dir / "Upload to KB"
     if kb_dir.exists() and not kb_ready:

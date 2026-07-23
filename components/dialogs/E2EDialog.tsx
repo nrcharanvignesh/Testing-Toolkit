@@ -14,6 +14,7 @@ import {
   Trash2,
   Paperclip,
   FileText,
+  FolderOpen,
   X,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
@@ -82,6 +83,7 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
   const [result, setResult] = useState<E2ERunResult | null>(null);
   const [error, setError] = useState("");
   const [notes, setNotes] = useState("");
+  const [preRunGuidance, setPreRunGuidance] = useState("");
   const [userMsg, setUserMsg] = useState("");
   const [logCopied, setLogCopied] = useState(false);
   const [guidanceAttachments, setGuidanceAttachments] = useState<Attachment[]>([]);
@@ -90,6 +92,7 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
   const logEndRef = useRef<HTMLDivElement>(null);
   const guidanceFileRef = useRef<HTMLInputElement>(null);
   const notesFileRef = useRef<HTMLInputElement>(null);
+  const guidanceFocusedRef = useRef(false);
 
   // Load environments, test cases, and last-run summary on open.
   useEffect(() => {
@@ -131,9 +134,7 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
   }, [currentProject, wiScope]);
 
   useEffect(() => {
-    const active = document.activeElement;
-    const isTyping = active?.tagName === "TEXTAREA" || active?.tagName === "INPUT";
-    if (!isTyping) {
+    if (!guidanceFocusedRef.current) {
       logEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [logs]);
@@ -207,11 +208,16 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
       }
       return next;
     });
-    let finalNotes = notes.trim();
+    let finalNotes = "";
+    if (preRunGuidance.trim()) {
+      finalNotes += `[PRE-RUN GUIDANCE]: ${preRunGuidance.trim()}\n\n`;
+    }
+    finalNotes += notes.trim();
     if (notesAttachments.length > 0) {
       finalNotes += "\n\n=== ATTACHED REFERENCE FILES ===\n";
       finalNotes += notesAttachments.map((a) => `--- ${a.name} ---\n${a.text}`).join("\n\n");
     }
+    finalNotes = finalNotes.trim();
     pushLog("INFO", `Starting E2E run against "${selectedEnv}" (mode: ${mode})...`);
     try {
       const res = await agent.runE2E(
@@ -473,6 +479,22 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
           </select>
         </label>
 
+        {/* Pre-run guidance — injected into planner + system prompt */}
+        {!running && (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-[var(--tt-text-secondary)]">
+              Pre-run guidance (optional - injected into agent system prompt)
+            </span>
+            <textarea
+              className="tt-input resize-none text-xs"
+              placeholder="Optional: provide guidance for the agent (e.g., navigation hints, test data, focus areas)..."
+              value={preRunGuidance}
+              onChange={(e) => setPreRunGuidance(e.target.value)}
+              rows={3}
+            />
+          </div>
+        )}
+
         {/* Pre-run notes / During-run message input */}
         {!running ? (
           <div className="flex flex-col gap-1">
@@ -556,6 +578,8 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
                 placeholder="Send guidance to the running agent..."
                 value={userMsg}
                 rows={2}
+                onFocus={() => { guidanceFocusedRef.current = true; }}
+                onBlur={() => { guidanceFocusedRef.current = false; }}
                 onChange={(e) => setUserMsg(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey && (userMsg.trim() || guidanceAttachments.length > 0) && jobIdRef.current) {
@@ -736,6 +760,14 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
               <div className="flex items-center gap-1">
                 <button
                   className="tt-btn-ghost !px-1.5 !py-0.5 !text-[10px] !gap-1"
+                  onClick={() => agent.openOutputsFolder(currentProject)}
+                  title="Open outputs folder in Explorer"
+                  aria-label="Open outputs folder"
+                >
+                  <FolderOpen className="h-3 w-3" />
+                </button>
+                <button
+                  className="tt-btn-ghost !px-1.5 !py-0.5 !text-[10px] !gap-1"
                   onClick={copyLogs}
                   disabled={logs.length === 0}
                   title="Copy all logs to clipboard"
@@ -889,14 +921,23 @@ function ReviewPanel({
                 {r.title}
               </span>
               {r.video_path && (
-                <a
-                  href={`/api/artifact?path=${encodeURIComponent(r.video_path)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="shrink-0 text-xs text-[var(--tt-primary-soft)] hover:underline"
-                >
-                  Video
-                </a>
+                <>
+                  <a
+                    href={`/api/artifact?path=${encodeURIComponent(r.video_path)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 text-xs text-[var(--tt-primary-soft)] hover:underline"
+                  >
+                    Video
+                  </a>
+                  <button
+                    className="shrink-0 text-xs text-[var(--tt-text-muted)] hover:text-[var(--tt-primary-soft)]"
+                    onClick={() => agent.revealFile(r.video_path)}
+                    title="Reveal video in Explorer"
+                  >
+                    <FolderOpen className="h-3 w-3" />
+                  </button>
+                </>
               )}
               <div className="flex shrink-0 gap-1">
                 <button

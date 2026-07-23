@@ -2,7 +2,7 @@
 automation/agentic_tools.py
 LLM-in-the-loop agentic E2E test runner tooling.
 
-Defines 35 Claude tool_use tool schemas and an AgenticToolExecutor class that
+Defines 36 Claude tool_use tool schemas and an AgenticToolExecutor class that
 executes them against a live Playwright page. The self-healing LocatorFactory
 resolves natural-language element descriptions via a 6-strategy waterfall with
 iframe traversal and shadow DOM fallback.
@@ -78,7 +78,7 @@ _ROLE_HINTS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 def _build_tool_schemas() -> list[dict[str, Any]]:
-    """Return all 35 tool schemas for Claude tool_use."""
+    """Return all 36 tool schemas for Claude tool_use."""
     return [
         # --- Category A: Navigation (3) ---
         {
@@ -234,6 +234,25 @@ def _build_tool_schemas() -> list[dict[str, Any]]:
                     "amount": {"type": "integer", "description": "Scroll distance in pixels (default 300)", "default": 300},
                 },
                 "required": ["direction"],
+            },
+        },
+        {
+            "name": "scroll_to_element",
+            "description": "Scroll the page so a specific element is visible in the viewport. Much faster than repeated blind scrolls. Use this when you know what element you need to reach but it might be offscreen.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "element": {
+                        "type": "string",
+                        "description": "Description of the element to scroll to (e.g., 'Submit button', 'Activity ID 6655 row', 'Save and Exit button')",
+                    },
+                    "align": {
+                        "type": "string",
+                        "enum": ["center", "start", "end"],
+                        "description": "Where to align the element in the viewport after scrolling. Default: center",
+                    },
+                },
+                "required": ["element"],
             },
         },
         {
@@ -516,7 +535,7 @@ TOOL_SCHEMAS: Final[list[dict[str, Any]]] = _build_tool_schemas()
 _INTERACTION_TOOLS: frozenset[str] = frozenset({
     "click", "fill", "type_text", "select_option", "check", "uncheck",
     "hover", "double_click", "right_click", "drag_and_drop", "press_key",
-    "file_upload", "fill_form", "navigate",
+    "file_upload", "fill_form", "navigate", "scroll_to_element",
 })
 
 
@@ -527,9 +546,11 @@ _INTERACTION_TOOLS: frozenset[str] = frozenset({
 def _format_a11y_tree(snapshot: dict[str, Any], max_chars: int = MAX_A11Y_CHARS) -> str:
     """Format Playwright a11y snapshot into a compact role:name tree."""
     lines: list[str] = []
+    _char_count: int = 0
 
     def _walk(node: dict[str, Any], depth: int) -> None:
-        if len("\n".join(lines)) > max_chars:
+        nonlocal _char_count
+        if _char_count > max_chars:
             return
         role = node.get("role", "")
         name = node.get("name", "")
@@ -539,8 +560,13 @@ def _format_a11y_tree(snapshot: dict[str, Any], max_chars: int = MAX_A11Y_CHARS)
         else:
             indent = "  " * depth
             label = f"{role}: {name}" if name else role
-            lines.append(f"{indent}{label}")
+            line = f"{indent}{label}"
+            lines.append(line)
+            # +1 for newline separator between lines
+            _char_count += len(line) + 1
         for child in node.get("children", []):
+            if _char_count > max_chars:
+                return
             _walk(child, depth + 1)
 
     _walk(snapshot, 0)
@@ -901,7 +927,7 @@ class AgenticToolExecutor:
     # --- Public API ---
 
     def get_tool_definitions(self) -> list[dict[str, Any]]:
-        """Return all 35 tool schemas for Claude tool_use."""
+        """Return all 36 tool schemas for Claude tool_use."""
         return TOOL_SCHEMAS
 
     async def execute(
@@ -1155,6 +1181,23 @@ class AgenticToolExecutor:
             dx = -amount
         await self._page.mouse.wheel(dx, dy)
         return f"Scrolled {direction} by {amount}px", "", None
+
+    async def _exec_scroll_to_element(self, inp: dict[str, Any]) -> tuple[str, str, list[str] | None]:
+        element_desc: str = inp.get("element", "")
+        if not element_desc:
+            return "[ERROR] element description is required", "", None
+        result = await self._locator_factory.find(element_desc)
+        if not result.found:
+            return (
+                f"[ERROR] Could not find element: {element_desc}\nPage state:\n{result.context_snippet}",
+                "none", result.alternatives,
+            )
+        await result.locator.scroll_into_view_if_needed()
+        await self._page.wait_for_timeout(300)
+        return (
+            f"Scrolled to element: {element_desc}. Element is now visible in viewport.",
+            result.strategy_used, result.alternatives,
+        )
 
     async def _exec_file_upload(self, inp: dict[str, Any]) -> tuple[str, str, list[str] | None]:
         result = await self._locator_factory.find(inp["element"])
@@ -1500,18 +1543,15 @@ class AgenticToolExecutor:
         """Capture screenshot and save to artifacts directory."""
         try:
             self._screenshot_counter += 1
-            filename = f"step_{self._screenshot_counter:04d}.png"
+            filename = f"step_{self._screenshot_counter:04d}.jpg"
             path = self._screenshot_dir / filename
             path.parent.mkdir(parents=True, exist_ok=True)
             await self._page.screenshot(
                 path=str(path),
                 full_page=full_page,
-                quality=SCREENSHOT_QUALITY,
-                type="jpeg" if SCREENSHOT_QUALITY < 100 else "png",
+                quality=60,
+                type="jpeg",
             )
-            # Correction: quality param only valid for jpeg
-            # Re-take as png without quality for png format
-            await self._page.screenshot(path=str(path), full_page=full_page)
             return path
         except Exception as e:
             self._on_log(f"[WARN] Screenshot failed: {e}")
