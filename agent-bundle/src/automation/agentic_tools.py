@@ -467,6 +467,36 @@ def _build_tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "ask_guide",
+            "description": (
+                "Ask the Knowledge Base guide for navigation help. Call this "
+                "BEFORE attempting navigation when you are not on the target "
+                "screen. The guide is a senior SME who knows every screen and "
+                "workflow in the application."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": (
+                            "What you need help with. Be specific: where you "
+                            "are, where you need to go, what you have tried."
+                        ),
+                    },
+                    "current_screen": {
+                        "type": "string",
+                        "description": "Describe where you currently are",
+                    },
+                    "target_screen": {
+                        "type": "string",
+                        "description": "Where you need to get to",
+                    },
+                },
+                "required": ["question"],
+            },
+        },
+        {
             "name": "wait_seconds",
             "description": "Wait for a specified number of seconds (max 30).",
             "input_schema": {

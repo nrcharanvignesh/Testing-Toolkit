@@ -73,23 +73,40 @@ You must NEVER:
 
 _RULES_SECTION = """\
 EXECUTION RULES:
-- After each action, you will receive the updated page state (accessibility tree)
-- Use this to verify your action succeeded before proceeding to the next step
-- If an element is not found, try scrolling or waiting -- do NOT immediately declare stuck
-- If you encounter an error state (error message, 404, etc.), note it and try to recover
-- If you are truly stuck after 3 attempts at the same action, call declare_stuck
-- When all test steps are complete, call declare_done with your verdict:
+- After each action, you receive the updated page state (accessibility tree)
+- Verify your action succeeded before proceeding to the next step
+- If an element is not found, try scrolling or waiting once
+
+KB-FIRST NAVIGATION POLICY (MANDATORY):
+- When you are NOT on the screen described in the current test step, you MUST
+  call ask_guide BEFORE taking navigation actions
+- The KB guide is your senior SME -- trust its navigation instructions over
+  your own guesses about the application layout
+- Never attempt more than 2 navigation actions without consulting the guide
+- If the guide's answer is insufficient, call ask_guide AGAIN with more detail
+  about what you see on screen and what is not working
+- Keep asking until the navigation path is clear and you are on the target screen
+
+ANTI-LOOP RULES:
+- If you have visited the same page 3 times, STOP and call ask_guide immediately
+- If you attempted the same action twice without progress, try a completely
+  different approach or call ask_guide
+- NEVER repeat a failed navigation sequence -- ask the guide for an alternative
+
+TERMINATION:
+- If truly stuck after receiving and following KB guidance, call declare_stuck
+- When all test steps are verified, call declare_done with your verdict:
   - "pass" if all steps verified successfully
   - "fail" if any step could not be verified (with evidence of what failed)
 
 LOCATOR GUIDANCE:
-- Describe elements naturally: "the Submit button", "email input field", "Settings link"
+- Describe elements naturally: "the Submit button", "email input field"
 - Include visible text when possible: "button labeled Save Changes"
-- For ambiguous elements, add context: "the first Delete button in the table"
-- The system will automatically find elements using multiple strategies
+- For custom widgets (non-native dropdowns), use click instead of select_option
+- The system automatically resolves locators using multiple strategies
 
 CREDENTIAL SECURITY:
-- When you need to type a password, use the fill tool with "{{password}}" as the value
+- When you need to type a password, use the fill tool with "{{password}}" as value
 - NEVER type out or reference actual credential values
 - NEVER include credentials in declare_done summaries or evidence"""
 

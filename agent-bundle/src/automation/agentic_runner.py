@@ -46,7 +46,7 @@ LogFn = Callable[[str], None]
 
 # ponytail: 30-min cap per TC; configurable timeout if throughput matters
 _TC_TIME_CAP_SECONDS: int = 1800
-_MAX_ESCALATIONS: int = 3
+_MAX_ESCALATIONS: int = 5
 _SIGNOUT_MAX_STEPS: int = 10
 
 
@@ -60,11 +60,110 @@ class AgenticConfig:
     """Tuning knobs for the agentic loop."""
 
     max_consecutive_fails: int = 3      # triggers KB escalation
-    history_window: int = 8             # full messages kept in context
+    history_window: int = 12            # full messages kept in context
     screenshot_every_action: bool = True
     observation_max_chars: int = 12000  # a11y tree truncation
     temperature: float = 0.2           # low temp for deterministic actions
     max_tokens: int = 4096             # per-turn output limit
+
+
+# ---------------------------------------------------------------------------
+# Semantic loop detection
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ProgressTracker:
+    """Detects semantic loops even when tool calls succeed at Playwright level.
+
+    Scores 4 signals over a sliding window. When stall_score >= threshold,
+    the orchestrator force-escalates to KB regardless of consecutive_fails.
+    """
+
+    _url_history: list[str] = field(default_factory=list)
+    _page_hash_history: list[int] = field(default_factory=list)
+    _thought_history: list[str] = field(default_factory=list)
+    _action_history: list[tuple[str, str]] = field(default_factory=list)
+    stall_score: int = 0
+    _stall_threshold: int = 4
+    _window: int = 6
+
+    def record_turn(
+        self,
+        url: str,
+        page_obs_hash: int,
+        thought_text: str,
+        tool_name: str,
+        tool_target: str,
+    ) -> None:
+        """Record one executor turn and recompute stall score."""
+        self._url_history.append(url)
+        self._page_hash_history.append(page_obs_hash)
+        self._thought_history.append(thought_text[:200])
+        self._action_history.append((tool_name, tool_target))
+
+        cap = 20
+        if len(self._url_history) > cap:
+            self._url_history = self._url_history[-cap:]
+            self._page_hash_history = self._page_hash_history[-cap:]
+            self._thought_history = self._thought_history[-cap:]
+            self._action_history = self._action_history[-cap:]
+
+        self._compute_stall_score()
+
+    def _compute_stall_score(self) -> None:
+        """Multi-signal stall detection over sliding window."""
+        from collections import Counter
+
+        score = 0
+        w = self._window
+
+        # Signal 1: Same URL 3+ times in last w turns
+        recent_urls = self._url_history[-w:]
+        if recent_urls:
+            top_url = Counter(recent_urls).most_common(1)[0][1]
+            if top_url >= 3:
+                score += 2
+
+        # Signal 2: Same page content hash 3+ times
+        recent_hashes = self._page_hash_history[-w:]
+        if recent_hashes:
+            top_hash = Counter(recent_hashes).most_common(1)[0][1]
+            if top_hash >= 3:
+                score += 2
+
+        # Signal 3: Same (tool, target) repeated 2+ times
+        recent_actions = self._action_history[-w:]
+        if recent_actions:
+            top_action = Counter(recent_actions).most_common(1)[0][1]
+            if top_action >= 2:
+                score += 1
+
+        # Signal 4: Confusion patterns in 2/3 recent thoughts
+        recent_thoughts = self._thought_history[-3:]
+        _confusion = (
+            "i need to", "i should try", "let me go back",
+            "navigate to", "i'm not sure", "looking for",
+            "let me try", "back to",
+        )
+        if len(recent_thoughts) >= 2:
+            confused = sum(
+                1 for t in recent_thoughts
+                if any(m in t.lower() for m in _confusion)
+            )
+            if confused >= 2:
+                score += 1
+
+        self.stall_score = score
+
+    @property
+    def is_stalled(self) -> bool:
+        """True when the agent appears stuck in a semantic loop."""
+        return self.stall_score >= self._stall_threshold
+
+    def reset(self) -> None:
+        """Reset score after KB consultation provides new direction."""
+        self.stall_score = 0
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +258,7 @@ async def _run_planner_agent(
             max_tokens=1024,
             temperature=0.1,
         )
-        strategy = parse_test_strategy(result)
+        strategy = parse_test_strategy(result.text)
         if strategy:
             log(
                 f"[INFO] Planner: {strategy.estimated_complexity} complexity, "
@@ -184,6 +283,8 @@ async def _consult_kb(
     page: Any,
     cfg: AgenticConfig,
     log: LogFn,
+    *,
+    current_step_idx: int = 0,
 ) -> str | None:
     """KB Consultant Sub-Agent: query KB with failure context, get advice."""
     from core.model_router import Task, route
@@ -211,10 +312,13 @@ async def _consult_kb(
 
     tc_title = test_case.get("title", "")
     current_step_text = ""
-    steps = test_case.get("steps", [])
-    if steps:
-        s = steps[0] if isinstance(steps[0], str) else steps[0].get("step", "")
-        current_step_text = s
+    tc_steps = test_case.get("steps", [])
+    if tc_steps and current_step_idx < len(tc_steps):
+        s = tc_steps[current_step_idx]
+        current_step_text = s if isinstance(s, str) else s.get("step", "")
+    elif tc_steps:
+        s = tc_steps[0]
+        current_step_text = s if isinstance(s, str) else s.get("step", "")
 
     consultant_model = route(Task.E2E_KB_CONSULTANT)
     user_msg = build_consultant_user_message(
@@ -235,9 +339,10 @@ async def _consult_kb(
             max_tokens=1024,
             temperature=0.3,
         )
-        if result and result.strip():
-            log(f"[INFO] KB Consultant advice: {result[:150]}...")
-            return result
+        advice_text = result.text if result else ""
+        if advice_text.strip():
+            log(f"[INFO] KB Consultant advice: {advice_text[:150]}...")
+            return advice_text
         return None
     except Exception as exc:
         log(f"[WARN] KB Consultant failed: {exc}")
@@ -413,6 +518,7 @@ async def run_agentic_test_case(
     step_num = 0
     consecutive_fails = 0
     escalation_count = 0
+    progress = ProgressTracker()
     final_status = "error"
     final_summary = ""
 
@@ -509,6 +615,72 @@ async def run_agentic_test_case(
                         on_step(steps[-1])
                     break
 
+                # --- PROACTIVE KB GUIDE (ask_guide tool) ---
+                if tool_name == "ask_guide":
+                    question = tool_input.get("question", "")
+                    current_screen = tool_input.get("current_screen", "")
+                    target_screen = tool_input.get("target_screen", "")
+                    guide_query = (
+                        f"{question} "
+                        f"Currently on: {current_screen}. "
+                        f"Need to reach: {target_screen}."
+                    )
+
+                    kb_answer = ""
+                    if kb_engine:
+                        try:
+                            kb_answer = kb_engine.query_for_stuck_agent(
+                                guide_query, top_k=5,
+                            )
+                        except Exception:
+                            pass
+                    if not kb_answer:
+                        kb_answer = (
+                            "(No specific guidance found in KB for this "
+                            "navigation. Use your best judgment based on "
+                            "the current page state.)"
+                        )
+
+                    log(f"[INFO] ask_guide: {question[:100]}")
+                    steps.append(StepResult(
+                        step_num=step_num,
+                        action="ask_guide",
+                        expected="KB navigation guidance",
+                        actual=f"Received guidance ({len(kb_answer)} chars)",
+                        status="pass",
+                        duration_ms=0,
+                        reasoning=cot_text,
+                    ))
+                    if on_step:
+                        on_step(steps[-1])
+
+                    messages.append(
+                        {"role": "assistant", "content": result.content}
+                    )
+                    messages.append({
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tool_id,
+                                "content": (
+                                    "[KB GUIDE RESPONSE]\n\n"
+                                    f"Question: {question}\n\n"
+                                    "Navigation guidance from Knowledge "
+                                    "Base:\n"
+                                    f"{kb_answer}\n\n"
+                                    "Follow these instructions exactly. "
+                                    "Execute the navigation steps in order. "
+                                    "If you are still unsure, call ask_guide "
+                                    "again with more detail about what you "
+                                    "see on screen."
+                                ),
+                            }
+                        ],
+                    })
+                    progress.reset()
+                    continue
+
                 # Execute the tool
                 step_start = time.perf_counter()
                 try:
@@ -564,44 +736,75 @@ async def run_agentic_test_case(
                     ],
                 })
 
-                # --- KB ESCALATION (before declaring stuck) ---
-                if consecutive_fails >= cfg.max_consecutive_fails:
+                # --- PROGRESS TRACKING (semantic loop detection) ---
+                if step_result.status != "error":
+                    try:
+                        current_url = page.url
+                    except Exception:
+                        current_url = ""
+                    page_hash = hash(page_obs[:2000])
+                    target_desc = tool_input.get(
+                        "element", tool_input.get("url", ""),
+                    )
+                    progress.record_turn(
+                        current_url, page_hash, cot_text,
+                        tool_name, target_desc,
+                    )
+
+                # --- KB ESCALATION (dual trigger) ---
+                should_escalate = (
+                    consecutive_fails >= cfg.max_consecutive_fails
+                    or progress.is_stalled
+                )
+                if should_escalate:
+                    trigger = (
+                        "semantic loop detected (same page/actions repeating)"
+                        if progress.is_stalled
+                        else f"{consecutive_fails} consecutive tool failures"
+                    )
                     if escalation_count < _MAX_ESCALATIONS and kb_engine:
                         log(
-                            f"[INFO] Escalating to KB Consultant "
+                            f"[INFO] Escalating to KB Consultant: {trigger} "
                             f"(attempt {escalation_count + 1}/{_MAX_ESCALATIONS})"
+                        )
+                        completed_steps = sum(
+                            1 for s in steps if s.status == "pass"
                         )
                         advice = await _consult_kb(
                             llm_client, kb_engine, test_case,
                             thoughts, page, cfg, log,
+                            current_step_idx=completed_steps,
                         )
                         if advice:
                             messages.append({
                                 "role": "user",
                                 "content": (
                                     "[KB CONSULTANT ADVICE]\n"
-                                    "A senior QA expert reviewed your situation "
-                                    "and suggests:\n\n"
+                                    f"Escalation reason: {trigger}\n\n"
+                                    "A senior QA expert reviewed your "
+                                    "situation and advises:\n\n"
                                     f"{advice}\n\n"
-                                    "Try these alternative approaches. "
-                                    "Call a tool now."
+                                    "IMPORTANT: Follow these instructions. "
+                                    "Do NOT repeat what you were doing. "
+                                    "If you need more specific navigation "
+                                    "help, call ask_guide. Call a tool now."
                                 ),
                             })
                             consecutive_fails = 0
+                            progress.reset()
                             escalation_count += 1
-                            # Mark next thought as escalation response
                             continue
 
                     # Escalation exhausted or no KB -- end TC
                     log(
-                        f"[WARN] {cfg.max_consecutive_fails} consecutive "
-                        f"failures (after {escalation_count} KB consultations), "
+                        f"[WARN] Stuck: {trigger} "
+                        f"(after {escalation_count} KB consultations), "
                         "ending test case"
                     )
                     final_status = "error"
                     final_summary = (
-                        f"Stuck: {cfg.max_consecutive_fails} consecutive "
-                        f"tool failures (KB consulted {escalation_count}x)"
+                        f"Stuck: {trigger} "
+                        f"(KB consulted {escalation_count}x)"
                     )
                     break
 
@@ -624,9 +827,13 @@ async def run_agentic_test_case(
                     # Try KB escalation even for no-tool-use stuck
                     if escalation_count < _MAX_ESCALATIONS and kb_engine:
                         log("[INFO] Agent not calling tools, consulting KB...")
+                        completed_steps = sum(
+                            1 for s in steps if s.status == "pass"
+                        )
                         advice = await _consult_kb(
                             llm_client, kb_engine, test_case,
                             thoughts, page, cfg, log,
+                            current_step_idx=completed_steps,
                         )
                         if advice:
                             messages.append({
@@ -638,6 +845,7 @@ async def run_agentic_test_case(
                                 ),
                             })
                             consecutive_fails = 0
+                            progress.reset()
                             escalation_count += 1
                             continue
 
