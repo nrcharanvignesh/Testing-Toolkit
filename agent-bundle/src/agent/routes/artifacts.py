@@ -23,6 +23,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from core.trace import trace
 
@@ -113,9 +114,17 @@ async def upload_artifact(
     return {"ok": True, "path": str(dest), "size": len(content)}
 
 
+class _OpenFolderBody(BaseModel):
+    project: str = ""
+
+
+class _RevealFileBody(BaseModel):
+    path: str = ""
+
+
 @router.post("/open-outputs-folder")
 @trace
-async def open_outputs_folder(project: str = "") -> dict[str, Any]:
+async def open_outputs_folder(body: _OpenFolderBody) -> dict[str, Any]:
     """Open the project outputs folder in the OS file explorer."""
     import subprocess
     import sys
@@ -124,7 +133,7 @@ async def open_outputs_folder(project: str = "") -> dict[str, Any]:
     from core.project_store import _safe_name
 
     try:
-        target = OUTPUTS_DIR / _safe_name(project) if project else OUTPUTS_DIR
+        target = OUTPUTS_DIR / _safe_name(body.project) if body.project else OUTPUTS_DIR
         target.mkdir(parents=True, exist_ok=True)
         folder = str(target)
         if sys.platform == "win32":
@@ -140,15 +149,15 @@ async def open_outputs_folder(project: str = "") -> dict[str, Any]:
 
 @router.post("/reveal-file")
 @trace
-async def reveal_file(path: str = "") -> dict[str, Any]:
+async def reveal_file(body: _RevealFileBody) -> dict[str, Any]:
     """Reveal a specific file in the OS file explorer (selected)."""
     import subprocess
     import sys
 
-    if not path:
+    if not body.path:
         return {"ok": False, "detail": "path is required"}
 
-    target = Path(path).resolve()
+    target = Path(body.path).resolve()
     root = _workspace_root()
     exports = _exports_root()
     in_workspace = root in target.parents or target == root

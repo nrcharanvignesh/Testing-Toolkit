@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from agent.jobs import JOBS
 from core.trace import trace
@@ -33,15 +34,18 @@ async def stop_job(job_id: str) -> dict:
     return {"ok": True, "state": job.state}
 
 
+class _MessageBody(BaseModel):
+    message: str = ""
+
+
 @router.post("/{job_id}/message")
 @trace
-async def post_user_message(job_id: str, body: dict) -> dict:
+async def post_user_message(job_id: str, body: _MessageBody) -> dict:
     """Queue a user message for pickup by the running job."""
     job = JOBS.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
-    msg = body.get("message", "")
-    if not msg:
+    if not body.message:
         raise HTTPException(400, "message is required")
-    job.push_user_message(msg)
+    job.push_user_message(body.message)
     return {"ok": True, "queued": len(job.user_messages)}
