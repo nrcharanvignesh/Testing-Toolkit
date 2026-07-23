@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, FileText, Loader2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, Check, Clipboard, FileText, Loader2, Trash2, X } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { DownloadLinks } from "@/components/ui/download-links";
 import {
@@ -46,6 +46,7 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
   const [progress, setProgress] = useState<JobProgress | null>(null);
   const [pushed, setPushed] = useState<string>("");
   const [runLog, setRunLog] = useState<string[]>([]);
+  const [logCopied, setLogCopied] = useState(false);
 
   // Custom options (ADO target fields) - hidden by default.
   const [optsOpen, setOptsOpen] = useState(false);
@@ -132,6 +133,12 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
   }, [generateCtx.loadArtifactPath]);
 
   const appendLog = (line: string) => setRunLog((prev) => [...prev, line]);
+  const copyRunLog = useCallback(() => {
+    void navigator.clipboard.writeText(runLog.join("\n")).then(() => {
+      setLogCopied(true);
+      setTimeout(() => setLogCopied(false), 1800);
+    });
+  }, [runLog]);
   const handlers = {
     onLog: (line: string) => {
       appendLog(line);
@@ -399,13 +406,39 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
 
         <>
             {/* Generation log toggle + pane */}
-            <button
-              className="flex items-center gap-1.5 text-xs font-medium text-[var(--tt-text-muted)] hover:text-[var(--tt-text-secondary)]"
-              onClick={() => setLogVisible((v) => !v)}
-            >
-              {logVisible ? "Hide logs" : "Show logs"}
-              {runLog.length > 0 && <span className="text-[10px] opacity-60">({runLog.length})</span>}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                className="flex items-center gap-1.5 text-xs font-medium text-[var(--tt-text-muted)] hover:text-[var(--tt-text-secondary)]"
+                onClick={() => setLogVisible((v) => !v)}
+              >
+                {logVisible ? "Hide logs" : "Show logs"}
+                {runLog.length > 0 && <span className="text-[10px] opacity-60">({runLog.length})</span>}
+              </button>
+              {logVisible && runLog.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    className="tt-btn-ghost !px-1.5 !py-0.5 !text-[10px] !gap-1"
+                    onClick={copyRunLog}
+                    title="Copy all logs to clipboard"
+                    aria-label="Copy logs"
+                  >
+                    {logCopied ? (
+                      <Check className="h-3 w-3 text-[var(--tt-success)]" />
+                    ) : (
+                      <Clipboard className="h-3 w-3" />
+                    )}
+                  </button>
+                  <button
+                    className="tt-btn-ghost !px-1.5 !py-0.5 !text-[10px] !gap-1"
+                    onClick={() => setRunLog([])}
+                    title="Clear log"
+                    aria-label="Clear log"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+            </div>
             {logVisible && (
             <div className="min-h-40 max-h-72 overflow-auto rounded-lg border border-[var(--tt-outline)] bg-[var(--tt-surface-deepest)] font-mono text-xs leading-relaxed">
               {runLog.length === 0 ? (

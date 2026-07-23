@@ -255,9 +255,15 @@ class E2EStartRequest(BaseModel):
     indices: list[int] = []
     wi_ids: list[str] = []
     notes: str = ""
+    mode: str = "ai"  # "ai" or "script"
 
 
-def _persist_run(project: str, results: list[Any], started_at: float) -> str:
+def _persist_run(
+    project: str,
+    results: list[Any],
+    started_at: float,
+    user_messages: list[str] | None = None,
+) -> str:
     """Persist a completed run via execution_store. Returns the run_id."""
     from automation.execution_store import ExecutionRun, TestResult, save_run
 
@@ -295,6 +301,7 @@ def _persist_run(project: str, results: list[Any], started_at: float) -> str:
         passed=sum(1 for t in test_results if t.status == "pass"),
         failed=sum(1 for t in test_results if t.status in ("fail", "error")),
         skipped=sum(1 for t in test_results if t.status == "skip"),
+        user_messages=user_messages or [],
     )
     try:
         save_run(project, run)
@@ -426,37 +433,66 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
                 tc_statuses[result.tc_id] = result.overall_status
                 job.result = {**(job.result or {}), "tc_statuses": dict(tc_statuses)}
 
-        # --- Launch browser and run agentic suite ---
-        async with browser_session(output_dir=output_dir, maximized=True) as (
-            context,
-            page,
-        ):
-            # Agent handles login via agentic loop using credential vault
-            await page.goto(cred.login_url, timeout=30000)
-            await page.wait_for_load_state("domcontentloaded")
+        # --- Script-based rerun mode: run existing scripts with AI oversight ---
+        if req.mode == "script":
+            from automation.script_runner import ScriptRunner
 
-            # Pass KB engine for live KB consultation when agent gets stuck
-            _kb_engine_ref = locals().get("_kb_engine")
-
-            results = await run_agentic_suite(
-                test_cases=prepared,
-                credentials=cred,
-                briefs=_wi_briefs,
-                project_context=project_context,
+            runner = ScriptRunner(
                 llm_client=llm_client,
                 model=model,
-                fallback_model=fallback_model,
+                project_context=project_context,
                 output_dir=output_dir,
-                page=page,
-                context=context,
-                config=AgenticConfig(),
-                stop_fn=lambda: job.stopped,
-                on_progress=lambda cur, tot: job.set_progress("running", cur, tot),
                 on_log=job.log,
-                on_tc_done=_on_tc_done,
-                kb_engine=_kb_engine_ref,
-                input_queue=job.drain_user_messages,
+                stop_fn=lambda: job.stopped,
             )
+            job.log("[INFO] Script-based rerun mode: executing replay scripts with AI oversight.")
+
+            async with browser_session(output_dir=output_dir, maximized=True) as (
+                context,
+                page,
+            ):
+                await page.goto(cred.login_url, timeout=30000)
+                await page.wait_for_load_state("domcontentloaded")
+
+                results = await runner.run_suite(
+                    test_cases=prepared,
+                    credentials=cred,
+                    page=page,
+                    context=context,
+                    on_progress=lambda cur, tot: job.set_progress("running", cur, tot),
+                    on_tc_done=_on_tc_done,
+                    user_messages=job.drain_user_messages,
+                )
+        else:
+            # --- Full AI agentic mode ---
+            async with browser_session(output_dir=output_dir, maximized=True) as (
+                context,
+                page,
+            ):
+                await page.goto(cred.login_url, timeout=30000)
+                await page.wait_for_load_state("domcontentloaded")
+
+                _kb_engine_ref = locals().get("_kb_engine")
+
+                results = await run_agentic_suite(
+                    test_cases=prepared,
+                    credentials=cred,
+                    briefs=_wi_briefs,
+                    project_context=project_context,
+                    llm_client=llm_client,
+                    model=model,
+                    fallback_model=fallback_model,
+                    output_dir=output_dir,
+                    page=page,
+                    context=context,
+                    config=AgenticConfig(),
+                    stop_fn=lambda: job.stopped,
+                    on_progress=lambda cur, tot: job.set_progress("running", cur, tot),
+                    on_log=job.log,
+                    on_tc_done=_on_tc_done,
+                    kb_engine=_kb_engine_ref,
+                    input_queue=job.drain_user_messages,
+                )
 
         if job.stopped:
             job.state = "stopped"
@@ -467,7 +503,7 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
                     rp = output_dir / f"{req.project}_e2e_report_partial_{int(time.time())}.xlsx"
                     await asyncio.to_thread(write_e2e_report, results, rp)
                     job.log(f"[INFO] Partial report saved: {rp.name}")
-                    run_id = _persist_run(req.project, results, job.created_at)
+                    run_id = _persist_run(req.project, results, job.created_at, job.user_messages)
                     passed = sum(1 for r in results if r.overall_status == "pass")
                     failed = sum(1 for r in results if r.overall_status in ("fail", "error"))
                     job.finish({
@@ -568,7 +604,7 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
         except Exception as e:  # noqa: BLE001
             job.log(f"[WARN] Video rename/remux failed (non-fatal): {e}")
 
-        run_id = _persist_run(req.project, results, job.created_at)
+        run_id = _persist_run(req.project, results, job.created_at, job.user_messages)
 
         passed = sum(1 for r in results if r.overall_status == "pass")
         failed = sum(1 for r in results if r.overall_status in ("fail", "error"))

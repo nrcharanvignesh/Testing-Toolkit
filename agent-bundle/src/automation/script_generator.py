@@ -261,15 +261,19 @@ def generate_playwright_script(
     for idx, step in enumerate(steps, start=1):
         action = step.get("action", "")
         target = step.get("target", "")
-        # Comment at 8-space
-        body.append(f"        # Step {idx}: {action} {target}".rstrip())
-        # _step_to_code returns 4-space lines; we add 4 more to reach 8-space
+        desc = f"{action} {target}".strip().replace("'", "\\'")
+        body.append(f"        print(f'[STEP:{idx}] {desc}')")
+        body.append(f"        try:")
+        # _step_to_code returns 4-space lines; inside try = 12 spaces
         raw_lines = _step_to_code(step, username)
         for line in raw_lines:
             if line.strip():
-                body.append("    " + line)   # 4 existing + 4 extra = 8 total
+                body.append("        " + line)   # 4 existing + 8 extra = 12
             else:
                 body.append("")
+        body.append(f"        except Exception as _e{idx}:")
+        body.append(f"            print(f'[FAIL:{idx}] {{_e{idx}}}')")
+        body.append(f"            raise")
         body.append("")
 
     footer = [

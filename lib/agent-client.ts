@@ -422,6 +422,7 @@ export interface E2ELastRun {
     tc_title: string;
     status: string;
     duration_ms: number;
+    script_path?: string;
   }[];
 }
 
@@ -1670,6 +1671,7 @@ export const agent = {
       indices?: number[];
       wiIds?: string[];
       notes?: string;
+      mode?: "ai" | "script";
     },
     handlers: JobHandlers = {}
   ): Promise<E2ERunResult> {
@@ -1681,6 +1683,7 @@ export const agent = {
         indices: payload.indices ?? [],
         wi_ids: payload.wiIds ?? [],
         notes: payload.notes ?? "",
+        mode: payload.mode ?? "ai",
       }),
     });
     // Surface the job id immediately so the caller can wire a Stop button.

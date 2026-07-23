@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import {
   Play,
   Square,
@@ -9,6 +9,12 @@ import {
   XCircle,
   MinusCircle,
   Loader2,
+  Clipboard,
+  Check,
+  Trash2,
+  Paperclip,
+  FileText,
+  X,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { DownloadLinks, type DownloadItem } from "@/components/ui/download-links";
@@ -24,6 +30,7 @@ import {
 import { useAppState } from "@/lib/app-state";
 
 type RowStatus = "pending" | "running" | "pass" | "fail" | "skip" | "error";
+type Attachment = { name: string; chars: number; text: string; truncated?: boolean };
 
 const STATUS_ICON: Record<RowStatus, ReactElement> = {
   pending: <MinusCircle className="h-4 w-4 text-[var(--tt-text-muted)]" />,
@@ -76,8 +83,13 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState("");
   const [notes, setNotes] = useState("");
   const [userMsg, setUserMsg] = useState("");
+  const [logCopied, setLogCopied] = useState(false);
+  const [guidanceAttachments, setGuidanceAttachments] = useState<Attachment[]>([]);
+  const [notesAttachments, setNotesAttachments] = useState<Attachment[]>([]);
   const jobIdRef = useRef<string>("");
   const logEndRef = useRef<HTMLDivElement>(null);
+  const guidanceFileRef = useRef<HTMLInputElement>(null);
+  const notesFileRef = useRef<HTMLInputElement>(null);
 
   // Load environments, test cases, and last-run summary on open.
   useEffect(() => {
@@ -119,8 +131,36 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
   }, [currentProject, wiScope]);
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const active = document.activeElement;
+    const isTyping = active?.tagName === "TEXTAREA" || active?.tagName === "INPUT";
+    if (!isTyping) {
+      logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [logs]);
+
+  const copyLogs = useCallback(() => {
+    void navigator.clipboard.writeText(logs.join("\n")).then(() => {
+      setLogCopied(true);
+      setTimeout(() => setLogCopied(false), 1800);
+    });
+  }, [logs]);
+
+  const pickFiles = async (
+    inputRef: React.RefObject<HTMLInputElement | null>,
+    setter: React.Dispatch<React.SetStateAction<Attachment[]>>,
+  ) => {
+    inputRef.current?.click();
+  };
+
+  const handleFilesPicked = async (
+    files: FileList | null,
+    setter: React.Dispatch<React.SetStateAction<Attachment[]>>,
+  ) => {
+    const picked = Array.from(files || []);
+    if (!picked.length) return;
+    const extracted = await agent.extractAttachments(picked);
+    setter((prev) => [...prev, ...extracted]);
+  };
 
   const envRunnable = useMemo(
     () => envs.find((e) => e.env === selectedEnv)?.has_password ?? false,
@@ -149,7 +189,7 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
     setSelected(new Set(visibleTestCases.map((t) => t.index)));
   const selectNone = () => setSelected(new Set());
 
-  const run = async (indices: number[]) => {
+  const run = async (indices: number[], mode: "ai" | "script" = "ai") => {
     if (!currentProject || !selectedEnv) return;
     setRunning(true);
     setStopping(false);
@@ -157,8 +197,7 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
     setLogs([]);
     setProgress(null);
     setResult(null);
-    jobIdRef.current = ""; // reset before new run
-    // Reset row status: chosen -> running, rest -> pending.
+    jobIdRef.current = "";
     const chosen = new Set(indices);
     setRowStatus(() => {
       const next: Record<string, RowStatus> = {};
@@ -168,7 +207,12 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
       }
       return next;
     });
-    pushLog("INFO", `Starting E2E run against "${selectedEnv}"...`);
+    let finalNotes = notes.trim();
+    if (notesAttachments.length > 0) {
+      finalNotes += "\n\n=== ATTACHED REFERENCE FILES ===\n";
+      finalNotes += notesAttachments.map((a) => `--- ${a.name} ---\n${a.text}`).join("\n\n");
+    }
+    pushLog("INFO", `Starting E2E run against "${selectedEnv}" (mode: ${mode})...`);
     try {
       const res = await agent.runE2E(
         {
@@ -176,7 +220,8 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
           env: selectedEnv,
           indices,
           wiIds: [...wiScope],
-          notes: notes.trim() || undefined,
+          notes: finalNotes || undefined,
+          mode,
         },
         {
           onJobId: (id) => { jobIdRef.current = id; },
@@ -251,8 +296,12 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
       setError("No matching failed test cases from the last run.");
       return;
     }
+    const failedResults = lastRun.results.filter(
+      (r) => r.status === "fail" || r.status === "error"
+    );
+    const hasScripts = failedResults.every((r) => r.script_path);
     setSelected(new Set(indices));
-    run(indices);
+    run(indices, hasScripts ? "script" : "ai");
   };
 
   const downloadItems: DownloadItem[] = useMemo(() => {
@@ -426,8 +475,10 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
 
         {/* Pre-run notes / During-run message input */}
         {!running ? (
-          <label className="flex flex-col gap-1 text-xs text-[var(--tt-text-secondary)]">
-            Notes / Instructions (optional - passed to planner)
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-[var(--tt-text-secondary)]">
+              Notes / Instructions (optional - passed to planner)
+            </span>
             <textarea
               className="tt-input min-h-[3rem] resize-y text-xs"
               placeholder="E.g. Focus on navigation flow, skip profile tests..."
@@ -435,36 +486,129 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
             />
-          </label>
+            <div className="flex items-center gap-2">
+              <button
+                className="tt-btn-ghost !px-2 !py-1 !text-[10px] inline-flex items-center gap-1"
+                onClick={() => notesFileRef.current?.click()}
+              >
+                <Paperclip className="h-3 w-3" /> Attach files
+              </button>
+              <input
+                type="file"
+                multiple
+                hidden
+                ref={notesFileRef}
+                onChange={(e) => {
+                  void handleFilesPicked(e.target.files, setNotesAttachments);
+                  e.target.value = "";
+                }}
+              />
+              {notesAttachments.length > 0 && (
+                <span className="text-[10px] text-[var(--tt-text-muted)]">
+                  {notesAttachments.length} file{notesAttachments.length > 1 ? "s" : ""} attached
+                </span>
+              )}
+            </div>
+            {notesAttachments.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {notesAttachments.map((a, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1 rounded bg-[var(--tt-surface-high)] px-2 py-0.5 text-[10px] text-[var(--tt-text-secondary)]"
+                  >
+                    <FileText className="h-3 w-3" />
+                    {a.name}
+                    <button
+                      className="ml-0.5 hover:text-[var(--tt-danger)]"
+                      onClick={() => setNotesAttachments((prev) => prev.filter((_, j) => j !== i))}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
-          <div className="flex gap-2">
-            <input
-              type="text"
-              className="tt-input flex-1 text-xs"
-              placeholder="Send guidance to the running agent..."
-              value={userMsg}
-              onChange={(e) => setUserMsg(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && userMsg.trim() && jobIdRef.current) {
-                  agent.sendJobMessage(jobIdRef.current, userMsg.trim());
-                  pushLog("INFO", `You: ${userMsg.trim()}`);
-                  setUserMsg("");
-                }
-              }}
-            />
-            <button
-              className="tt-btn-primary !px-3 !py-1 text-xs"
-              disabled={!userMsg.trim() || !jobIdRef.current}
-              onClick={() => {
-                if (userMsg.trim() && jobIdRef.current) {
-                  agent.sendJobMessage(jobIdRef.current, userMsg.trim());
-                  pushLog("INFO", `You: ${userMsg.trim()}`);
-                  setUserMsg("");
-                }
-              }}
-            >
-              Send
-            </button>
+          <div className="flex flex-col gap-1.5">
+            {guidanceAttachments.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {guidanceAttachments.map((a, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1 rounded bg-[var(--tt-surface-high)] px-2 py-0.5 text-[10px] text-[var(--tt-text-secondary)]"
+                  >
+                    <FileText className="h-3 w-3" />
+                    {a.name}
+                    <button
+                      className="ml-0.5 hover:text-[var(--tt-danger)]"
+                      onClick={() => setGuidanceAttachments((prev) => prev.filter((_, j) => j !== i))}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2 items-end">
+              <textarea
+                className="tt-input flex-1 resize-none text-xs"
+                placeholder="Send guidance to the running agent..."
+                value={userMsg}
+                rows={2}
+                onChange={(e) => setUserMsg(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && (userMsg.trim() || guidanceAttachments.length > 0) && jobIdRef.current) {
+                    e.preventDefault();
+                    let msg = userMsg.trim();
+                    if (guidanceAttachments.length > 0) {
+                      msg += "\n\n=== ATTACHED REFERENCE FILES ===\n";
+                      msg += guidanceAttachments.map((a) => `--- ${a.name} ---\n${a.text}`).join("\n\n");
+                    }
+                    agent.sendJobMessage(jobIdRef.current, msg);
+                    pushLog("INFO", `You: ${userMsg.trim()}${guidanceAttachments.length > 0 ? ` [+${guidanceAttachments.length} files]` : ""}`);
+                    setUserMsg("");
+                    setGuidanceAttachments([]);
+                  }
+                }}
+              />
+              <button
+                className="tt-btn-ghost !px-2 !py-1.5"
+                onClick={() => guidanceFileRef.current?.click()}
+                title="Attach files"
+              >
+                <Paperclip className="h-4 w-4" />
+              </button>
+              <input
+                type="file"
+                multiple
+                hidden
+                ref={guidanceFileRef}
+                onChange={(e) => {
+                  void handleFilesPicked(e.target.files, setGuidanceAttachments);
+                  e.target.value = "";
+                }}
+              />
+              <button
+                className="tt-btn-primary !px-3 !py-1.5 text-xs"
+                disabled={(!userMsg.trim() && guidanceAttachments.length === 0) || !jobIdRef.current}
+                onClick={() => {
+                  if ((userMsg.trim() || guidanceAttachments.length > 0) && jobIdRef.current) {
+                    let msg = userMsg.trim();
+                    if (guidanceAttachments.length > 0) {
+                      msg += "\n\n=== ATTACHED REFERENCE FILES ===\n";
+                      msg += guidanceAttachments.map((a) => `--- ${a.name} ---\n${a.text}`).join("\n\n");
+                    }
+                    agent.sendJobMessage(jobIdRef.current, msg);
+                    pushLog("INFO", `You: ${userMsg.trim()}${guidanceAttachments.length > 0 ? ` [+${guidanceAttachments.length} files]` : ""}`);
+                    setUserMsg("");
+                    setGuidanceAttachments([]);
+                  }
+                }}
+              >
+                Send
+              </button>
+            </div>
           </div>
         )}
 
@@ -582,10 +726,37 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
 
           {/* Live log */}
           <div className="flex min-h-0 flex-col rounded-lg border border-[var(--tt-outline)]">
-            <div className="border-b border-[var(--tt-outline)] px-3 py-2">
+            <div className="flex items-center justify-between border-b border-[var(--tt-outline)] px-3 py-2">
               <span className="text-xs font-semibold uppercase tracking-wide text-[var(--tt-text-muted)]">
                 Progress log
+                {logs.length > 0 && (
+                  <span className="ml-1.5 normal-case opacity-60">({logs.length})</span>
+                )}
               </span>
+              <div className="flex items-center gap-1">
+                <button
+                  className="tt-btn-ghost !px-1.5 !py-0.5 !text-[10px] !gap-1"
+                  onClick={copyLogs}
+                  disabled={logs.length === 0}
+                  title="Copy all logs to clipboard"
+                  aria-label="Copy logs"
+                >
+                  {logCopied ? (
+                    <Check className="h-3 w-3 text-[var(--tt-success)]" />
+                  ) : (
+                    <Clipboard className="h-3 w-3" />
+                  )}
+                </button>
+                <button
+                  className="tt-btn-ghost !px-1.5 !py-0.5 !text-[10px] !gap-1"
+                  onClick={() => setLogs([])}
+                  disabled={logs.length === 0}
+                  title="Clear log"
+                  aria-label="Clear log"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
             </div>
             {progressPct != null && (
               <div className="h-1 w-full bg-[var(--tt-surface-high)]">

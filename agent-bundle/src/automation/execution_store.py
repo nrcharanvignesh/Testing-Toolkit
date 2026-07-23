@@ -36,6 +36,7 @@ class ExecutionRun:
     passed: int = 0
     failed: int = 0
     skipped: int = 0
+    user_messages: list[str] = field(default_factory=list)
 
 
 def _runs_dir(project_full: str) -> Path:

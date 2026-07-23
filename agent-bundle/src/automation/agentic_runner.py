@@ -999,7 +999,6 @@ async def run_agentic_suite(
             kb_retry_output.mkdir(parents=True, exist_ok=True)
 
             kb_cfg = AgenticConfig(
-                max_steps=cfg.max_steps,
                 observation_max_chars=cfg.observation_max_chars,
                 max_tokens=cfg.max_tokens,
                 max_consecutive_fails=2,
