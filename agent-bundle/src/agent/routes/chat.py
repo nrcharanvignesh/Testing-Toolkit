@@ -85,7 +85,7 @@ def _kb_context(project: str, query: str) -> str:
         project_dir = PROJECTS_DIR / project
         if not project_dir.exists():
             return ""
-        retriever = HybridRetriever(project_dir)
+        retriever = HybridRetriever(project_dir / "hybrid_index")
         if not retriever.is_available():
             return ""
         hits = retriever.retrieve(query, _KB_TOP_K)

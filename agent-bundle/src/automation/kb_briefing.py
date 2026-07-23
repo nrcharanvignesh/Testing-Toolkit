@@ -134,14 +134,24 @@ class KBBriefingEngine:
         # Load retriever
         try:
             from kb.retrieval import HybridRetriever
-            index_dir = paths.kb_dir / "hybrid_index"
+            index_dir = paths.hybrid_dir
             if index_dir.exists():
                 self._retriever = HybridRetriever(index_dir)
                 if self._retriever.is_available():
-                    self._log("[INFO] KB briefing: HybridRetriever loaded.")
+                    self._log(
+                        f"[INFO] KB briefing: HybridRetriever loaded "
+                        f"({len(self._retriever._chunks)} chunks)."
+                    )
                 else:
+                    self._log(
+                        "[WARN] KB briefing: HybridRetriever NOT available "
+                        f"(dir exists at {index_dir} but chunks empty/unreadable)."
+                    )
                     self._retriever = None
-        except Exception:  # noqa: BLE001
+            else:
+                self._log(f"[WARN] KB briefing: hybrid_index dir not found at {index_dir}")
+        except Exception as exc:  # noqa: BLE001
+            self._log(f"[WARN] KB briefing: retriever load failed: {exc}")
             self._retriever = None
 
     def build_brief(

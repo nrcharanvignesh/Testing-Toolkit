@@ -429,6 +429,7 @@ def build_consultant_user_message(
     kb_chunks: str,
     tc_title: str,
     project_context: str = "",
+    prior_advice: list[str] | None = None,
 ) -> str:
     """Build the user prompt for the KB Consultant."""
     parts = [
@@ -436,8 +437,16 @@ def build_consultant_user_message(
         f"CURRENT GOAL: {current_goal}",
         f"TEST STEP: {test_step_text}",
         "",
-        "WHAT WAS TRIED (all failed):",
     ]
+    # Inject prior advice context so consultant does not repeat itself
+    if prior_advice:
+        parts.append("## IMPORTANT: Prior advice already given (DO NOT REPEAT these):")
+        for i, a in enumerate(prior_advice):
+            parts.append(f"  {i + 1}. {a}")
+        parts.append("")
+        parts.append("You MUST suggest a DIFFERENT approach this time.")
+        parts.append("")
+    parts.append("WHAT WAS TRIED (all failed):")
     for a in actions_tried[-5:]:
         parts.append(f"  - {a}")
     parts.append("")

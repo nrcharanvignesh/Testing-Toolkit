@@ -84,7 +84,6 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState("");
   const [notes, setNotes] = useState("");
   const [preRunGuidance, setPreRunGuidance] = useState("");
-  const [userMsg, setUserMsg] = useState("");
   const guidanceInputRef = useRef<HTMLTextAreaElement>(null);
   const [logCopied, setLogCopied] = useState(false);
   const [guidanceAttachments, setGuidanceAttachments] = useState<Attachment[]>([]);
@@ -582,7 +581,6 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
                 rows={2}
                 onFocus={() => { guidanceFocusedRef.current = true; }}
                 onBlur={() => { guidanceFocusedRef.current = false; }}
-                onChange={(e) => setUserMsg(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey && ((guidanceInputRef.current?.value.trim()) || guidanceAttachments.length > 0) && jobIdRef.current) {
                     e.preventDefault();
@@ -595,7 +593,6 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
                     agent.sendJobMessage(jobIdRef.current, msg);
                     pushLog("INFO", `You: ${raw}${guidanceAttachments.length > 0 ? ` [+${guidanceAttachments.length} files]` : ""}`);
                     guidanceInputRef.current!.value = "";
-                    setUserMsg("");
                     setGuidanceAttachments([]);
                   }
                 }}
@@ -619,7 +616,7 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
               />
               <button
                 className="tt-btn-primary !px-3 !py-1.5 text-xs"
-                disabled={(!userMsg.trim() && guidanceAttachments.length === 0) || !jobIdRef.current}
+                disabled={!jobIdRef.current}
                 onClick={() => {
                   const raw = guidanceInputRef.current?.value.trim() || "";
                   if ((raw || guidanceAttachments.length > 0) && jobIdRef.current) {
@@ -631,7 +628,6 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
                     agent.sendJobMessage(jobIdRef.current, msg);
                     pushLog("INFO", `You: ${raw}${guidanceAttachments.length > 0 ? ` [+${guidanceAttachments.length} files]` : ""}`);
                     guidanceInputRef.current!.value = "";
-                    setUserMsg("");
                     setGuidanceAttachments([]);
                   }
                 }}

@@ -169,6 +169,10 @@ class ProgressTracker:
         """Reset score after KB consultation provides new direction."""
         self.stall_score = 0
 
+    def reset_score_only(self) -> None:
+        """Reset stall score but keep history for dead-end detection."""
+        self.stall_score = 0
+
 
 # ---------------------------------------------------------------------------
 # History compression
@@ -323,6 +327,7 @@ async def _consult_kb(
     *,
     current_step_idx: int = 0,
     project_context: str = "",
+    prior_advice: list[str] | None = None,
 ) -> str | None:
     """KB Consultant Sub-Agent: query KB with failure context, get advice."""
     from core.model_router import Task, route
@@ -372,6 +377,7 @@ async def _consult_kb(
         kb_chunks=kb_chunks_text,
         tc_title=tc_title,
         project_context=project_context,
+        prior_advice=prior_advice,
     )
 
     try:
@@ -571,6 +577,8 @@ async def run_agentic_test_case(
     consecutive_fails = 0
     escalation_count = 0
     progress = ProgressTracker()
+    prior_kb_advice: list[str] = []
+    dead_ends: list[str] = []
     final_status = "error"
     final_summary = ""
 
@@ -1004,6 +1012,19 @@ async def run_agentic_test_case(
                             f"[INFO] Escalating to KB Consultant: {trigger} "
                             f"(attempt {escalation_count + 1}/{_MAX_ESCALATIONS})"
                         )
+                        # Track dead-ends: if we had prior advice and still stalled,
+                        # record what was tried since last advice as a dead end
+                        if prior_kb_advice and thoughts:
+                            recent_actions = [
+                                f"{t.tool_chosen}: {t.reasoning_text[:80]}"
+                                for t in thoughts[-5:]
+                                if t.tool_chosen
+                            ]
+                            if recent_actions:
+                                dead_ends.append(
+                                    "; ".join(recent_actions[-3:])
+                                )
+
                         completed_steps = sum(
                             1 for s in steps if s.status == "pass"
                         )
@@ -1012,8 +1033,25 @@ async def run_agentic_test_case(
                             thoughts, page, cfg, log,
                             current_step_idx=completed_steps,
                             project_context=project_context,
+                            prior_advice=prior_kb_advice,
                         )
                         if advice:
+                            prior_kb_advice.append(advice[:500])
+                            # Inject dead-ends warning if we have them
+                            if dead_ends:
+                                dead_end_text = "\n".join(
+                                    f"- {d}" for d in dead_ends[-5:]
+                                )
+                                messages.append({
+                                    "role": "user",
+                                    "content": (
+                                        "[SYSTEM: DEAD ENDS - paths already "
+                                        "tried that DO NOT work]\n"
+                                        f"{dead_end_text}\n"
+                                        "You MUST try a completely different "
+                                        "approach."
+                                    ),
+                                })
                             messages.append({
                                 "role": "user",
                                 "content": (
@@ -1029,7 +1067,7 @@ async def run_agentic_test_case(
                                 ),
                             })
                             consecutive_fails = 0
-                            progress.reset()
+                            progress.reset_score_only()
                             escalation_count += 1
                             continue
 
@@ -1073,8 +1111,10 @@ async def run_agentic_test_case(
                             thoughts, page, cfg, log,
                             current_step_idx=completed_steps,
                             project_context=project_context,
+                            prior_advice=prior_kb_advice,
                         )
                         if advice:
+                            prior_kb_advice.append(advice[:500])
                             messages.append({
                                 "role": "user",
                                 "content": (
@@ -1084,7 +1124,7 @@ async def run_agentic_test_case(
                                 ),
                             })
                             consecutive_fails = 0
-                            progress.reset()
+                            progress.reset_score_only()
                             escalation_count += 1
                             continue
 
@@ -1225,6 +1265,27 @@ async def run_agentic_suite(
             except Exception:
                 pass
 
+            # Build retry trace from previous failed attempt
+            retry_context = ""
+            if result.steps:
+                trace_lines = []
+                for s in result.steps[-10:]:
+                    trace_lines.append(
+                        f"- {s.action}: {s.status} "
+                        f"({s.actual[:80]})"
+                    )
+                retry_context = (
+                    "PREVIOUS ATTEMPT FAILED. Steps tried:\n"
+                    + "\n".join(trace_lines)
+                    + "\nDO NOT repeat these failed approaches."
+                )
+            if retry_context:
+                project_context_with_trace = (
+                    project_context + f"\n\n{retry_context}"
+                )
+            else:
+                project_context_with_trace = project_context
+
             kb_retry_output = tc_output / "kb_retry"
             kb_retry_output.mkdir(parents=True, exist_ok=True)
 
@@ -1234,7 +1295,8 @@ async def run_agentic_suite(
                 max_consecutive_fails=2,
             )
             result = await run_agentic_test_case(
-                page, context, tc, credentials, brief, project_context,
+                page, context, tc, credentials, brief,
+                project_context_with_trace,
                 llm_client, tc_model, kb_retry_output, config=kb_cfg,
                 stop_fn=stop_fn, on_log=log, on_step=on_step,
                 kb_engine=kb_engine, input_queue=input_queue,
@@ -1256,11 +1318,33 @@ async def run_agentic_suite(
             except Exception:
                 pass
 
+            # Build retry trace from previous failed attempt
+            retry_context = ""
+            if result.steps:
+                trace_lines = []
+                for s in result.steps[-10:]:
+                    trace_lines.append(
+                        f"- {s.action}: {s.status} "
+                        f"({s.actual[:80]})"
+                    )
+                retry_context = (
+                    "PREVIOUS ATTEMPT FAILED. Steps tried:\n"
+                    + "\n".join(trace_lines)
+                    + "\nDO NOT repeat these failed approaches."
+                )
+            if retry_context:
+                project_context_with_trace = (
+                    project_context + f"\n\n{retry_context}"
+                )
+            else:
+                project_context_with_trace = project_context
+
             retry_output = tc_output / "retry"
             retry_output.mkdir(parents=True, exist_ok=True)
 
             result = await run_agentic_test_case(
-                page, context, tc, credentials, brief, project_context,
+                page, context, tc, credentials, brief,
+                project_context_with_trace,
                 llm_client, fallback_model, retry_output, config=cfg,
                 stop_fn=stop_fn, on_log=log, on_step=on_step,
                 kb_engine=kb_engine, input_queue=input_queue,

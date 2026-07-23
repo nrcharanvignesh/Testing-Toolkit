@@ -394,7 +394,9 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
             _kb_engine = KBBriefingEngine(req.project, on_log=job.log)
             _budget = kb_budget_chars(_AgCfg())
             _kb_size = _kb_engine.get_full_kb_size_chars()
-            _tier = "tier1-full" if _kb_size <= _budget else "tier2-retrieval"
+            _tier = ("tier1-full" if 0 < _kb_size <= _budget
+                     else "tier2-retrieval" if _kb_size > _budget
+                     else "no-index")
             job.log(
                 f"[INFO] KB budget: {_budget:,} chars, "
                 f"KB size: {_kb_size:,} chars, mode: {_tier}"
