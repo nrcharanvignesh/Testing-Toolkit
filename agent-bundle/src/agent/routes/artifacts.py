@@ -100,7 +100,7 @@ async def upload_artifact(
     file: UploadFile = File(...),
     project: str = Form(""),
 ) -> dict[str, Any]:
-    """Save an uploaded file (Excel export) to Downloads/Testing_Toolkit/."""
+    """Save an uploaded file (Excel export) to the outputs directory."""
     from core.app_config import EXPORTS_DIR
 
     EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -187,7 +187,7 @@ async def list_artifacts(project: str) -> list[dict[str, Any]]:
 
     out: list[dict[str, Any]] = []
 
-    # User-facing outputs under EXPORTS_DIR (~/Downloads/Testing_Toolkit)
+    # User-facing outputs under EXPORTS_DIR (unified workspace outputs)
     if EXPORTS_DIR.exists():
         for f in EXPORTS_DIR.rglob("*"):
             if not f.is_file() or f.name.startswith("."):
