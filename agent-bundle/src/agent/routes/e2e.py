@@ -254,6 +254,7 @@ class E2EStartRequest(BaseModel):
     env: str
     indices: list[int] = []
     wi_ids: list[str] = []
+    notes: str = ""
 
 
 def _persist_run(project: str, results: list[Any], started_at: float) -> str:
@@ -361,6 +362,13 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
         except Exception:  # noqa: BLE001
             pass
 
+        # Append user-provided pre-run notes to project context
+        if req.notes.strip():
+            project_context += (
+                f"\n\n[USER NOTES]: {req.notes.strip()}"
+            )
+            job.log("[INFO] User notes attached to run context.")
+
         # KB Briefing Engine: build per-WI test briefs
         _wi_briefs: dict[str, Any] = {}
         try:
@@ -447,6 +455,7 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
                 on_log=job.log,
                 on_tc_done=_on_tc_done,
                 kb_engine=_kb_engine_ref,
+                input_queue=job.drain_user_messages,
             )
 
         if job.stopped:
@@ -455,7 +464,7 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
             if results:
                 try:
                     from automation.report_excel import write_e2e_report
-                    rp = output_dir / f"e2e_report_partial_{int(time.time())}.xlsx"
+                    rp = output_dir / f"{req.project}_e2e_report_partial_{int(time.time())}.xlsx"
                     await asyncio.to_thread(write_e2e_report, results, rp)
                     job.log(f"[INFO] Partial report saved: {rp.name}")
                     run_id = _persist_run(req.project, results, job.created_at)
@@ -476,7 +485,7 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
         report_path = ""
         try:
             from automation.report_excel import write_e2e_report
-            rp = output_dir / f"e2e_report_{int(time.time())}.xlsx"
+            rp = output_dir / f"{req.project}_e2e_report_{int(time.time())}.xlsx"
             await asyncio.to_thread(write_e2e_report, results, rp)
             report_path = str(rp)
             job.log(f"[INFO] Report saved: {rp.name}")
@@ -542,6 +551,22 @@ async def _run_e2e(job: Job, req: E2EStartRequest) -> None:
                 job.log(f"[INFO] {len(pdf_paths)} PDF report(s) generated.")
         except Exception as e:  # noqa: BLE001
             job.log(f"[WARN] PDF report generation failed: {type(e).__name__}: {e}")
+
+        # ---- Post-suite video rename/remux to MKV ----
+        try:
+            from automation.artifact_collector import _remux_to_mkv, _safe_filename
+
+            for webm in output_dir.rglob("*.webm"):
+                tc_folder = webm.parent.parent.name
+                safe_name = f"{req.project}_{tc_folder}_recording"
+                mkv_dest = webm.parent / f"{_safe_filename(safe_name)}.mkv"
+                if not _remux_to_mkv(webm, mkv_dest):
+                    renamed = webm.parent / f"{_safe_filename(safe_name)}.webm"
+                    if renamed != webm:
+                        webm.rename(renamed)
+            job.log("[INFO] Video files renamed/remuxed.")
+        except Exception as e:  # noqa: BLE001
+            job.log(f"[WARN] Video rename/remux failed (non-fatal): {e}")
 
         run_id = _persist_run(req.project, results, job.created_at)
 

@@ -11,9 +11,12 @@ from __future__ import annotations
 import asyncio
 import gc
 import json
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Final
+
+import re
 
 from ado.extract import (
     ExtractResult,
@@ -27,6 +30,11 @@ from tools.pdf_packager import package_for_wi
 from core.runtime_config import RuntimeConfig
 
 MANIFEST_NAME: Final[str] = "manifest.json"
+
+
+def _title_slug(title: str, max_len: int = 40) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
+    return slug[:max_len].rstrip("_") if slug else "untitled"
 
 
 @dataclass(slots=True)
@@ -58,7 +66,10 @@ def _package_all(
             if on_progress:
                 on_progress("package", idx, total)
             continue
-        out_pdf = cfg.output_dir / f"WI_{wid}.pdf"
+        meta = json.loads((wi_dir / "_meta.json").read_text(encoding="utf-8"))
+        title = meta.get("title", "")
+        slug = _title_slug(title)
+        out_pdf = cfg.output_dir / f"WI{wid}_{slug}_packet.pdf"
         try:
             res = package_for_wi(wi_dir, cfg.paper_size, out_pdf, organization=cfg.organization)
             rows.append({
@@ -164,6 +175,9 @@ def _write_manifest(
 async def run_pipeline(
     cfg: RuntimeConfig,
     on_progress: Callable[[str, int, int], None] | None = None,
+    *,
+    kb_ready: bool = False,
+    combined: bool = False,
 ) -> PipelineResult:
     """End-to-end pipeline. on_progress(stage, current, total)."""
     errors = cfg.validate()
@@ -208,23 +222,34 @@ async def run_pipeline(
                 "packet_pdf": "", "n_pages": 0, "n_items": 0, "n_failed": 0,
             })
 
-    # ---- KB bundle stage (combined PDF + chunked KB folder) ----
-    kb_result = await loop.run_in_executor(
-        None, _build_kb, package_rows, cfg, on_progress,
-    )
+    # ---- KB bundle stage (only when explicitly requested) ----
+    kb_result: KbBundleResult | None = None
+    if kb_ready or combined:
+        kb_result = await loop.run_in_executor(
+            None, _build_kb, package_rows, cfg, on_progress,
+        )
 
+    # ---- Internal manifest (not user-facing) ----
     manifest = _write_manifest(cfg, extract_results, package_rows)
     n_pkg_ok = sum(1 for r in package_rows if r["ok"])
     n_ext_ok = len(successful_ids)
     log_success(
         f"Done. Extract ok={n_ext_ok}/{total}. "
-        f"Packets ok={n_pkg_ok}/{total}. Manifest: {manifest}"
+        f"Packets ok={n_pkg_ok}/{total}."
     )
+
+    # ---- Cleanup intermediates ----
+    if cfg.work_dir.exists():
+        shutil.rmtree(cfg.work_dir, ignore_errors=True)
+    manifest.unlink(missing_ok=True)
+    kb_dir = cfg.output_dir / "Upload to KB"
+    if kb_dir.exists() and not kb_ready:
+        shutil.rmtree(kb_dir, ignore_errors=True)
 
     return PipelineResult(
         extract_results=extract_results,
         package_rows=package_rows,
-        manifest_path=manifest,
+        manifest_path=None,
         n_extract_ok=n_ext_ok,
         n_package_ok=n_pkg_ok,
         kb_bundle=kb_result,

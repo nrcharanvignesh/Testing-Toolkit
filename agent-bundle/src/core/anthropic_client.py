@@ -984,9 +984,22 @@ class AnthropicClient:
                             continue
                         if resp.status_code != 200:
                             await resp.aread()
+                            detail = self._error_detail(resp)
+                            if (
+                                resp.status_code == 400
+                                and "temperature" in body
+                                and _is_temperature_deprecated(detail)
+                            ):
+                                with _TEMP_LOCK:
+                                    _TEMPERATURE_UNSUPPORTED.add(model)
+                                body.pop("temperature", None)
+                                self._log(
+                                    f"[WARN] {model} rejects temperature; "
+                                    f"retrying stream without it."
+                                )
+                                continue
                             raise AnthropicAPIError(
-                                f"HTTP {resp.status_code}: "
-                                f"{self._error_detail(resp)}"
+                                f"HTTP {resp.status_code}: {detail}"
                             )
 
                         self._report_nw_success()

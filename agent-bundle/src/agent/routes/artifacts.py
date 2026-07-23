@@ -113,6 +113,61 @@ async def upload_artifact(
     return {"ok": True, "path": str(dest), "size": len(content)}
 
 
+@router.post("/open-outputs-folder")
+@trace
+async def open_outputs_folder(project: str = "") -> dict[str, Any]:
+    """Open the project outputs folder in the OS file explorer."""
+    import subprocess
+    import sys
+
+    from core.app_config import OUTPUTS_DIR
+    from core.project_store import _safe_name
+
+    try:
+        target = OUTPUTS_DIR / _safe_name(project) if project else OUTPUTS_DIR
+        target.mkdir(parents=True, exist_ok=True)
+        folder = str(target)
+        if sys.platform == "win32":
+            subprocess.Popen(["explorer", folder])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", folder])
+        else:
+            subprocess.Popen(["xdg-open", folder])
+        return {"ok": True, "detail": folder}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "detail": f"{type(e).__name__}: {e}"}
+
+
+@router.post("/reveal-file")
+@trace
+async def reveal_file(path: str = "") -> dict[str, Any]:
+    """Reveal a specific file in the OS file explorer (selected)."""
+    import subprocess
+    import sys
+
+    if not path:
+        return {"ok": False, "detail": "path is required"}
+
+    target = Path(path).resolve()
+    root = _workspace_root()
+    exports = _exports_root()
+    in_workspace = root in target.parents or target == root
+    in_exports = exports in target.parents or target == exports
+    if not (in_workspace or in_exports):
+        return {"ok": False, "detail": "Path outside workspace"}
+
+    try:
+        if sys.platform == "win32":
+            subprocess.Popen(["explorer", "/select,", str(target)])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(target)])
+        else:
+            subprocess.Popen(["xdg-open", str(target.parent)])
+        return {"ok": True, "detail": str(target)}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "detail": f"{type(e).__name__}: {e}"}
+
+
 _ALLOWED_EXTENSIONS: set[str] = {".xlsx", ".pdf", ".mkv"}
 
 

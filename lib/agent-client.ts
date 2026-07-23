@@ -1669,6 +1669,7 @@ export const agent = {
       env: string;
       indices?: number[];
       wiIds?: string[];
+      notes?: string;
     },
     handlers: JobHandlers = {}
   ): Promise<E2ERunResult> {
@@ -1679,6 +1680,7 @@ export const agent = {
         env: payload.env,
         indices: payload.indices ?? [],
         wi_ids: payload.wiIds ?? [],
+        notes: payload.notes ?? "",
       }),
     });
     // Surface the job id immediately so the caller can wire a Stop button.
@@ -1867,6 +1869,21 @@ export const agent = {
     await agentFetch(`/jobs/${jobId}/stop`, { method: "POST" });
   },
 
+  /** Queue a user message for the running job (picked up at next turn). */
+  async sendJobMessage(
+    jobId: string,
+    message: string
+  ): Promise<{ ok: boolean; queued: number }> {
+    return agentFetch<{ ok: boolean; queued: number }>(
+      `/jobs/${jobId}/message`,
+      {
+        method: "POST",
+        body: JSON.stringify({ message }),
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  },
+
   async recentLog(maxBytes = 60000): Promise<RecentLog> {
     return agentFetch<RecentLog>(`/tools/log?max_bytes=${maxBytes}`);
   },
@@ -1876,6 +1893,29 @@ export const agent = {
     return agentFetch<{ ok: boolean; detail: string }>("/open-log-folder", {
       method: "POST",
     });
+  },
+
+  /** Open the outputs folder (optionally scoped to a project). */
+  async openOutputsFolder(
+    project?: string
+  ): Promise<{ ok: boolean; detail: string }> {
+    const body = project ? JSON.stringify({ project }) : "{}";
+    return agentFetch<{ ok: boolean; detail: string }>(
+      "/artifacts/open-outputs-folder",
+      { method: "POST", body, headers: { "Content-Type": "application/json" } }
+    );
+  },
+
+  /** Reveal a specific file in the OS file explorer (selected). */
+  async revealFile(path: string): Promise<{ ok: boolean; detail: string }> {
+    return agentFetch<{ ok: boolean; detail: string }>(
+      "/artifacts/reveal-file",
+      {
+        method: "POST",
+        body: JSON.stringify({ path }),
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   },
 
   // -- Updates --

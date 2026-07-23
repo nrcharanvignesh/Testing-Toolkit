@@ -20,6 +20,7 @@ from __future__ import annotations
 import gc
 import json
 import re
+import uuid
 from dataclasses import dataclass, field
 from math import ceil
 from pathlib import Path
@@ -42,8 +43,8 @@ IMAGES_PER_LOOKUP_PDF: Final[int] = 95
 # Warn if a single page exceeds this.
 SINGLE_PAGE_WARN_BYTES: Final[int] = 500 * 1024
 
-# Combined PDF naming
-COMBINED_PDF_NAME: Final[str] = "All_WIs_Combined.pdf"
+# Combined PDF naming — UUID suffix differentiates batch runs
+COMBINED_PDF_NAME: Final[str] = "combined_{uuid8}.pdf"
 
 # KB bundle folder name
 KB_FOLDER_NAME: Final[str] = "Upload to KB"
@@ -530,7 +531,9 @@ def build_kb_bundle(
     # ------------------------------------------------------------------
     # Step 1: Merge all WI PDFs into one combined PDF
     # ------------------------------------------------------------------
-    combined_path = output_dir / COMBINED_PDF_NAME
+    combined_path = output_dir / COMBINED_PDF_NAME.format(
+        uuid8=uuid.uuid4().hex[:8],
+    )
     if on_log:
         on_log(f"[INFO] Merging {len(wi_pdfs)} WI PDF(s) into combined PDF")
 

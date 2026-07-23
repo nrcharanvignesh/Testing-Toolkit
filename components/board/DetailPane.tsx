@@ -11,6 +11,7 @@ import {
   Tag,
   User,
   Folder,
+  FolderOpen,
   GitBranch,
   Cpu,
   FileSpreadsheet,
@@ -1065,6 +1066,13 @@ function OutputsContent({
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />{" "}
           Refresh
         </button>
+        <button
+          className="tt-btn-ghost !px-4 !py-1.5 text-sm"
+          onClick={() => agent.openOutputsFolder(project)}
+          title="Open outputs folder in file explorer"
+        >
+          <FolderOpen className="h-3.5 w-3.5" /> Open Folder
+        </button>
       </div>
 
       {menu && (
@@ -1100,6 +1108,13 @@ function OutputsContent({
               />
             </>
           )}
+          <ContextItem
+            label="Reveal in Explorer"
+            onClick={() => {
+              agent.revealFile(menu.art.file.path);
+              setMenu(null);
+            }}
+          />
           <div className="my-1 border-t border-[var(--tt-outline)]" />
           <ContextItem
             label="Delete"

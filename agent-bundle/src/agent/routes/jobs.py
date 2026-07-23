@@ -31,3 +31,17 @@ async def stop_job(job_id: str) -> dict:
         raise HTTPException(404, "Job not found")
     job.request_stop()
     return {"ok": True, "state": job.state}
+
+
+@router.post("/{job_id}/message")
+@trace
+async def post_user_message(job_id: str, body: dict) -> dict:
+    """Queue a user message for pickup by the running job."""
+    job = JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    msg = body.get("message", "")
+    if not msg:
+        raise HTTPException(400, "message is required")
+    job.push_user_message(msg)
+    return {"ok": True, "queued": len(job.user_messages)}

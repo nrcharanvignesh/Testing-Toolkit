@@ -45,9 +45,15 @@ from tools.office_convert import convert_to_pdf, is_office_extension
 # =====================================================================
 # Internal contracts
 # =====================================================================
-PACKET_PDF_NAME: Final[str] = "WI_{wi_id}.pdf"
+PACKET_PDF_NAME: Final[str] = "WI{wi_id}_{title_slug}_packet.pdf"
 COVER_PDF_NAME: Final[str] = "_cover.pdf"
 LOG_XLSX_NAME: Final[str] = "_packet_log.xlsx"
+
+def _title_slug(title: str, max_len: int = 40) -> str:
+    """Lowercase ASCII slug from a WI title for use in filenames."""
+    slug = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
+    return slug[:max_len].rstrip("_") if slug else "untitled"
+
 
 PDF_EXTS: Final[frozenset[str]] = frozenset({".pdf"})
 IMAGE_EXTS: Final[frozenset[str]] = frozenset({
@@ -548,10 +554,13 @@ def package_for_wi(
         raise FileNotFoundError(f"_meta.json missing in {wi_dir}")
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     wi_id = int(meta.get("wi_id", 0))
+    title = meta.get("title", "")
 
     out_dir = wi_dir
     if output_pdf is None:
-        output_pdf = out_dir / PACKET_PDF_NAME.format(wi_id=wi_id)
+        output_pdf = out_dir / PACKET_PDF_NAME.format(
+            wi_id=wi_id, title_slug=_title_slug(title),
+        )
     output_pdf.parent.mkdir(parents=True, exist_ok=True)
 
     cover = wi_dir / COVER_PDF_NAME

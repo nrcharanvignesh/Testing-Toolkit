@@ -44,8 +44,6 @@ from .sub_agents import (
 _log = logging.getLogger(__name__)
 LogFn = Callable[[str], None]
 
-# ponytail: 30-min cap per TC; configurable timeout if throughput matters
-_TC_TIME_CAP_SECONDS: int = 1800
 _MAX_ESCALATIONS: int = 5
 _SIGNOUT_MAX_STEPS: int = 10
 
@@ -62,9 +60,9 @@ class AgenticConfig:
     max_consecutive_fails: int = 3      # triggers KB escalation
     history_window: int = 12            # full messages kept in context
     screenshot_every_action: bool = True
-    observation_max_chars: int = 12000  # a11y tree truncation
+    observation_max_chars: int = 8000   # a11y tree truncation
     temperature: float = 0.2           # low temp for deterministic actions
-    max_tokens: int = 4096             # per-turn output limit
+    max_tokens: int = 16384            # per-turn output limit (uncapped)
 
 
 # ---------------------------------------------------------------------------
@@ -179,12 +177,35 @@ def _compress_history(
 
     Keeps the most recent `keep_recent` messages intact.
     Compresses older ones into a single summary message.
+    Never splits a tool_use/tool_result pair across the boundary.
     """
     if len(messages) <= keep_recent:
         return messages
 
-    old = messages[:-keep_recent]
-    recent = messages[-keep_recent:]
+    split = len(messages) - keep_recent
+
+    # Never orphan a tool_result: if the first "recent" message is a user
+    # message containing a tool_result, pull its paired assistant message in.
+    while split > 0:
+        first_recent = messages[split]
+        if first_recent.get("role") != "user":
+            break
+        content = first_recent.get("content", "")
+        has_tool_result = False
+        if isinstance(content, list):
+            has_tool_result = any(
+                isinstance(b, dict) and b.get("type") == "tool_result"
+                for b in content
+            )
+        if not has_tool_result:
+            break
+        split -= 1
+
+    if split <= 0:
+        return messages
+
+    old = messages[:split]
+    recent = messages[split:]
 
     summary_lines: list[str] = []
     step_num = 0
@@ -255,7 +276,7 @@ async def _run_planner_agent(
             model=planner_model,
             system=PLANNER_SYSTEM_PROMPT,
             user=user_msg,
-            max_tokens=1024,
+            max_tokens=4096,
             temperature=0.1,
         )
         strategy = parse_test_strategy(result.text)
@@ -336,7 +357,7 @@ async def _consult_kb(
             model=consultant_model,
             system=KB_CONSULTANT_SYSTEM_PROMPT,
             user=user_msg,
-            max_tokens=1024,
+            max_tokens=4096,
             temperature=0.3,
         )
         advice_text = result.text if result else ""
@@ -388,7 +409,7 @@ async def _run_sign_out_agent(
                 messages=messages,
                 system=SIGNOUT_SYSTEM_PROMPT,
                 tools=tools,
-                max_tokens=1024,
+                max_tokens=4096,
                 temperature=0.1,
             )
         except Exception as exc:
@@ -461,6 +482,7 @@ async def run_agentic_test_case(
     on_log: LogFn | None = None,
     on_step: Callable[[StepResult], None] | None = None,
     kb_engine: Any | None = None,
+    input_queue: Callable[[], list[str]] | None = None,
 ) -> TestCaseResult:
     """Execute a single test case using the multi-agent architecture.
 
@@ -524,20 +546,22 @@ async def run_agentic_test_case(
 
     try:
         while True:
-            # Time-based safety cap (replaces max_steps)
-            elapsed = time.perf_counter() - start_time
-            if elapsed > _TC_TIME_CAP_SECONDS:
-                log(f"[WARN] Time cap reached ({_TC_TIME_CAP_SECONDS}s)")
-                final_status = "error"
-                final_summary = f"Time limit ({_TC_TIME_CAP_SECONDS // 60}min) exceeded"
-                break
-
             # Check external stop signal
             if stop_fn and stop_fn():
                 log("[INFO] Stop signal received, ending test case")
                 final_status = "blocked"
                 final_summary = "User cancelled execution"
                 break
+
+            # Inject queued user messages at turn boundary
+            if input_queue:
+                user_msgs = input_queue()
+                for um in user_msgs:
+                    log(f"[INFO] User input received: {um}")
+                    messages.append({
+                        "role": "user",
+                        "content": f"[USER GUIDANCE]: {um}",
+                    })
 
             # Call LLM
             try:
@@ -558,7 +582,7 @@ async def run_agentic_test_case(
             # --- CAPTURE CHAIN-OF-THOUGHT ---
             cot_text = result.text or ""
             if cot_text.strip():
-                log(f"[THOUGHT] {cot_text[:200]}")
+                log(f"[THOUGHT] {cot_text}")
 
             if result.has_tool_use:
                 tool_call = result.tool_calls[0]
@@ -920,6 +944,7 @@ async def run_agentic_suite(
     on_tc_done: Callable[[TestCaseResult], None] | None = None,
     on_step: Callable[[StepResult], None] | None = None,
     kb_engine: Any | None = None,
+    input_queue: Callable[[], list[str]] | None = None,
 ) -> list[TestCaseResult]:
     """Run a suite of test cases sequentially on one browser page.
 
@@ -953,15 +978,46 @@ async def run_agentic_suite(
             page, context, tc, credentials, brief, project_context,
             llm_client, model, tc_output, config=cfg,
             stop_fn=stop_fn, on_log=log, on_step=on_step,
-            kb_engine=kb_engine,
+            kb_engine=kb_engine, input_queue=input_queue,
         )
 
-        # Fallback retry if stuck and a different model is available
+        # KB-first retry: same model, aggressive KB consultation
+        if result.overall_status == "error" and kb_engine is not None:
+            log(
+                f"[INFO] Retrying TC '{title}' with same model + "
+                f"aggressive KB consultation"
+            )
+            try:
+                await page.goto(
+                    getattr(credentials, "login_url", ""), timeout=30000,
+                )
+                await page.wait_for_load_state("domcontentloaded")
+            except Exception:
+                pass
+
+            kb_retry_output = tc_output / "kb_retry"
+            kb_retry_output.mkdir(parents=True, exist_ok=True)
+
+            kb_cfg = AgenticConfig(
+                max_steps=cfg.max_steps,
+                observation_max_chars=cfg.observation_max_chars,
+                max_tokens=cfg.max_tokens,
+                max_consecutive_fails=2,
+            )
+            result = await run_agentic_test_case(
+                page, context, tc, credentials, brief, project_context,
+                llm_client, model, kb_retry_output, config=kb_cfg,
+                stop_fn=stop_fn, on_log=log, on_step=on_step,
+                kb_engine=kb_engine, input_queue=input_queue,
+            )
+            if result.overall_status != "error":
+                log(f"[SUCCESS] KB-retry succeeded for '{title}'")
+
+        # Fallback retry if still stuck and a different model is available
         if result.overall_status == "error" and fallback_model != model:
             log(
                 f"[INFO] Retrying TC '{title}' with advanced reasoning model"
             )
-            # Navigate to a known state before retry
             try:
                 await page.goto(
                     getattr(credentials, "login_url", ""), timeout=30000,
@@ -977,7 +1033,7 @@ async def run_agentic_suite(
                 page, context, tc, credentials, brief, project_context,
                 llm_client, fallback_model, retry_output, config=cfg,
                 stop_fn=stop_fn, on_log=log, on_step=on_step,
-                kb_engine=kb_engine,
+                kb_engine=kb_engine, input_queue=input_queue,
             )
             if result.overall_status != "error":
                 log(f"[SUCCESS] Fallback retry succeeded for '{title}'")

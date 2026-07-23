@@ -44,6 +44,7 @@ class Job:
     recovery: dict[str, Any] = field(default_factory=dict)
     interrupted: bool = False
     stop_event: threading.Event = field(default_factory=threading.Event, repr=False)
+    user_messages: list[str] = field(default_factory=list)
     _persist: Any = field(default=None, repr=False)
 
     def _changed(self) -> None:
@@ -88,6 +89,15 @@ class Job:
     @property
     def stopped(self) -> bool:
         return self.stop_event.is_set()
+
+    def push_user_message(self, msg: str) -> None:
+        if msg.strip():
+            self.user_messages.append(msg.strip())
+
+    def drain_user_messages(self) -> list[str]:
+        msgs = list(self.user_messages)
+        self.user_messages.clear()
+        return msgs
 
     def snapshot(self, log_offset: int = 0) -> dict[str, Any]:
         offset = max(0, int(log_offset))

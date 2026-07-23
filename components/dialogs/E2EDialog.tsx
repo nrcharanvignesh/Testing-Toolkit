@@ -74,6 +74,8 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
   const [progress, setProgress] = useState<JobProgress | null>(null);
   const [result, setResult] = useState<E2ERunResult | null>(null);
   const [error, setError] = useState("");
+  const [notes, setNotes] = useState("");
+  const [userMsg, setUserMsg] = useState("");
   const jobIdRef = useRef<string>("");
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -174,6 +176,7 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
           env: selectedEnv,
           indices,
           wiIds: [...wiScope],
+          notes: notes.trim() || undefined,
         },
         {
           onJobId: (id) => { jobIdRef.current = id; },
@@ -420,6 +423,50 @@ export function E2EDialog({ onClose }: { onClose: () => void }) {
             ))}
           </select>
         </label>
+
+        {/* Pre-run notes / During-run message input */}
+        {!running ? (
+          <label className="flex flex-col gap-1 text-xs text-[var(--tt-text-secondary)]">
+            Notes / Instructions (optional - passed to planner)
+            <textarea
+              className="tt-input min-h-[3rem] resize-y text-xs"
+              placeholder="E.g. Focus on navigation flow, skip profile tests..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+            />
+          </label>
+        ) : (
+          <div className="flex gap-2">
+            <input
+              type="text"
+              className="tt-input flex-1 text-xs"
+              placeholder="Send guidance to the running agent..."
+              value={userMsg}
+              onChange={(e) => setUserMsg(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && userMsg.trim() && jobIdRef.current) {
+                  agent.sendJobMessage(jobIdRef.current, userMsg.trim());
+                  pushLog("INFO", `You: ${userMsg.trim()}`);
+                  setUserMsg("");
+                }
+              }}
+            />
+            <button
+              className="tt-btn-primary !px-3 !py-1 text-xs"
+              disabled={!userMsg.trim() || !jobIdRef.current}
+              onClick={() => {
+                if (userMsg.trim() && jobIdRef.current) {
+                  agent.sendJobMessage(jobIdRef.current, userMsg.trim());
+                  pushLog("INFO", `You: ${userMsg.trim()}`);
+                  setUserMsg("");
+                }
+              }}
+            >
+              Send
+            </button>
+          </div>
+        )}
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-2">
           {/* Test case list */}
