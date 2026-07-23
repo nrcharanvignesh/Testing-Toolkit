@@ -177,7 +177,7 @@ async def reveal_file(body: _RevealFileBody) -> dict[str, Any]:
         return {"ok": False, "detail": f"{type(e).__name__}: {e}"}
 
 
-_ALLOWED_EXTENSIONS: set[str] = {".xlsx", ".pdf", ".mkv"}
+_ALLOWED_EXTENSIONS: set[str] = {".xlsx", ".pdf", ".mkv", ".webm"}
 
 
 @router.get("/{project}")
