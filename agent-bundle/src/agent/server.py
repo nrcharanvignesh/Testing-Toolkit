@@ -573,6 +573,46 @@ def _tee_output_to_logfile() -> None:
         print(f"[agent] could not set up file logging (non-fatal): {exc}", flush=True)
 
 
+def _start_liveness_watchdog() -> None:
+    """Daemon thread: probes own /health every 30s. Force-exits after 3
+    consecutive failures so the OS-level restarter relaunches us.
+    Platform-agnostic: works on Windows/macOS/Linux without OS-specific hacks."""
+    import time
+    import urllib.request
+
+    url = f"http://127.0.0.1:{AGENT_PORT}/health"
+    interval = 30
+    threshold = 3
+    grace = 15
+
+    def _watchdog() -> None:
+        time.sleep(grace)
+        consecutive_failures = 0
+        while True:
+            time.sleep(interval)
+            try:
+                resp = urllib.request.urlopen(url, timeout=10)
+                resp.read()
+                resp.close()
+                consecutive_failures = 0
+            except Exception:
+                consecutive_failures += 1
+                print(
+                    f"[agent] liveness probe failed ({consecutive_failures}/{threshold})",
+                    flush=True,
+                )
+                if consecutive_failures >= threshold:
+                    print(
+                        "[agent] FATAL: liveness check failed 3x, "
+                        "force-exiting for OS restarter to relaunch.",
+                        flush=True,
+                    )
+                    os._exit(1)
+
+    t = threading.Thread(target=_watchdog, daemon=True, name="liveness")
+    t.start()
+
+
 def main() -> None:
     _tee_output_to_logfile()
     # Initialise the structured rotating log so the in-app "Recent log"
@@ -586,12 +626,7 @@ def main() -> None:
     except Exception as exc:  # noqa: BLE001
         print(f"[agent] could not init structured logging (non-fatal): {exc}", flush=True)
     _write_pid_file()
-    # Windows IOCP event loop has a fatal bug: WinError 64 kills the accept
-    # socket on VPN/network changes and the server becomes unreachable while
-    # the process stays alive. The Selector loop avoids this entirely.
-    if os.name == "nt":
-        import asyncio
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    _start_liveness_watchdog()
     print(f"[agent] starting uvicorn on 127.0.0.1:{AGENT_PORT}", flush=True)
     try:
         uvicorn.run(
