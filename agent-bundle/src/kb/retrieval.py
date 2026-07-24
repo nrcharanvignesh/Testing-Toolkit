@@ -69,6 +69,7 @@ _EMBED_WORKERS: Final[int] = 4
 _SCHEMA: Final[int] = 2
 
 _CHUNKS_FILE: Final[str] = "chunks.jsonl"
+_CTX_CHUNKS_FILE: Final[str] = "ctx_chunks.jsonl"
 _BM25_FILE: Final[str] = "bm25.json"
 _MANIFEST_FILE: Final[str] = "manifest.json"
 _CURRENT_FILE: Final[str] = "current.json"
@@ -412,6 +413,31 @@ class HybridRetriever:
                 )
         except (OSError, json.JSONDecodeError, ValueError):
             self._chunks = {}
+        # Load context overlay chunks (written separately from immutable KB gen)
+        ctx_path = self.dir / _CTX_CHUNKS_FILE
+        if ctx_path.exists():
+            try:
+                from kb.kb_crypto import read_decrypted_text as _rdt
+                text = _rdt(ctx_path)
+                if text:
+                    for line in text.splitlines():
+                        line = line.strip()
+                        if not line:
+                            continue
+                        d = json.loads(line)
+                        cid = str(d.get("chunk_id", ""))
+                        self._chunks[cid] = RetrievedChunk(
+                            chunk_id=cid, doc=str(d.get("doc", "")),
+                            title=str(d.get("title", "")),
+                            text=str(d.get("text", "")),
+                            source_priority=float(
+                                d.get("source_priority", 0.9) or 0.9),
+                            section_path=str(d.get("section_path", "")),
+                            document_role=str(
+                                d.get("document_role", "context")),
+                        )
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
 
     def is_available(self) -> bool:
         return self._bm25 is not None and bool(self._chunks)

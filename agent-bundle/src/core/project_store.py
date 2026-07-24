@@ -536,9 +536,15 @@ def _build_hybrid_from_index(
 def _backfill_context_embeddings(
     p: ProjectPaths, full_name: str, on_log: "Any | None" = None,
 ) -> None:
-    """One-time migration: embed pre-existing context into vector store."""
+    """One-time migration: embed pre-existing context into vector store.
+    Also re-embeds when a new generation was published (overlay missing)."""
+    if not p.hybrid_dir.exists():
+        return
+    from kb.retrieval import _active_index_dir, _CTX_CHUNKS_FILE
+    gen_dir = _active_index_dir(p.hybrid_dir)
     fp_file = p.hybrid_dir / ".context_fp"
-    if fp_file.exists() or not p.hybrid_dir.exists():
+    overlay_present = (gen_dir / _CTX_CHUNKS_FILE).exists()
+    if fp_file.exists() and overlay_present:
         return
     if not p.context_summary_path.exists():
         return
@@ -651,17 +657,30 @@ def write_context_summary(full_name: str, ctx: "Any") -> bool:
 
 
 def _embed_context_chunks(full_name: str, ctx: "Any") -> None:
-    """Embed context items into the vector store (incremental).
+    """Embed context items into the active generation's vector store + BM25.
 
-    Only re-embeds if context fingerprint changed. Deletes old context
-    chunks and inserts fresh ones so the vector store stays in sync.
+    Uses an overlay model: writes ctx_chunks.jsonl alongside chunks.jsonl so
+    the retriever can load both. Rebuilds BM25 with merged KB+context entries.
+    Only re-embeds if context fingerprint changed or overlay is missing.
     """
+    import json as _json
+
     from kb.context_summary import context_fingerprint, context_to_chunks
+    from kb.retrieval import (
+        _active_index_dir,
+        _BM25_FILE,
+        _CHUNKS_FILE,
+        _CTX_CHUNKS_FILE,
+    )
 
     p = ensure_project(full_name)
     hybrid_dir = p.hybrid_dir
     if not hybrid_dir.exists():
-        return  # No index yet, skip
+        return
+
+    gen_dir = _active_index_dir(hybrid_dir)
+    if not gen_dir.exists():
+        return
 
     new_fp = context_fingerprint(ctx)
     fp_file = hybrid_dir / ".context_fp"
@@ -671,51 +690,227 @@ def _embed_context_chunks(full_name: str, ctx: "Any") -> None:
             old_fp = fp_file.read_text(encoding="utf-8").strip()
         except Exception:
             pass
-    if new_fp == old_fp:
-        return  # No change
+    ctx_overlay_exists = (gen_dir / _CTX_CHUNKS_FILE).exists()
+    if new_fp == old_fp and ctx_overlay_exists:
+        return
 
     chunks = context_to_chunks(ctx)
     if not chunks:
         fp_file.write_text(new_fp, encoding="utf-8")
         return
 
-    # Try to load vector store and embed
     try:
+        from kb.bm25 import BM25Index
+        from kb.kb_crypto import read_decrypted_text, write_encrypted_text
+        from kb.vector_store import open_vector_store
+
+        # Write ctx_chunks.jsonl overlay (encrypted) in active generation
+        ctx_lines = "\n".join(
+            _json.dumps({
+                "chunk_id": c["chunk_id"],
+                "doc": "project_context",
+                "title": c["title"],
+                "text": c["text"],
+                "context": "",
+                "source_path": "project_context",
+                "section_path": c.get("section_path", ""),
+                "document_role": "context",
+                "source_priority": 0.9,
+            }, ensure_ascii=True) for c in chunks
+        )
+        write_encrypted_text(gen_dir / _CTX_CHUNKS_FILE, ctx_lines)
+
+        # Embed vectors into the generation's vector store
         from core.app_config import EMBED_DIM
         from kb.embeddings import get_text_embedder
         from kb.retrieval import _embed_texts
+
+        embedder = get_text_embedder()
+        if embedder is not None:
+            dim = int(getattr(embedder, "dim", EMBED_DIM))
+            store = open_vector_store(gen_dir, dim)
+            # Delete old ctx vectors
+            old_ids = [vid for vid in (getattr(store, "_ids", None) or [])
+                       if str(vid).startswith("ctx_")]
+            if old_ids:
+                store.delete(old_ids)
+            texts = [c["text"] for c in chunks]
+            ids = [c["chunk_id"] for c in chunks]
+            vectors = _embed_texts(embedder, texts)
+            store.add(ids, vectors)
+            store.save()
+
+        # Rebuild BM25 with merged KB + context entries
+        kb_ids: list[str] = []
+        kb_texts: list[str] = []
+        chunks_path = gen_dir / _CHUNKS_FILE
+        if chunks_path.exists():
+            raw = read_decrypted_text(chunks_path)
+            if raw:
+                for line in raw.splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    d = _json.loads(line)
+                    kb_ids.append(str(d.get("chunk_id", "")))
+                    ctx_prefix = str(d.get("context", "") or "").strip()
+                    body = str(d.get("text", "") or "")
+                    kb_texts.append(
+                        (ctx_prefix + "\n" + body).strip()
+                        if ctx_prefix else body
+                    )
+        ctx_ids = [c["chunk_id"] for c in chunks]
+        ctx_texts = [c["text"] for c in chunks]
+        all_ids = kb_ids + ctx_ids
+        all_texts = kb_texts + ctx_texts
+        if all_ids:
+            bm25 = BM25Index.build(all_ids, all_texts)
+            bm25.save(gen_dir / _BM25_FILE)
+
+        fp_file.write_text(new_fp, encoding="utf-8")
+        _log.info("[INFO] Context chunks embedded: %d items in %s",
+                  len(chunks), gen_dir.name)
+    except Exception as exc:
+        _log.warning("[WARN] Context embedding failed: %s", exc)
+
+
+def verify_context_embeddings(full_name: str) -> dict:
+    """Self-diagnosing verifier: confirms context embeddings are generated,
+    written to the correct location, and reachable by the retriever."""
+    import json as _json
+
+    from kb.retrieval import _active_index_dir, _CTX_CHUNKS_FILE
+
+    p = ProjectPaths.for_name(full_name)
+    result: dict = {
+        "status": "missing",
+        "checks": {
+            "fingerprint_exists": False,
+            "overlay_in_generation": False,
+            "overlay_readable": False,
+            "vectors_reachable": False,
+            "bm25_reachable": False,
+            "retriever_roundtrip": False,
+        },
+        "chunk_count": 0,
+        "generation_dir": "",
+        "errors": [],
+    }
+    if not p.hybrid_dir.exists():
+        result["errors"].append("hybrid_dir does not exist")
+        return result
+
+    gen_dir = _active_index_dir(p.hybrid_dir)
+    result["generation_dir"] = str(gen_dir.relative_to(p.hybrid_dir))
+
+    # 1. Fingerprint exists
+    fp_file = p.hybrid_dir / ".context_fp"
+    result["checks"]["fingerprint_exists"] = fp_file.exists()
+    if not fp_file.exists():
+        result["errors"].append(".context_fp not found")
+
+    # 2. Overlay in active generation
+    ctx_path = gen_dir / _CTX_CHUNKS_FILE
+    result["checks"]["overlay_in_generation"] = ctx_path.exists()
+    if not ctx_path.exists():
+        result["errors"].append("ctx_chunks.jsonl not in active generation")
+        return result
+
+    # 3. Overlay readable (decrypt + parse)
+    try:
+        from kb.kb_crypto import read_decrypted_text
+        raw = read_decrypted_text(ctx_path)
+        if not raw:
+            result["errors"].append("ctx_chunks.jsonl decrypted to empty")
+            return result
+        ctx_chunks = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if line:
+                ctx_chunks.append(_json.loads(line))
+        if not ctx_chunks:
+            result["errors"].append("ctx_chunks.jsonl has no valid entries")
+            return result
+        result["checks"]["overlay_readable"] = True
+        result["chunk_count"] = len(ctx_chunks)
+    except Exception as exc:
+        result["errors"].append(f"overlay read failed: {exc}")
+        return result
+
+    # 4. Vectors reachable
+    try:
+        from core.app_config import EMBED_DIM
+        from kb.embeddings import get_text_embedder
         from kb.vector_store import open_vector_store
 
         embedder = get_text_embedder()
-        if embedder is None:
-            return
-
-        dim = int(getattr(embedder, "dim", EMBED_DIM))
-        store = open_vector_store(hybrid_dir, dim)
-
-        # Delete old context chunks
-        old_ids = [f"ctx_{cat}_{i:03d}"
-                   for cat in (
-                       "actors", "entities", "data_models", "workflows",
-                       "system_architecture", "integrations", "business_rules",
-                       "screens", "inputs_outputs", "state_machines",
-                       "test_data_needs", "edge_cases", "non_functional",
-                       "dependencies", "security_constraints", "glossary",
-                   )
-                   for i in range(200)]  # generous upper bound
-        store.delete(old_ids)
-
-        # Embed new chunks
-        texts = [c["text"] for c in chunks]
-        ids = [c["chunk_id"] for c in chunks]
-        vectors = _embed_texts(embedder, texts)
-        store.add(ids, vectors)
-        store.save()
-
-        fp_file.write_text(new_fp, encoding="utf-8")
-        _log.info("[INFO] Context chunks embedded: %d items", len(chunks))
+        if embedder is not None:
+            dim = int(getattr(embedder, "dim", EMBED_DIM))
+            store = open_vector_store(gen_dir, dim)
+            first_id = ctx_chunks[0]["chunk_id"]
+            stored_ids = getattr(store, "_ids", [])
+            if first_id in stored_ids:
+                result["checks"]["vectors_reachable"] = True
+            else:
+                result["errors"].append(
+                    f"ctx chunk {first_id} not found in vector store")
+        else:
+            result["checks"]["vectors_reachable"] = True  # no embedder = ok
     except Exception as exc:
-        _log.warning("[WARN] Context embedding failed: %s", exc)
+        result["errors"].append(f"vector check failed: {exc}")
+
+    # 5. BM25 reachable
+    try:
+        from kb.bm25 import BM25Index
+        from kb.retrieval import _BM25_FILE
+
+        bm25_path = gen_dir / _BM25_FILE
+        if bm25_path.exists():
+            bm25 = BM25Index.load(bm25_path)
+            first_text = ctx_chunks[0].get("text", "")
+            query_term = first_text.split()[0] if first_text.split() else ""
+            if query_term:
+                hits = bm25.search(query_term, k=5)
+                ctx_hit = any(h[0].startswith("ctx_") for h in hits)
+                result["checks"]["bm25_reachable"] = ctx_hit
+                if not ctx_hit:
+                    result["errors"].append(
+                        "BM25 query returned no ctx_* hits")
+            else:
+                result["checks"]["bm25_reachable"] = True
+        else:
+            result["errors"].append("bm25.json not found in generation")
+    except Exception as exc:
+        result["errors"].append(f"bm25 check failed: {exc}")
+
+    # 6. Retriever roundtrip
+    try:
+        from kb.retrieval import open_retriever
+        retriever = open_retriever(p.hybrid_dir)
+        if retriever is not None and retriever.is_available():
+            first_title = ctx_chunks[0].get("title", "")
+            if first_title:
+                hits = retriever.retrieve(first_title, top_k=5)
+                ctx_hit = any(
+                    h.chunk_id.startswith("ctx_") for h in hits)
+                result["checks"]["retriever_roundtrip"] = ctx_hit
+                if not ctx_hit:
+                    result["errors"].append(
+                        "retriever returned no ctx_* results")
+            else:
+                result["checks"]["retriever_roundtrip"] = True
+        else:
+            result["errors"].append("retriever unavailable")
+    except Exception as exc:
+        result["errors"].append(f"retriever roundtrip failed: {exc}")
+
+    # Determine overall status
+    checks = result["checks"]
+    if all(checks.values()):
+        result["status"] = "ok"
+    elif checks["overlay_readable"]:
+        result["status"] = "partial"
+    return result
 
 
 def clear_context_summary(full_name: str) -> bool:

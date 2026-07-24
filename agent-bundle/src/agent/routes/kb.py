@@ -872,6 +872,16 @@ async def active_context_job(project: str) -> dict:
     return {"job_id": job.id, "progress": snapshot.get("progress")}
 
 
+@router.get("/context/verify/{project}")
+@trace
+async def verify_context(project: str) -> dict:
+    """Self-diagnosing check: confirms context embeddings are generated,
+    in the correct generation dir, and reachable by the retriever."""
+    _validate_project(project)
+    from core.project_store import verify_context_embeddings
+    return verify_context_embeddings(project)
+
+
 @router.get("/context/{project}")
 @trace
 async def get_context(project: str) -> dict:
