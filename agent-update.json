@@ -1,7 +1,7 @@
 {
-  "version": "3.86.0",
-  "ref": "f21021a9d3a43f5b181d2d174bb8666499307bef",
-  "generatedAt": "2026-07-24T23:45:00.000Z",
+  "version": "3.87.0",
+  "ref": "f974803c6dd5aa7b8b2540e07bc2f8c7c3b4b9f6",
+  "generatedAt": "2026-07-25T00:00:00.000Z",
   "files": [
     {
       "path": ".env.enc",
@@ -161,7 +161,7 @@
     {
       "path": "agent/server.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/server.py?ref=main",
-      "hash": "dedd90ec504c1a47ec198840a6c3486ffaac857a6d4ef8b81c5ed7a552b719b2"
+      "hash": "baa33bc273327bec07e4d1db6d2b3677d4182f37022d5030177df94e1c85482a"
     },
     {
       "path": "agent/updater.py",
@@ -171,7 +171,7 @@
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "0d1be0f9d30317c7781bb3526334f1882cf2a69b0a7ec4d2011c1ee00680c438"
+      "hash": "2805b16bd38551d2919d450eaa2e79cf65261174332feda470ed445da3a7fba7"
     },
     {
       "path": "automation/__init__.py",
