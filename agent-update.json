@@ -1,7 +1,7 @@
 {
-  "version": "3.82.1",
-  "ref": "bde966862780ebe7b21f634a9f4255f912d90283",
-  "generatedAt": "2026-07-24T19:55:00.000Z",
+  "version": "3.83.0",
+  "ref": "61166192a76ccc90e670959186c30ab8d274f6ae",
+  "generatedAt": "2026-07-24T20:05:00.000Z",
   "files": [
     {
       "path": ".env.enc",
@@ -171,7 +171,7 @@
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "bc1dd029c0700139290886914217046599d3ad39fa74ca812f2653a53d67ee84"
+      "hash": "de38b50a6a83389335ec8307152ddd8ad9953afdf6ecc6a800114aae449be54c"
     },
     {
       "path": "automation/__init__.py",
@@ -386,7 +386,7 @@
     {
       "path": "core/project_store.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/project_store.py?ref=main",
-      "hash": "fac72e3c1d0f90ee7d22d33060e5c1e1a5cb1c10354e5a35e1d450fc6d0a5f26"
+      "hash": "91f1909a07436e2a1d484b991bb6abb5a2494e068cae149ac2ab5e9cdd83d85e"
     },
     {
       "path": "core/protocols.py",
