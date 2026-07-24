@@ -1,7 +1,7 @@
 {
-  "version": "3.82.0",
-  "ref": "c3a2a33d816aed1ae8aaeec53f41a77e0add0829",
-  "generatedAt": "2026-07-24T19:30:00.000Z",
+  "version": "3.82.1",
+  "ref": "be9be44a7f1b227590f96271e1bdd5bb7174cbfb",
+  "generatedAt": "2026-07-24T19:45:00.000Z",
   "files": [
     {
       "path": ".env.enc",
@@ -386,7 +386,7 @@
     {
       "path": "core/project_store.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/project_store.py?ref=main",
-      "hash": "e895aae3ab943ab9b62fea422b32f2396d133e9d3efa636309b4fc331e99fc8e"
+      "hash": "fac72e3c1d0f90ee7d22d33060e5c1e1a5cb1c10354e5a35e1d450fc6d0a5f26"
     },
     {
       "path": "core/protocols.py",
