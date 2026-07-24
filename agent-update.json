@@ -1,7 +1,7 @@
 {
-  "version": "3.79.0",
-  "ref": "main",
-  "generatedAt": "2026-07-24T15:00:00.000Z",
+  "version": "3.80.0",
+  "ref": "761dedbc2e6c252afb066d17b4b9a87755adf555",
+  "generatedAt": "2026-07-24T18:30:00.000Z",
   "files": [
     {
       "path": ".env.enc",
@@ -171,7 +171,7 @@
     {
       "path": "agent/version.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/agent/version.py?ref=main",
-      "hash": "12755e25d53631f4731809d9e0780d3633b9b414d82d427b0a3734ec34af6a9f"
+      "hash": "28a891f22b43fced62bb47830bf8e69437f4409f9e4594adb1eca948ecd31975"
     },
     {
       "path": "automation/__init__.py",
@@ -181,12 +181,12 @@
     {
       "path": "automation/agentic_prompt.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/automation/agentic_prompt.py?ref=main",
-      "hash": "8b5defd193e39afb2686cf31e1ac75a31500e4e96797c27466cd28340e1a71b9"
+      "hash": "50e779c4719851fee464b3d00ca10181fd738e81e4cce1804dc2bf85009b86d5"
     },
     {
       "path": "automation/agentic_runner.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/automation/agentic_runner.py?ref=main",
-      "hash": "986ca5ab0a27ddbe12045e788f5b80e946d75483eb01e14c88dcde3180d09dc7"
+      "hash": "90c6f5e46713489f293170e98acc2c7eb721d7fa5d8115e46168cfac3ed52e9c"
     },
     {
       "path": "automation/agentic_tools.py",
@@ -236,7 +236,7 @@
     {
       "path": "automation/kb_briefing.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/automation/kb_briefing.py?ref=main",
-      "hash": "ea433fed84f6ade954896316f48abea9f26155bb65df4ffa8ca20730d6479040"
+      "hash": "de2581af0889ab7a4ed1a9fed74a63132a1dfef7bb75a2c44c85500cedfca3e1"
     },
     {
       "path": "automation/page_observer.py",
@@ -296,7 +296,7 @@
     {
       "path": "core/anthropic_client.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/anthropic_client.py?ref=main",
-      "hash": "7a17d579ad4557c9c9e9e7822a1887fd753dcdad44c1db1fab9c1514302fe5ea"
+      "hash": "bf02cf0cc0b4e6e30415a8f64e0565c655fef780011b6ecbb7e16caa5c0e539f"
     },
     {
       "path": "core/app_config.py",
@@ -386,7 +386,7 @@
     {
       "path": "core/project_store.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/core/project_store.py?ref=main",
-      "hash": "3bfe90d57979022d5d747fd60e4be213bccf334e8ad2f5691f544e42f92b0d8a"
+      "hash": "b35fa22c702e143dffe879a65eadf24d9032ab00980c8b2fbf355742fa5eee6b"
     },
     {
       "path": "core/protocols.py",
@@ -506,7 +506,7 @@
     {
       "path": "kb/context_summary.py",
       "url": "https://api.github.com/repos/nrcharanvignesh/Testing-Toolkit/contents/agent-bundle/src/kb/context_summary.py?ref=main",
-      "hash": "162c9345fd9c8cc2d179ff60595236c1cc6fd28122afb336771325ece989e392"
+      "hash": "015437da3a40d80eed8c41aed5dec15f8d0f08863d29d19669a21776a0b3c989"
     },
     {
       "path": "kb/contextual.py",
