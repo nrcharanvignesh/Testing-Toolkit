@@ -279,6 +279,8 @@ def index_project_resumable(
                 on_log("[INFO] KB is empty; cleared project context summary and maps")
         except OSError:
             pass
+    # Backfill: embed existing context if hybrid index exists but no .context_fp
+    _backfill_context_embeddings(p, full_name, on_log)
     return index
 
 
@@ -529,6 +531,26 @@ def _build_hybrid_from_index(
                 )
         except ImportError:
             pass
+
+
+def _backfill_context_embeddings(
+    p: ProjectPaths, full_name: str, on_log: "Any | None" = None,
+) -> None:
+    """One-time migration: embed pre-existing context into vector store."""
+    fp_file = p.hybrid_dir / ".context_fp"
+    if fp_file.exists() or not p.hybrid_dir.exists():
+        return
+    if not p.context_summary_path.exists():
+        return
+    ctx = read_context_summary(full_name)
+    if ctx is None or ctx.is_empty():
+        return
+    try:
+        _embed_context_chunks(full_name, ctx)
+        if on_log:
+            on_log("[INFO] Backfilled context embeddings into vector store")
+    except Exception as exc:
+        _log.debug("Context backfill failed: %s", exc)
 
 
 def open_project_retriever(full_name: str) -> "Any | None":
