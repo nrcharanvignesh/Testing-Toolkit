@@ -1,6 +1,6 @@
 {
   "name": "testing-toolkit-web",
-  "version": "3.82.1",
+  "version": "3.82.2",
   "private": true,
   "type": "module",
   "scripts": {

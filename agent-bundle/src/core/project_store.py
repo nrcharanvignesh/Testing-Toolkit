@@ -371,6 +371,10 @@ def _maybe_extract_context(
                 f"atomically ({context.mapped_documents}/"
                 f"{context.total_documents} documents)"
             )
+        try:
+            _embed_context_chunks(p.full_name, context)
+        except Exception:
+            pass
 
 
 def _resolve_dense_flags(enable_dense: bool) -> tuple[bool, bool, bool]:
