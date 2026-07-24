@@ -520,7 +520,7 @@ def build_synthesizer_user_message(
         if thoughts:
             parts.append("Agent reasoning highlights:")
             for t in thoughts[-5:]:
-                reasoning = getattr(t, "reasoning_text", "")[:1000]
+                reasoning = getattr(t, "reasoning_text", "")
                 tool = getattr(t, "tool_chosen", "")
                 if reasoning:
                     parts.append(f"  [{tool}] {reasoning}")

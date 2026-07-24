@@ -105,7 +105,7 @@ class ProgressTracker:
         """Record one executor turn and recompute stall score."""
         self._url_history.append(url)
         self._page_hash_history.append(page_obs_hash)
-        self._thought_history.append(thought_text[:2000])
+        self._thought_history.append(thought_text)
         self._action_history.append((tool_name, tool_target))
 
         cap = 20
@@ -229,7 +229,7 @@ def _compress_history(
         if msg.get("role") == "user":
             content = msg.get("content", "")
             if isinstance(content, str) and "[KB CONSULTANT ADVICE]" in content:
-                kb_advice_lines.append(content[:1000])
+                kb_advice_lines.append(content)
         if msg.get("role") == "assistant":
             content = msg.get("content", [])
             if isinstance(content, list):
