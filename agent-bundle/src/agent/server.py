@@ -422,6 +422,19 @@ app.add_middleware(BodySizeLimitMiddleware)
 from agent.middleware_trace import TraceRequestMiddleware
 app.add_middleware(TraceRequestMiddleware)
 
+
+class _HeartbeatMiddleware(BaseHTTPMiddleware):
+    """Updates the liveness heartbeat on every request served."""
+
+    async def dispatch(self, request: Request, call_next):
+        import time
+        global _LAST_REQUEST_TIME
+        _LAST_REQUEST_TIME = time.monotonic()
+        return await call_next(request)
+
+
+app.add_middleware(_HeartbeatMiddleware)
+
 # -- Register route modules --
 from agent.routes.health import router as health_router
 from agent.routes.settings import router as settings_router
@@ -573,41 +586,33 @@ def _tee_output_to_logfile() -> None:
         print(f"[agent] could not set up file logging (non-fatal): {exc}", flush=True)
 
 
-def _start_liveness_watchdog() -> None:
-    """Daemon thread: probes own /health every 30s. Force-exits after 3
-    consecutive failures so the OS-level restarter relaunches us.
-    Platform-agnostic: works on Windows/macOS/Linux without OS-specific hacks."""
-    import time
-    import urllib.request
+_LAST_REQUEST_TIME: float = 0.0
 
-    url = f"http://127.0.0.1:{AGENT_PORT}/health"
+
+def _start_liveness_watchdog() -> None:
+    """Daemon thread: checks in-process heartbeat timestamp. If no HTTP request
+    has been served in 120s the event loop is truly dead -- force-exit for the
+    OS restarter to relaunch. Platform-agnostic, zero HTTP overhead."""
+    import time
+
+    staleness = 120
     interval = 30
-    threshold = 3
-    grace = 15
+    grace = 30
 
     def _watchdog() -> None:
+        global _LAST_REQUEST_TIME
+        _LAST_REQUEST_TIME = time.monotonic()
         time.sleep(grace)
-        consecutive_failures = 0
         while True:
             time.sleep(interval)
-            try:
-                resp = urllib.request.urlopen(url, timeout=10)
-                resp.read()
-                resp.close()
-                consecutive_failures = 0
-            except Exception:
-                consecutive_failures += 1
+            elapsed = time.monotonic() - _LAST_REQUEST_TIME
+            if elapsed > staleness:
                 print(
-                    f"[agent] liveness probe failed ({consecutive_failures}/{threshold})",
+                    f"[agent] FATAL: no request served in {int(elapsed)}s, "
+                    "force-exiting for OS restarter to relaunch.",
                     flush=True,
                 )
-                if consecutive_failures >= threshold:
-                    print(
-                        "[agent] FATAL: liveness check failed 3x, "
-                        "force-exiting for OS restarter to relaunch.",
-                        flush=True,
-                    )
-                    os._exit(1)
+                os._exit(1)
 
     t = threading.Thread(target=_watchdog, daemon=True, name="liveness")
     t.start()
