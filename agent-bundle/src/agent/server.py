@@ -586,6 +586,12 @@ def main() -> None:
     except Exception as exc:  # noqa: BLE001
         print(f"[agent] could not init structured logging (non-fatal): {exc}", flush=True)
     _write_pid_file()
+    # Windows IOCP event loop has a fatal bug: WinError 64 kills the accept
+    # socket on VPN/network changes and the server becomes unreachable while
+    # the process stays alive. The Selector loop avoids this entirely.
+    if os.name == "nt":
+        import asyncio
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     print(f"[agent] starting uvicorn on 127.0.0.1:{AGENT_PORT}", flush=True)
     try:
         uvicorn.run(
