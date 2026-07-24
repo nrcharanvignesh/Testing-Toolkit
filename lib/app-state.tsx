@@ -428,13 +428,17 @@ export function AppStateProvider({
       // loads where the KB and context are both current.
       if (!forceRegen) {
         try {
-          const existing = await agent.projectContext(project);
+          const active = await agent.activeContextJob(project);
           if (ctl.signal.aborted) return;
-          if (existing.has && existing.n_items > 0) {
-            setKbState("ready");
-            setKbMessage(`KB ready | Context: ${existing.n_items} items`);
-            setKbProgress(null);
-            return;
+          if (!active.job_id) {
+            const existing = await agent.projectContext(project);
+            if (ctl.signal.aborted) return;
+            if (existing.has && existing.n_items > 0) {
+              setKbState("ready");
+              setKbMessage(`KB ready | Context: ${existing.n_items} items`);
+              setKbProgress(null);
+              return;
+            }
           }
         } catch {
           // Older agents or network hiccup — fall through to generate.
