@@ -420,6 +420,38 @@ def build_planner_user_message(
     return "\n".join(parts)
 
 
+def build_proactive_consultant_message(
+    current_goal: str,
+    steps_summary: str,
+    page_state: str,
+    kb_chunks: str,
+    project_context: str = "",
+) -> str:
+    """Build a lightweight proactive check prompt for the KB Consultant.
+
+    Called periodically (every N successful steps) to validate agent direction
+    and provide course corrections before the agent gets stuck.
+    """
+    parts = [
+        f"PROACTIVE CHECK (agent is NOT stuck -- validating direction)",
+        f"CURRENT GOAL: {current_goal}",
+        "",
+        f"PROGRESS SO FAR:\n{steps_summary}",
+        "",
+        f"CURRENT PAGE STATE:\n{page_state[:4000]}",
+    ]
+    if kb_chunks:
+        parts.append(f"\nRELEVANT KB CONTEXT:\n{kb_chunks}")
+    if project_context:
+        parts.append(f"\nAPPLICATION CONTEXT:\n{project_context[:20000]}")
+    parts.append(
+        "\nIs the agent on the right path? Any faster route to the goal? "
+        "If on track, say 'ON TRACK' briefly. If not, give specific "
+        "corrective guidance."
+    )
+    return "\n".join(parts)
+
+
 def build_consultant_user_message(
     current_goal: str,
     test_step_text: str,
@@ -452,7 +484,7 @@ def build_consultant_user_message(
     parts.append("")
     parts.append("FAILURE DETAILS:")
     for f in failures[-3:]:
-        parts.append(f"  - {f[:300]}")
+        parts.append(f"  - {f}")
     parts.append("")
     parts.append(f"CURRENT PAGE STATE (truncated):\n{page_state[:4000]}")
     if kb_chunks:
@@ -488,7 +520,7 @@ def build_synthesizer_user_message(
         if thoughts:
             parts.append("Agent reasoning highlights:")
             for t in thoughts[-5:]:
-                reasoning = getattr(t, "reasoning_text", "")[:200]
+                reasoning = getattr(t, "reasoning_text", "")[:1000]
                 tool = getattr(t, "tool_chosen", "")
                 if reasoning:
                     parts.append(f"  [{tool}] {reasoning}")

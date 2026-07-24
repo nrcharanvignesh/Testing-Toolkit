@@ -109,6 +109,9 @@ class ParallelRunner:
             "--disable-sync",
             "--metrics-recording-only",
             "--no-service-autorun",
+            "--disable-blink-features=AutomationControlled",
+            "--disable-features=AutomationControlled",
+            "--disable-infobars",
         ]
         if self._maximized and not self._headless:
             launch_args.append("--start-maximized")
@@ -116,6 +119,7 @@ class ParallelRunner:
         self._browser = await self._pw.chromium.launch(
             headless=self._headless,
             args=launch_args,
+            ignore_default_args=["--enable-automation"],
         )
         _log.info("[INFO] ParallelRunner: browser launched (max %d slots)", MAX_PARALLEL)
         return self
@@ -154,6 +158,11 @@ class ParallelRunner:
 
         ctx_opts: dict[str, Any] = {
             "record_video_dir": str(video_dir),
+            "user_agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
+            ),
         }
 
         if self._maximized and not self._headless:
@@ -170,6 +179,11 @@ class ParallelRunner:
             ctx_opts["storage_state"] = str(state_file)
 
         context = await self._browser.new_context(**ctx_opts)
+        # Suppress automation markers that trigger bot detection (Appian 403s)
+        await context.add_init_script(
+            "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+            "window.chrome={runtime:{}};"
+        )
         page = await context.new_page()
 
         slot = ExecutionSlot(

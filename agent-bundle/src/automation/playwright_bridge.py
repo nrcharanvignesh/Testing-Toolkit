@@ -402,7 +402,16 @@ async def browser_session(
                         "--disable-sync",
                         "--metrics-recording-only",
                         "--no-service-autorun",
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-features=AutomationControlled",
+                        "--disable-infobars",
                     ],
+                    "ignore_default_args": ["--enable-automation"],
+                    "user_agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/125.0.0.0 Safari/537.36"
+                    ),
                 }
                 if use_maximized:
                     ctx_opts["args"].append("--start-maximized")
@@ -427,6 +436,11 @@ async def browser_session(
                 context = await pw.chromium.launch_persistent_context(
                     str(_AUTOMATION_PROFILE_DIR),
                     **ctx_opts,
+                )
+                # Suppress automation markers that trigger bot detection (Appian 403s)
+                await context.add_init_script(
+                    "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+                    "window.chrome={runtime:{}};"
                 )
                 last_err = None
                 break

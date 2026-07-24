@@ -30,6 +30,7 @@ from .agentic_prompt import (
     build_system_prompt,
     build_planner_user_message,
     build_consultant_user_message,
+    build_proactive_consultant_message,
     PLANNER_SYSTEM_PROMPT,
     KB_CONSULTANT_SYSTEM_PROMPT,
     SIGNOUT_SYSTEM_PROMPT,
@@ -45,7 +46,8 @@ from .sub_agents import (
 _log = logging.getLogger(__name__)
 LogFn = Callable[[str], None]
 
-_MAX_ESCALATIONS: int = 5
+_KB_CONSULT_WARN_THRESHOLD: int = 10  # log warning, never terminate
+_PROACTIVE_CONSULT_INTERVAL: int = 5  # consult KB every N successful steps
 _SIGNOUT_MAX_STEPS: int = 10
 
 
@@ -103,7 +105,7 @@ class ProgressTracker:
         """Record one executor turn and recompute stall score."""
         self._url_history.append(url)
         self._page_hash_history.append(page_obs_hash)
-        self._thought_history.append(thought_text[:200])
+        self._thought_history.append(thought_text[:2000])
         self._action_history.append((tool_name, tool_target))
 
         cap = 20
@@ -337,7 +339,7 @@ async def _consult_kb(
     except Exception:
         page_obs = "(page observation unavailable)"
 
-    failures = [t.reasoning_text[:300] for t in recent_thoughts[-3:] if t.reasoning_text]
+    failures = [t.reasoning_text for t in recent_thoughts[-3:] if t.reasoning_text]
     actions_tried = [t.tool_chosen for t in recent_thoughts[-5:]]
 
     # Query KB with a failure-specific question (uncapped retrieval)
@@ -579,6 +581,7 @@ async def run_agentic_test_case(
     progress = ProgressTracker()
     prior_kb_advice: list[str] = []
     dead_ends: list[str] = []
+    last_proactive_step: int = 0
     final_status = "error"
     final_summary = ""
 
@@ -1007,10 +1010,15 @@ async def run_agentic_test_case(
                         if progress.is_stalled
                         else f"{consecutive_fails} consecutive tool failures"
                     )
-                    if escalation_count < _MAX_ESCALATIONS and kb_engine:
+                    if kb_engine:
+                        if escalation_count >= _KB_CONSULT_WARN_THRESHOLD:
+                            log(
+                                f"[WARN] KB Consultant called {escalation_count} "
+                                "times (high usage) -- still active"
+                            )
                         log(
                             f"[INFO] Escalating to KB Consultant: {trigger} "
-                            f"(attempt {escalation_count + 1}/{_MAX_ESCALATIONS})"
+                            f"(consultation #{escalation_count + 1})"
                         )
                         # Track dead-ends: if we had prior advice and still stalled,
                         # record what was tried since last advice as a dead end
@@ -1036,7 +1044,7 @@ async def run_agentic_test_case(
                             prior_advice=prior_kb_advice,
                         )
                         if advice:
-                            prior_kb_advice.append(advice[:500])
+                            prior_kb_advice.append(advice)
                             # Inject dead-ends warning if we have them
                             if dead_ends:
                                 dead_end_text = "\n".join(
@@ -1071,18 +1079,97 @@ async def run_agentic_test_case(
                             escalation_count += 1
                             continue
 
-                    # Escalation exhausted or no KB -- end TC
+                    # No KB engine available -- cannot escalate
+                    if not kb_engine:
+                        log(
+                            f"[WARN] Stuck: {trigger} "
+                            "(no KB engine available), ending test case"
+                        )
+                        final_status = "error"
+                        final_summary = f"Stuck: {trigger} (no KB)"
+                        break
+
+                # --- PROACTIVE KB CONSULTATION (every N successful steps) ---
+                successful_steps = sum(
+                    1 for s in steps if s.status == "pass"
+                )
+                steps_since_consult = successful_steps - last_proactive_step
+                if (
+                    kb_engine
+                    and successful_steps > 0
+                    and successful_steps % _PROACTIVE_CONSULT_INTERVAL == 0
+                    and steps_since_consult >= 3
+                ):
+                    last_proactive_step = successful_steps
                     log(
-                        f"[WARN] Stuck: {trigger} "
-                        f"(after {escalation_count} KB consultations), "
-                        "ending test case"
+                        f"[INFO] Proactive KB check at step "
+                        f"{successful_steps}"
                     )
-                    final_status = "error"
-                    final_summary = (
-                        f"Stuck: {trigger} "
-                        f"(KB consulted {escalation_count}x)"
+                    try:
+                        page_obs_check = await get_accessibility_tree(
+                            page, max_chars=4000,
+                        )
+                    except Exception:
+                        page_obs_check = "(unavailable)"
+
+                    recent_step_summary = "\n".join(
+                        f"  Step {s.step_num}: {s.action} -> {s.status}"
+                        for s in steps[-5:]
                     )
-                    break
+                    kb_hint = ""
+                    if kb_engine:
+                        try:
+                            tc_title = test_case.get("title", "")
+                            kb_hint = kb_engine.query_for_stuck_agent(
+                                f"How to {tc_title}? Current progress: "
+                                f"{recent_step_summary}",
+                                top_k=cfg.stuck_agent_retrieval_k,
+                                max_chunk_chars=cfg.stuck_agent_chunk_chars,
+                            )
+                        except Exception:
+                            pass
+
+                    from core.model_router import Task, route
+                    proactive_model = route(Task.E2E_KB_CONSULTANT)
+                    proactive_msg = build_proactive_consultant_message(
+                        current_goal=test_case.get("title", ""),
+                        steps_summary=recent_step_summary,
+                        page_state=page_obs_check,
+                        kb_chunks=kb_hint,
+                        project_context=project_context,
+                    )
+                    try:
+                        proactive_result = await llm_client.complete_async(
+                            model=proactive_model,
+                            system=KB_CONSULTANT_SYSTEM_PROMPT,
+                            user=proactive_msg,
+                            max_tokens=2048,
+                            temperature=0.2,
+                        )
+                        proactive_advice = (
+                            proactive_result.text
+                            if proactive_result else ""
+                        )
+                        if (
+                            proactive_advice.strip()
+                            and "ON TRACK" not in proactive_advice.upper()
+                        ):
+                            log(
+                                f"[INFO] Proactive KB guidance: "
+                                f"{proactive_advice[:120]}..."
+                            )
+                            messages.append({
+                                "role": "user",
+                                "content": (
+                                    "[KB PROACTIVE GUIDANCE]\n"
+                                    "A QA expert reviewed your progress and "
+                                    "suggests:\n\n"
+                                    f"{proactive_advice}\n\n"
+                                    "Consider this guidance as you continue."
+                                ),
+                            })
+                    except Exception as exc:
+                        log(f"[WARN] Proactive KB check failed: {exc}")
 
                 # History management
                 if len(messages) > cfg.history_window * 2:
@@ -1101,7 +1188,7 @@ async def run_agentic_test_case(
                 consecutive_fails += 1
                 if consecutive_fails >= cfg.max_consecutive_fails:
                     # Try KB escalation even for no-tool-use stuck
-                    if escalation_count < _MAX_ESCALATIONS and kb_engine:
+                    if kb_engine:
                         log("[INFO] Agent not calling tools, consulting KB...")
                         completed_steps = sum(
                             1 for s in steps if s.status == "pass"
@@ -1114,7 +1201,7 @@ async def run_agentic_test_case(
                             prior_advice=prior_kb_advice,
                         )
                         if advice:
-                            prior_kb_advice.append(advice[:500])
+                            prior_kb_advice.append(advice)
                             messages.append({
                                 "role": "user",
                                 "content": (
@@ -1128,9 +1215,9 @@ async def run_agentic_test_case(
                             escalation_count += 1
                             continue
 
-                    log("[WARN] Agent not calling tools, ending test case")
+                    log("[WARN] Agent not calling tools (no KB), ending TC")
                     final_status = "error"
-                    final_summary = "Agent stopped calling tools"
+                    final_summary = "Agent stopped calling tools (no KB)"
                     break
 
     except Exception as exc:
