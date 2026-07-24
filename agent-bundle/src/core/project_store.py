@@ -729,11 +729,16 @@ def _embed_context_chunks(full_name: str, ctx: "Any") -> None:
         if embedder is not None:
             dim = int(getattr(embedder, "dim", EMBED_DIM))
             store = open_vector_store(gen_dir, dim)
-            # Delete old ctx vectors
-            old_ids = [vid for vid in (getattr(store, "_ids", None) or [])
-                       if str(vid).startswith("ctx_")]
-            if old_ids:
-                store.delete(old_ids)
+            # Delete old ctx vectors by known ID pattern (store ignores missing)
+            _CTX_CATS = (
+                "actors", "entities", "data_models", "workflows",
+                "system_architecture", "integrations", "business_rules",
+                "screens", "inputs_outputs", "state_machines",
+                "test_data_needs", "edge_cases", "non_functional",
+                "dependencies", "security_constraints", "glossary",
+            )
+            store.delete([f"ctx_{cat}_{i:03d}"
+                          for cat in _CTX_CATS for i in range(50)])
             texts = [c["text"] for c in chunks]
             ids = [c["chunk_id"] for c in chunks]
             vectors = _embed_texts(embedder, texts)
@@ -837,23 +842,26 @@ def verify_context_embeddings(full_name: str) -> dict:
         result["errors"].append(f"overlay read failed: {exc}")
         return result
 
-    # 4. Vectors reachable
+    # 4. Vectors reachable (query the store with the first chunk's embedding)
     try:
         from core.app_config import EMBED_DIM
         from kb.embeddings import get_text_embedder
+        from kb.retrieval import _embed_texts
         from kb.vector_store import open_vector_store
 
         embedder = get_text_embedder()
         if embedder is not None:
             dim = int(getattr(embedder, "dim", EMBED_DIM))
             store = open_vector_store(gen_dir, dim)
+            first_text = ctx_chunks[0]["text"]
             first_id = ctx_chunks[0]["chunk_id"]
-            stored_ids = getattr(store, "_ids", [])
-            if first_id in stored_ids:
+            vec = _embed_texts(embedder, [first_text])
+            hits = store.search(vec[0], k=3)
+            if any(hid == first_id for hid, _ in hits):
                 result["checks"]["vectors_reachable"] = True
             else:
                 result["errors"].append(
-                    f"ctx chunk {first_id} not found in vector store")
+                    f"ctx chunk {first_id} not found in vector search")
         else:
             result["checks"]["vectors_reachable"] = True  # no embedder = ok
     except Exception as exc:
@@ -870,7 +878,7 @@ def verify_context_embeddings(full_name: str) -> dict:
             first_text = ctx_chunks[0].get("text", "")
             query_term = first_text.split()[0] if first_text.split() else ""
             if query_term:
-                hits = bm25.search(query_term, k=5)
+                hits = bm25.top_n(query_term, 5)
                 ctx_hit = any(h[0].startswith("ctx_") for h in hits)
                 result["checks"]["bm25_reachable"] = ctx_hit
                 if not ctx_hit:
