@@ -631,6 +631,7 @@ async def delete_document(project: str, name: str) -> dict:
     # where a failed rebuild destroys the last usable KB.
     # Invalidate context map for the deleted file so next context run skips it
     _invalidate_context_map(project, name)
+    _schedule_selective_context(project, name)
     return {"ok": True, "changed": name}
 
 

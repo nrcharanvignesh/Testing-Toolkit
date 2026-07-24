@@ -80,7 +80,7 @@ def _run_sync(coro: Any) -> Any:
         loop = None
     if loop and loop.is_running():
         with concurrent.futures.ThreadPoolExecutor(1) as pool:
-            return pool.submit(asyncio.run, coro).result(timeout=300)
+            return pool.submit(asyncio.run, coro).result(timeout=600)
     return asyncio.run(coro)
 
 

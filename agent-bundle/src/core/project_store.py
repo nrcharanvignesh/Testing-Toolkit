@@ -348,7 +348,7 @@ def _maybe_extract_context(
         _loop = None
     if _loop and _loop.is_running():
         with concurrent.futures.ThreadPoolExecutor(1) as _pool:
-            context = _pool.submit(asyncio.run, _coro).result(timeout=600)
+            context = _pool.submit(asyncio.run, _coro).result(timeout=1800)
     else:
         context = asyncio.run(_coro)
     if previous is not None:

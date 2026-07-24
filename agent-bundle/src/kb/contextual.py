@@ -145,7 +145,7 @@ def contextualize_document(
     try:
         if loop and loop.is_running():
             with concurrent.futures.ThreadPoolExecutor(1) as pool:
-                return pool.submit(asyncio.run, coro).result(timeout=300)
+                return pool.submit(asyncio.run, coro).result(timeout=900)
         return asyncio.run(coro)
     except Exception:
         return 0
