@@ -347,7 +347,10 @@ class AnthropicClient:
                 "budget_tokens": int(thinking_budget),
             }
         if system.strip():
-            body["system"] = system
+            body["system"] = [
+                {"type": "text", "text": system,
+                 "cache_control": {"type": "ephemeral"}},
+            ]
         if stop_sequences:
             body["stop_sequences"] = stop_sequences
 
@@ -947,10 +950,14 @@ class AnthropicClient:
             "messages": messages,
             "stream": True,
         }
-        body["system"] = (
+        _sys_text = (
             (system + _GUARDRAIL_SUFFIX) if system.strip()
             else _GUARDRAIL_SUFFIX.lstrip()
         )
+        body["system"] = [
+            {"type": "text", "text": _sys_text,
+             "cache_control": {"type": "ephemeral"}},
+        ]
         if tools:
             body["tools"] = tools
 

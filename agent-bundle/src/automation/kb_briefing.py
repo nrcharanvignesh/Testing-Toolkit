@@ -101,6 +101,42 @@ class TestBrief:
         return "\n".join(parts)
 
 
+@dataclass(slots=True)
+class HotCorpus:
+    """Pre-computed retrieval cache for instant runtime KB lookup."""
+
+    corpus_text: str
+    _cache: dict[str, str] = field(default_factory=dict, repr=False)
+    _chunk_texts: list[str] = field(default_factory=list, repr=False)
+
+    def lookup(self, query: str) -> str:
+        """Instant keyword-overlap lookup against pre-retrieved chunks.
+
+        Returns formatted chunk text on hit, empty string on miss.
+        Zero HTTP calls -- pure CPU, <1ms.
+        """
+        import hashlib
+
+        key = hashlib.md5(query.lower().strip().encode()).hexdigest()[:12]
+        if key in self._cache:
+            return self._cache[key]
+        # Fuzzy fallback: keyword overlap against all cached chunk texts
+        q_tokens = frozenset(re.sub(r"[^a-z0-9]+", " ", query.lower()).split())
+        if not q_tokens:
+            return ""
+        best_score = 0.0
+        best_text = ""
+        for chunk_text in self._chunk_texts:
+            c_tokens = frozenset(
+                re.sub(r"[^a-z0-9]+", " ", chunk_text[:200].lower()).split()
+            )
+            overlap = len(q_tokens & c_tokens) / max(len(q_tokens), 1)
+            if overlap > best_score and overlap >= 0.4:
+                best_score = overlap
+                best_text = chunk_text
+        return best_text
+
+
 class KBBriefingEngine:
     """Builds TestBrief objects from the project's KB for E2E execution.
 
@@ -248,6 +284,90 @@ class KBBriefingEngine:
             except Exception:  # noqa: BLE001
                 pass
         return brief
+
+    def build_hot_corpus(
+        self,
+        test_case: dict[str, Any],
+        brief: TestBrief,
+        budget_chars: int = 25_000,
+    ) -> HotCorpus:
+        """Pre-compute retrieval cache for instant runtime lookup.
+
+        Extracts likely queries from test case structure, retrieves top-5
+        chunks per query, deduplicates, and builds a compact corpus.
+        Runs ONCE before the agentic loop; amortized over 30+ steps.
+        """
+        import hashlib
+
+        self._ensure_loaded()
+        if not self._retriever:
+            return HotCorpus(corpus_text="", _cache={}, _chunk_texts=[])
+
+        # Extract queries from test case
+        queries: list[str] = []
+        title = test_case.get("title", "")
+        if title:
+            queries.append(title)
+        description = test_case.get("description", "")
+        if description:
+            queries.append(description[:500])
+        # Each test step is a query
+        steps = test_case.get("steps", [])
+        for step in steps:
+            step_text = step if isinstance(step, str) else step.get("step", "")
+            if step_text:
+                queries.append(step_text[:300])
+        # Screen names from brief
+        for screen in brief.screens:
+            queries.append(f"navigate to {screen.name}")
+        # Acceptance criteria
+        ac = test_case.get("acceptance_criteria", "")
+        if ac:
+            queries.append(ac[:500])
+
+        # Retrieve top-5 per query, deduplicate
+        seen_ids: set[str] = set()
+        all_chunks: list[tuple[str, str]] = []  # (title, text)
+        cache: dict[str, str] = {}
+
+        for query in queries:
+            if not query.strip():
+                continue
+            try:
+                chunks = self._retriever.retrieve(query, top_k=5)
+            except Exception:  # noqa: BLE001
+                continue
+            key = hashlib.md5(query.lower().strip().encode()).hexdigest()[:12]
+            query_parts: list[str] = []
+            for chunk in chunks:
+                cid = getattr(chunk, "chunk_id", "") or chunk.title
+                if cid in seen_ids:
+                    continue
+                seen_ids.add(cid)
+                header = f"[{chunk.title}]" if chunk.title else "[KB]"
+                formatted = f"{header}\n{chunk.text}"
+                all_chunks.append((chunk.title, formatted))
+                query_parts.append(formatted)
+            if query_parts:
+                cache[key] = "\n---\n".join(query_parts)
+
+        # Build deduped corpus text within budget
+        corpus_parts: list[str] = []
+        char_count = 0
+        chunk_texts: list[str] = []
+        for _title, text in all_chunks:
+            if char_count + len(text) > budget_chars:
+                break
+            corpus_parts.append(text)
+            chunk_texts.append(text)
+            char_count += len(text)
+
+        corpus_text = "\n---\n".join(corpus_parts) if corpus_parts else ""
+        return HotCorpus(
+            corpus_text=corpus_text,
+            _cache=cache,
+            _chunk_texts=chunk_texts,
+        )
 
     def get_full_kb_size_chars(self) -> int:
         """Return total character count of all indexed KB chunks."""

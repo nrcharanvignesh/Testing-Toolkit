@@ -619,7 +619,81 @@ def write_context_summary(full_name: str, ctx: "Any") -> bool:
     """Persist a ProjectContext to disk."""
     from kb.context_summary import save_context_summary
     p = ensure_project(full_name)
-    return save_context_summary(p.context_summary_path, ctx)
+    result = save_context_summary(p.context_summary_path, ctx)
+    if result:
+        try:
+            _embed_context_chunks(full_name, ctx)
+        except Exception:
+            pass  # Non-fatal: context still works as raw text
+    return result
+
+
+def _embed_context_chunks(full_name: str, ctx: "Any") -> None:
+    """Embed context items into the vector store (incremental).
+
+    Only re-embeds if context fingerprint changed. Deletes old context
+    chunks and inserts fresh ones so the vector store stays in sync.
+    """
+    from kb.context_summary import context_fingerprint, context_to_chunks
+
+    p = ensure_project(full_name)
+    hybrid_dir = p.hybrid_dir
+    if not hybrid_dir.exists():
+        return  # No index yet, skip
+
+    new_fp = context_fingerprint(ctx)
+    fp_file = hybrid_dir / ".context_fp"
+    old_fp = ""
+    if fp_file.exists():
+        try:
+            old_fp = fp_file.read_text(encoding="utf-8").strip()
+        except Exception:
+            pass
+    if new_fp == old_fp:
+        return  # No change
+
+    chunks = context_to_chunks(ctx)
+    if not chunks:
+        fp_file.write_text(new_fp, encoding="utf-8")
+        return
+
+    # Try to load vector store and embed
+    try:
+        from core.app_config import EMBED_DIM
+        from kb.embeddings import get_text_embedder
+        from kb.retrieval import _embed_texts
+        from kb.vector_store import open_vector_store
+
+        embedder = get_text_embedder()
+        if embedder is None:
+            return
+
+        dim = int(getattr(embedder, "dim", EMBED_DIM))
+        store = open_vector_store(hybrid_dir, dim)
+
+        # Delete old context chunks
+        old_ids = [f"ctx_{cat}_{i:03d}"
+                   for cat in (
+                       "actors", "entities", "data_models", "workflows",
+                       "system_architecture", "integrations", "business_rules",
+                       "screens", "inputs_outputs", "state_machines",
+                       "test_data_needs", "edge_cases", "non_functional",
+                       "dependencies", "security_constraints", "glossary",
+                   )
+                   for i in range(200)]  # generous upper bound
+        store.delete(old_ids)
+
+        # Embed new chunks
+        texts = [c["text"] for c in chunks]
+        ids = [c["chunk_id"] for c in chunks]
+        vectors = _embed_texts(embedder, texts)
+        store.add(ids, vectors)
+        store.save()
+
+        fp_file.write_text(new_fp, encoding="utf-8")
+        _log.info("[INFO] Context chunks embedded: %d items", len(chunks))
+    except Exception as exc:
+        _log.warning("[WARN] Context embedding failed: %s", exc)
 
 
 def clear_context_summary(full_name: str) -> bool:

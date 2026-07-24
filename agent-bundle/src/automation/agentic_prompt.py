@@ -32,6 +32,7 @@ def build_system_prompt(
     *,
     login_done: bool = True,
     strategy: Any | None = None,
+    hot_corpus: Any | None = None,
 ) -> str:
     """Build the full system prompt for one test case execution."""
     sections: list[str] = []
@@ -49,8 +50,14 @@ def build_system_prompt(
     if strategy:
         sections.append(_build_strategy_section(strategy))
 
-    # 5. KB briefing
-    sections.append(_build_kb_section(brief))
+    # 5. KB briefing (hot corpus preferred, falls back to full brief)
+    if hot_corpus and hot_corpus.corpus_text:
+        sections.append(
+            f"DOMAIN KNOWLEDGE (from knowledge base):\n"
+            f"{hot_corpus.corpus_text}"
+        )
+    else:
+        sections.append(_build_kb_section(brief))
 
     # 6. Project context
     sections.append(_build_context_section(project_context))

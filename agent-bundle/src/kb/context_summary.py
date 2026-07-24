@@ -714,6 +714,46 @@ async def build_context_incremental_async(
 
 
 
+def context_to_chunks(ctx: "ProjectContext") -> list[dict[str, str]]:
+    """Convert project context items into chunk dicts for vectorization.
+
+    Each ContextItem becomes one chunk with:
+      chunk_id: ctx_{category}_{index:03d}
+      text: "{category}: {name} - {description}"
+      title: "{name}"
+      section_path: "{category}"
+    """
+    chunks: list[dict[str, str]] = []
+    for category in CATEGORIES:
+        items = getattr(ctx, category, [])
+        if not items:
+            continue
+        for idx, item in enumerate(items):
+            if not item.name and not item.description:
+                continue
+            chunk_id = f"ctx_{category}_{idx:03d}"
+            text = f"{category}: {item.name}"
+            if item.description:
+                text += f" - {item.description}"
+            if item.sources:
+                text += f" (sources: {', '.join(item.sources[:3])})"
+            chunks.append({
+                "chunk_id": chunk_id,
+                "text": text,
+                "title": item.name,
+                "section_path": category,
+            })
+    return chunks
+
+
+def context_fingerprint(ctx: "ProjectContext") -> str:
+    """Compute fingerprint of context items for change detection."""
+    parts: list[str] = []
+    for chunk in context_to_chunks(ctx):
+        parts.append(chunk["chunk_id"] + ":" + chunk["text"])
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
+
+
 def save_context_summary(path: Path, ctx: ProjectContext) -> bool:
     try:
         _atomic_json(path, ctx.to_dict())

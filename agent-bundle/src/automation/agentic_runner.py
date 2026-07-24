@@ -47,7 +47,7 @@ _log = logging.getLogger(__name__)
 LogFn = Callable[[str], None]
 
 _KB_CONSULT_WARN_THRESHOLD: int = 10  # log warning, never terminate
-_PROACTIVE_CONSULT_INTERVAL: int = 5  # consult KB every N successful steps
+_PROACTIVE_CONSULT_INTERVAL: int = 15  # consult KB every N successful steps
 _SIGNOUT_MAX_STEPS: int = 10
 
 
@@ -63,10 +63,10 @@ class AgenticConfig:
     max_consecutive_fails: int = 3      # triggers KB escalation
     history_window: int = 16            # full messages kept in context
     screenshot_every_action: bool = True
-    observation_max_chars: int = 8000   # a11y tree truncation
+    observation_max_chars: int = 4000   # a11y tree truncation
     temperature: float = 0.2           # low temp for deterministic actions
-    max_tokens: int = 16384            # per-turn output limit (uncapped)
-    kb_budget_tokens: int = 50_000     # ~175k chars for KB content injection
+    max_tokens: int = 4096             # per-turn output limit
+    kb_budget_tokens: int = 15_000     # KB content injection budget
     stuck_agent_retrieval_k: int = 20  # chunks retrieved when stuck
     stuck_agent_chunk_chars: int = 0   # 0 = uncapped per-chunk length
     vision_every_n: int = 2            # send screenshot to LLM every N steps
@@ -351,10 +351,11 @@ async def _consult_kb(
                 f"Agent is stuck. Tried: {', '.join(actions_tried[-3:])}. "
                 f"Current page shows: {page_obs[:500]}"
             )
-            kb_chunks_text = kb_engine.query_for_stuck_agent(
+            kb_chunks_text = await asyncio.to_thread(
+                kb_engine.query_for_stuck_agent,
                 query,
-                top_k=cfg.stuck_agent_retrieval_k,
-                max_chunk_chars=cfg.stuck_agent_chunk_chars,
+                cfg.stuck_agent_retrieval_k,
+                cfg.stuck_agent_chunk_chars,
             )
         except Exception:
             pass
@@ -514,6 +515,7 @@ async def run_agentic_test_case(
     kb_engine: Any | None = None,
     input_queue: Callable[[], list[str]] | None = None,
     precomputed_strategy: TestStrategy | None = None,
+    hot_corpus: Any | None = None,
 ) -> TestCaseResult:
     """Execute a single test case using the multi-agent architecture.
 
@@ -552,7 +554,7 @@ async def run_agentic_test_case(
     }
     system = build_system_prompt(
         test_case, cred_dict, brief, project_context,
-        login_done=False, strategy=strategy,
+        login_done=False, strategy=strategy, hot_corpus=hot_corpus,
     )
 
     # Create tool executor
@@ -845,10 +847,11 @@ async def run_agentic_test_case(
                     kb_answer = ""
                     if kb_engine:
                         try:
-                            kb_answer = kb_engine.query_for_stuck_agent(
+                            kb_answer = await asyncio.to_thread(
+                                kb_engine.query_for_stuck_agent,
                                 guide_query,
-                                top_k=cfg.stuck_agent_retrieval_k,
-                                max_chunk_chars=cfg.stuck_agent_chunk_chars,
+                                cfg.stuck_agent_retrieval_k,
+                                cfg.stuck_agent_chunk_chars,
                             )
                         except Exception:
                             pass
@@ -948,12 +951,7 @@ async def run_agentic_test_case(
                 page_hash = hash(page_obs[:2000])
 
                 # Add screenshot as image for multimodal context
-                send_vision = (
-                    step_num % cfg.vision_every_n == 0
-                    or page_hash != (progress._page_hash_history[-1]
-                                     if len(progress._page_hash_history) >= 1
-                                     else None)
-                )
+                send_vision = (step_num % cfg.vision_every_n == 0)
                 if (send_vision
                         and step_result.screenshot_path
                         and Path(step_result.screenshot_path).exists()):
@@ -1089,90 +1087,42 @@ async def run_agentic_test_case(
                         final_summary = f"Stuck: {trigger} (no KB)"
                         break
 
-                # --- PROACTIVE KB CONSULTATION (every N successful steps) ---
+                # --- PROACTIVE KB GUIDANCE (hot corpus only, no API) ---
                 successful_steps = sum(
                     1 for s in steps if s.status == "pass"
                 )
                 steps_since_consult = successful_steps - last_proactive_step
                 if (
                     kb_engine
-                    and successful_steps > 0
+                    and hot_corpus
+                    and successful_steps >= 15
                     and successful_steps % _PROACTIVE_CONSULT_INTERVAL == 0
-                    and steps_since_consult >= 3
+                    and steps_since_consult >= 10
                 ):
                     last_proactive_step = successful_steps
-                    log(
-                        f"[INFO] Proactive KB check at step "
-                        f"{successful_steps}"
-                    )
-                    try:
-                        page_obs_check = await get_accessibility_tree(
-                            page, max_chars=4000,
-                        )
-                    except Exception:
-                        page_obs_check = "(unavailable)"
-
-                    recent_step_summary = "\n".join(
+                    recent_summary = "\n".join(
                         f"  Step {s.step_num}: {s.action} -> {s.status}"
                         for s in steps[-5:]
                     )
-                    kb_hint = ""
-                    if kb_engine:
-                        try:
-                            tc_title = test_case.get("title", "")
-                            kb_hint = kb_engine.query_for_stuck_agent(
-                                f"How to {tc_title}? Current progress: "
-                                f"{recent_step_summary}",
-                                top_k=cfg.stuck_agent_retrieval_k,
-                                max_chunk_chars=cfg.stuck_agent_chunk_chars,
-                            )
-                        except Exception:
-                            pass
-
-                    from core.model_router import Task, route
-                    proactive_model = route(Task.E2E_KB_CONSULTANT)
-                    proactive_msg = build_proactive_consultant_message(
-                        current_goal=test_case.get("title", ""),
-                        steps_summary=recent_step_summary,
-                        page_state=page_obs_check,
-                        kb_chunks=kb_hint,
-                        project_context=project_context,
+                    proactive_hint = hot_corpus.lookup(
+                        f"{test_case.get('title', '')} {recent_summary}"
                     )
-                    try:
-                        proactive_result = await llm_client.complete_async(
-                            model=proactive_model,
-                            system=KB_CONSULTANT_SYSTEM_PROMPT,
-                            user=proactive_msg,
-                            max_tokens=2048,
-                            temperature=0.2,
+                    if proactive_hint:
+                        log(
+                            f"[INFO] Proactive KB hint at step "
+                            f"{successful_steps}"
                         )
-                        proactive_advice = (
-                            proactive_result.text
-                            if proactive_result else ""
-                        )
-                        if (
-                            proactive_advice.strip()
-                            and "ON TRACK" not in proactive_advice.upper()
-                        ):
-                            log(
-                                f"[INFO] Proactive KB guidance: "
-                                f"{proactive_advice[:120]}..."
-                            )
-                            messages.append({
-                                "role": "user",
-                                "content": (
-                                    "[KB PROACTIVE GUIDANCE]\n"
-                                    "A QA expert reviewed your progress and "
-                                    "suggests:\n\n"
-                                    f"{proactive_advice}\n\n"
-                                    "Consider this guidance as you continue."
-                                ),
-                            })
-                    except Exception as exc:
-                        log(f"[WARN] Proactive KB check failed: {exc}")
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "[KB GUIDANCE]\n"
+                                f"{proactive_hint}\n\n"
+                                "Consider this as you continue."
+                            ),
+                        })
 
                 # History management
-                if len(messages) > cfg.history_window * 2:
+                if len(messages) > cfg.history_window + 8:
                     messages = _compress_history(messages, cfg.history_window)
 
             else:
@@ -1311,9 +1261,21 @@ async def run_agentic_suite(
         title = tc.get("title", "Untitled")
         log(f"[INFO] Starting TC {i + 1}/{len(test_cases)}: {title}")
 
-        brief = briefs.get(tc_id)
+        brief = briefs.get(tc_id) or briefs.get(tc.get("wi_id", ""))
         tc_output = output_dir / tc_id
         tc_output.mkdir(parents=True, exist_ok=True)
+
+        # Build hot corpus for instant runtime KB lookup
+        tc_hot_corpus = None
+        if kb_engine and brief:
+            try:
+                tc_hot_corpus = kb_engine.build_hot_corpus(tc, brief)
+                log(
+                    f"[INFO] Hot corpus built: "
+                    f"{len(tc_hot_corpus.corpus_text):,} chars"
+                )
+            except Exception:
+                pass
 
         # Pre-run planner to determine complexity-based model selection
         strategy = await _run_planner_agent(
@@ -1336,6 +1298,7 @@ async def run_agentic_suite(
             stop_fn=stop_fn, on_log=log, on_step=on_step,
             kb_engine=kb_engine, input_queue=input_queue,
             precomputed_strategy=strategy,
+            hot_corpus=tc_hot_corpus,
         )
 
         # KB-first retry: same model, aggressive KB consultation
@@ -1388,6 +1351,7 @@ async def run_agentic_suite(
                 stop_fn=stop_fn, on_log=log, on_step=on_step,
                 kb_engine=kb_engine, input_queue=input_queue,
                 precomputed_strategy=strategy,
+                hot_corpus=tc_hot_corpus,
             )
             if result.overall_status != "error":
                 log(f"[SUCCESS] KB-retry succeeded for '{title}'")
@@ -1436,6 +1400,7 @@ async def run_agentic_suite(
                 stop_fn=stop_fn, on_log=log, on_step=on_step,
                 kb_engine=kb_engine, input_queue=input_queue,
                 precomputed_strategy=strategy,
+                hot_corpus=tc_hot_corpus,
             )
             if result.overall_status != "error":
                 log(f"[SUCCESS] Fallback retry succeeded for '{title}'")
